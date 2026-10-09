@@ -218,14 +218,24 @@ def verify_init_data(init_data):
 GO_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
-font-family:sans-serif;background:var(--tg-theme-bg-color,#fff);color:var(--tg-theme-text-color,#000)}</style></head>
-<body><div id="m">⏳</div><script>
+<style>body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+gap:16px;font-family:sans-serif;background:var(--tg-theme-bg-color,#fff);color:var(--tg-theme-text-color,#000)}
+button{display:none;padding:12px 22px;border:0;border-radius:10px;font-size:16px;
+background:var(--tg-theme-button-color,#2481cc);color:var(--tg-theme-button-text-color,#fff)}</style></head>
+<body><div id="m">⏳ در حال باز کردن...</div><button id="b">🔗 باز کردن</button><script>
 const w = Telegram.WebApp; w.ready(); w.expand();
+const m = document.getElementById("m"), b = document.getElementById("b");
+function openIt(url) { try { w.openTelegramLink(url); } catch (e) { location.href = url; } }
 fetch("/click/__TOK__", {method: "POST", headers: {"X-Init-Data": w.initData}})
   .then(r => r.json())
-  .then(d => { if (!d.ok) throw 0; w.openTelegramLink(d.url); setTimeout(() => w.close(), 250); })
-  .catch(() => { document.getElementById("m").textContent = "خطا؛ بستی و دوباره از ربات امتحان کن"; });
+  .then(d => {
+    if (!d.ok) throw 0;
+    openIt(d.url);                       // بدون close فوری؛ بستنِ زودهنگام باعث می‌شد لینک باز نشه
+    m.textContent = "✅ ثبت شد";
+    setTimeout(() => { m.textContent = "اگه خودکار باز نشد، دکمه‌ی زیر رو بزن"; b.style.display = "block"; }, 1500);
+    b.onclick = () => { openIt(d.url); setTimeout(() => w.close(), 600); };
+  })
+  .catch(() => { m.textContent = "خطا؛ ببند و دوباره از ربات امتحان کن"; });
 </script></body></html>"""
 
 
