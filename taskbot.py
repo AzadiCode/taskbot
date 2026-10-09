@@ -15,13 +15,14 @@ Environment:
   فالو   → getChatMember (دقیق)            + بررسی ترک کانال تا ۳ روز با /cron
   کامنت  → ثبت پیام‌های گروه گفتگوی کانال (دقیق)
   لایک   → ری‌اکشن روی کپی پست داخل گروه گفتگو (دقیق)؛ اگه ممکن نبود: حالت نیمه‌مطمئن (پاداش نصف)
-  همه‌ی تسک‌ها: کلیک روی لینک ردیاب + تأخیر رندوم، بعد دکمه‌ی «بررسی» ظاهر می‌شه
+  همه‌ی تسک‌ها: مینی‌اپ ردیاب کلیک (داخل تلگرام) + تأخیر رندوم، بعد دکمه‌ی «بررسی» ظاهر می‌شه
 """
-import os, re, hmac, hashlib, random, secrets, logging
+import os, re, json, time, hmac, hashlib, random, secrets, logging
+from urllib.parse import parse_qsl
 from datetime import datetime, timezone, timedelta
 
 import requests
-from flask import Flask, request, redirect, abort
+from flask import Flask, request, jsonify, abort, Response
 from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
@@ -33,7 +34,7 @@ BASE_URL     = os.environ["BASE_URL"].rstrip("/")
 MONGO_URI    = os.environ.get("MONGO_URI", "").strip()
 SECRET_KEY   = os.environ.get("SECRET_KEY", BOT_TOKEN)
 ADMIN_IDS    = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit()}
-START_POINTS = int(os.environ.get("START_POINTS", "100"))
+START_POINTS = int(os.environ.get("START_POINTS", "10"))
 
 MIN_WAIT, MAX_WAIT = 15, 45        # تأخیر رندوم قبل از فعال شدن دکمه‌ی بررسی (ثانیه)
 MIN_SLOTS, MAX_SLOTS = 5, 1000     # تعداد نفرات هر تسک
@@ -167,7 +168,8 @@ def task_text(t):
 
 
 def task_kb(t, claim):
-    rows = [[{"text": "🔗 باز کردن", "url": f"{BASE_URL}/go/{claim['tok']}"}]]
+    # مینی‌اپ داخل خود تلگرام باز می‌شه (بدون سوال و بدون مرورگر)، کلیک رو ثبت می‌کنه و یه‌راست کانال/پست رو باز می‌کنه
+    rows = [[{"text": "🔗 باز کردن", "web_app": {"url": f"{BASE_URL}/go/{claim['tok']}"}}]]
     if claim.get("clicked"):
         rows.append([{"text": "✅ بررسی و دریافت پاداش", "callback_data": "c:" + str(t["_id"])}])
     rows.append([{"text": "🔙 بازگشت", "callback_data": "t"}])
@@ -195,23 +197,59 @@ def show_tasks(chat_id, uid, edit=None):
     show(chat_id, "📋 یکی از تسک‌ها رو انتخاب کن:", {"inline_keyboard": rows}, edit)
 
 
-# ───────────────────────── کلیک ردیاب ─────────────────────────
+# ───────────────────────── کلیک ردیاب (مینی‌اپ) ─────────────────────────
+def verify_init_data(init_data):
+    try:
+        pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+        got = pairs.pop("hash", None)
+        if not got:
+            return None
+        check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+        key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        if not hmac.compare_digest(hmac.new(key, check.encode(), hashlib.sha256).hexdigest(), got):
+            return None
+        if time.time() - int(pairs.get("auth_date", 0)) > 86400:
+            return None
+        return json.loads(pairs["user"])
+    except Exception:
+        return None
+
+
+GO_PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+font-family:sans-serif;background:var(--tg-theme-bg-color,#fff);color:var(--tg-theme-text-color,#000)}</style></head>
+<body><div id="m">⏳</div><script>
+const w = Telegram.WebApp; w.ready(); w.expand();
+fetch("/click/__TOK__", {method: "POST", headers: {"X-Init-Data": w.initData}})
+  .then(r => r.json())
+  .then(d => { if (!d.ok) throw 0; w.openTelegramLink(d.url); setTimeout(() => w.close(), 250); })
+  .catch(() => { document.getElementById("m").textContent = "خطا؛ بستی و دوباره از ربات امتحان کن"; });
+</script></body></html>"""
+
+
 @app.get("/go/<tok>")
 def go(tok):
+    return Response(GO_PAGE.replace("__TOK__", re.sub(r"[^A-Za-z0-9_-]", "", tok)), mimetype="text/html")
+
+
+@app.post("/click/<tok>")
+def click(tok):
+    u = verify_init_data(request.headers.get("X-Init-Data", ""))
     c = db.claims.find_one({"tok": tok})
     t = get_task(c["task"]) if c else None
-    if not c or not t:
-        abort(404)
+    if not u or not t or u["id"] != c["user"]:     # فقط خود کاربر؛ لینک فوروارد‌شده کار نمی‌کنه
+        return jsonify(ok=False), 403
     if not c.get("clicked"):
-        wait = random.randint(MIN_WAIT, MAX_WAIT)
         t0 = now()
         c2 = db.claims.find_one_and_update(
             {"_id": c["_id"], "clicked": {"$exists": False}},
-            {"$set": {"clicked": t0, "ready": t0 + timedelta(seconds=wait)}},
+            {"$set": {"clicked": t0, "ready": t0 + timedelta(seconds=random.randint(MIN_WAIT, MAX_WAIT))}},
             return_document=ReturnDocument.AFTER)
-        if c2:   # اولین کلیک: دکمه‌ی بررسی رو توی ربات نشون بده
+        if c2:   # اولین کلیک: دکمه‌ی بررسی توی ربات ظاهر می‌شه
             tg("editMessageReplyMarkup", chat_id=c2["chat"], message_id=c2["msg"], reply_markup=task_kb(t, c2))
-    return redirect(target_url(t), 302)
+    return jsonify(ok=True, url=target_url(t))
 
 
 # ───────────────────────── سنجش و پاداش ─────────────────────────
