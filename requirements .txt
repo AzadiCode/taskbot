@@ -1,0 +1,6 @@
+flask
+gunicorn
+requests
+pymongo
+mongomock
+cryptography
