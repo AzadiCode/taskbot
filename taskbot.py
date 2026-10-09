@@ -34,7 +34,7 @@ BASE_URL     = os.environ["BASE_URL"].rstrip("/")
 MONGO_URI    = os.environ.get("MONGO_URI", "").strip()
 SECRET_KEY   = os.environ.get("SECRET_KEY", BOT_TOKEN)
 ADMIN_IDS    = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit()}
-START_POINTS = int(os.environ.get("START_POINTS", "10"))
+START_POINTS = int(os.environ.get("START_POINTS", "100"))
 
 MIN_WAIT, MAX_WAIT = 15, 45        # تأخیر رندوم قبل از فعال شدن دکمه‌ی بررسی (ثانیه)
 MIN_SLOTS, MAX_SLOTS = 5, 1000     # تعداد نفرات هر تسک
