@@ -47,7 +47,8 @@ for _it in re.split(r"[,;\n]+", os.environ.get("AI_MODEL", "")):
         _b = re.sub(r"/chat/completions/?$", "", (_p[1] if len(_p) > 1 and _p[1] else AI_BASE_URL).rstrip("/"))
         _k = _p[2] if len(_p) > 2 and _p[2] else AI_API_KEY
         _lab = _p[0] if _b == AI_BASE_URL else f"{_p[0]}@{_b.split('//')[-1].split('/')[0]}"
-        AI_ENDPOINTS.append({"label": _lab, "model": _p[0], "base": _b, "key": _k})
+        if not any(x["label"] == _lab for x in AI_ENDPOINTS):          # مدل تکراری در AI_MODEL نادیده گرفته می‌شه
+            AI_ENDPOINTS.append({"label": _lab, "model": _p[0], "base": _b, "key": _k})
 AI_MODEL    = AI_ENDPOINTS[0]["model"] if AI_ENDPOINTS else ""
 AI_ON       = any(e["base"] and e["key"] for e in AI_ENDPOINTS)
 AI_BUDGET   = int(os.environ.get("AI_BUDGET", "60"))                # سقف کل ثانیه‌ی یک درخواست (همه‌ی مدل‌ها روی هم)
@@ -61,7 +62,7 @@ MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v28-multimodel"
+VERSION      = "v29-fixdup"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_REQUIRED = os.environ.get("CLOCK_REQUIRED", "1") != "0"       # =0: اگه ساعت خونده نشد رد نکن
 try:
@@ -806,7 +807,7 @@ def ai_verdict(img, c):
     if PIXEL_CHECK and boxes is None:
         return None, "", "چک پیکسلی خطا داد (لاگ سرور رو ببین)"
     if boxes is not None and not boxes:
-        return "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو (چیپ پررنگ) زیر پست دیده نمی‌شه", ""
+        return "reject", "• هیچ ری‌اکشنِ انتخاب‌شده‌ای (چیپ پررنگ) تو عکس پیدا نشد؛ اول روی پستِ تسک ری‌اکشن بزن، بعد اسکرین‌شات بگیر", ""
     small = small_jpeg(img)
     with ThreadPoolExecutor(max_workers=4) as ex:
         f_gen = ex.submit(_safe, ai_retry, ai_check, small, c)
@@ -817,23 +818,29 @@ def ai_verdict(img, c):
         (v, e1), (r, e2), (t0, _), (t1, _) = f_gen.result(), f_own.result(), f_c0.result(), f_c1.result()
     if v is None or r is None:
         return None, "", e1 or e2 or "پاسخ مدل نیومد"
+    problems = []                                       # همه‌ی مشکل‌ها با هم گزارش می‌شن، نه فقط اولینش
     verdict, why = judge(v, True)
-    if verdict == "approve":
+    low_conf = verdict != "approve" and "واضح نیست" in why
+    if verdict != "approve":
+        problems.append(why)
+    if not low_conf:
         if boxes:
             own = [t for t in (r.get("tags") or []) if isinstance(t, dict) and t.get("own_post") is True]
             if not own:
-                verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (پست تسک باید با ری‌اکشنش داخل عکس باشه)"
+                problems.append("ری‌اکشنی که انتخاب کردی (چیپ پررنگ) مالِ پستِ تسک نیست و زیر پست دیگه‌ایه؛ "
+                                "هم تشخیص پیکسلی و هم مدل همین رو نشون دادن. روی خودِ پستِ تسک ری‌اکشن بزن و پستِ تسک "
+                                "با ری‌اکشنش کامل داخل عکس باشه")
         elif not str(r.get("selected_emoji") or "").strip():
-            verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه"
-    if verdict == "approve":
+            problems.append("ری‌اکشنِ انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه")
         why2 = clock_decide(img, [t0, t1])
         if why2:
-            verdict, why = "reject", why2
-    if verdict != "approve":
-        log.info("ai reject: %s | %s | %s | clocks=%s | %s", why, json.dumps(v, ensure_ascii=False)[:400], json.dumps(r, ensure_ascii=False)[:300], [t0, t1], boxes)
+            problems.append(why2)
+    if problems:
+        why = "\n".join("• " + x for x in problems)
+        log.info("ai reject: %s | %s | %s | clocks=%s | %s", problems, json.dumps(v, ensure_ascii=False)[:400], json.dumps(r, ensure_ascii=False)[:300], [t0, t1], boxes)
         if AI_DEBUG:
-            for a in ADMINS:
-                send(a, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:600] + "\n" + json.dumps(r, ensure_ascii=False)[:400] + f"\nclocks={[t0, t1]}")
+            for a_ in ADMINS:
+                send(a_, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:600] + "\n" + json.dumps(r, ensure_ascii=False)[:400] + f"\nclocks={[t0, t1]}")
         return "reject", why, ""
     return "approve", "", ""
 
@@ -858,11 +865,12 @@ def verify_shot(uid, chat, cid_s, ph):
             return send(chat, "⚠️ نتونستم عکس رو بگیرم. دوباره «انجام دادم» رو بزن و عکس رو بفرست.", [[btn("🎯 ادامه", "earn")]])
         h = img_hash(img)
         if h:
-            for o in db.shots.find({"cid": cid_s, "ah": {"$exists": True}}):
+            # فقط با عکس‌های «قبول‌شده/در حال بررسی» مقایسه می‌شه. عکس رد‌شده شبیه‌یابی نمی‌شه چون اسکرین‌شات تازه‌ی همون
+            # صفحه (با ری‌اکشن عوض‌شده) هش تقریباً یکسان داره و بی‌گناه رد می‌شد؛ عکس رد‌شده‌ی عین‌به‌عین با file_unique_id گرفته می‌شه
+            for o in db.shots.find({"cid": cid_s, "ah": {"$exists": True}, "rej": {"$ne": True}, "uid": {"$ne": uid}}):
                 if ham(h, o["ah"]) <= 6:
                     db.shots.delete_one({"_id": fid})
-                    return send(chat, RETRY if o.get("rej") and o.get("uid") == uid else
-                                "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
+                    return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
             db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
         verdict, why, err = ai_verdict(img, c)
         if verdict is None:                             # مشکل از سرویس مدله، نه از عکس کاربر
@@ -873,7 +881,7 @@ def verify_shot(uid, chat, cid_s, ph):
                               "چند دقیقه دیگه دوباره «انجام دادم» رو بزن.", [[btn("🎯 تسک‌ها", "earn")]])
         if verdict == "reject":                         # عکس رد‌شده نگه داشته می‌شه تا دوباره ارسالش فایده نداشته باشه
             db.shots.update_one({"_id": fid}, {"$set": {"rej": True}})
-            return send(chat, f"❌ {why}.\nباید ری‌اکشن بزنی و اسکرین‌شات تازه بگیری؛ همین عکس دوباره قبول نمی‌شه. بعد از آن از همین تسک دوباره «انجام دادم» رو بزن.",
+            return send(chat, f"❌ عکس تأیید نشد:\n{why}\n\nمشکل بالا رو درست کن، اسکرین‌شات تازه بگیر (همین عکس دوباره قبول نمی‌شه) و از همین تسک دوباره «انجام دادم» رو بزن.",
                         [[btn("🎯 تسک‌ها", "earn")]])
         code, comp = grant(uid, c, "pending")
         if code != "ok":
