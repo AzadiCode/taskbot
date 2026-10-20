@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 import requests
-from flask import Flask, request
+from flask import Flask, request, redirect
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
@@ -494,11 +494,11 @@ def campaign_listing_keyboard(c):
     # ابتدا فقط دکمهٔ رفتن به مقصد دیده می‌شود. پس از کلیک کاربر، callback
     # زمان نمایش دکمهٔ پاداش را برای همین پست ثبت می‌کند.
     if target_link:
-        rows.append([btn("رفتن به پست مقصد", f"go:{c.get('_id')}", style="primary")])
+        rows.append([btn("🔵 رفتن به پست مقصد", url=f"{BASE_URL}/go/{c.get('_id')}", style="primary")])
     if c.get("reward_reveal_at"):
         deep = bot_deep_link(c.get("_id"))
         if deep:
-            rows.append([btn("دریافت پاداش", url=deep, style="success")])
+            rows.append([btn("🎁 دریافت پاداش", url=deep, style="success")])
     return rows
 
 
@@ -1857,20 +1857,8 @@ def on_callback(cq):
         db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
         return show_task(uid, chat, mid)
     if data.startswith("go:"):
-        try:
-            cid = ObjectId(data[3:])
-        except InvalidId:
-            return ans(cq, "تسک نامعتبر است.", True)
-        c = db.campaigns.find_one({"_id": cid, "status": "active", "remaining": {"$gt": 0}})
-        if not c:
-            return ans(cq, "این تسک دیگر فعال نیست.", True)
-        destination = link_of(c)
-        if not destination:
-            return ans(cq, "لینک مقصد در دسترس نیست.", True)
-        # اولین کلیک، تایمر ۵ ثانیه‌ای را آغاز می‌کند؛ کلیک‌های بعدی تایمر را عقب نمی‌اندازند.
-        db.campaigns.update_one({"_id": cid, "reward_reveal_at": {"$exists": False}},
-                                {"$set": {"reward_reveal_at": time.time() + 5}})
-        return ans(cq, url=destination)
+        # پشتیبانی از دکمه‌های callback قدیمی؛ URL مقصد باید از دکمهٔ لینک‌دار باز شود.
+        return ans(cq, "این دکمه قدیمی است؛ پست را تازه‌سازی کن.", True)
     if data.startswith("c:"):
         return on_claim(cq, uid, chat, mid, data[2:])
     if data == "new":
@@ -2003,6 +1991,25 @@ def on_reaction(mr):
         return
     db.reacts.update_one({"_id": f"{mr['chat']['id']}:{mr['message_id']}:{u['id']}"},
                          {"$set": {"on": bool(mr.get("new_reaction")), "t": time.time()}}, upsert=True)
+
+
+@app.get("/go/<cid>")
+def go_to_campaign_destination(cid):
+    """ثبت کلیک لینک مقصد، آغاز تایمر نمایش پاداش و هدایت به پست اصلی."""
+    try:
+        oid = ObjectId(cid)
+    except (InvalidId, TypeError):
+        return "لینک تسک نامعتبر است.", 404
+    c = db.campaigns.find_one({"_id": oid, "status": "active", "remaining": {"$gt": 0}})
+    if not c:
+        return "این تسک دیگر فعال نیست.", 410
+    destination = link_of(c)
+    if not destination or not destination.startswith(("https://t.me/", "http://t.me/", "https://telegram.me/", "http://telegram.me/")):
+        return "لینک مقصد معتبر نیست.", 400
+    # اولین کلیک زمان‌سنج را آغاز می‌کند؛ کلیک‌های بعدی آن را عقب نمی‌اندازند.
+    db.campaigns.update_one({"_id": oid, "reward_reveal_at": {"$exists": False}},
+                            {"$set": {"reward_reveal_at": time.time() + 5}})
+    return redirect(destination, code=302)
 
 
 @app.post("/hook")
