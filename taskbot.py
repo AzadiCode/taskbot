@@ -46,7 +46,7 @@ STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از ا�
 MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
-CONF_MIN     = float(os.environ.get("CONF_MIN", "0.5"))        # حداقل اطمینان مدل برای قبول عکس
+CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
 PIXEL_CHECK  = os.environ.get("PIXEL_CHECK", "1") != "0"        # بررسی پیکسلی چیپ پررنگ ری‌اکشن (قبل از مدل)؛ =0 خاموش
 AI_DEBUG     = os.environ.get("AI_DEBUG", "") == "1"           # =1: جواب خام مدل برای هر رد شدن به ادمین‌ها فرستاده می‌شه
 TIME_TOL     = int(os.environ.get("TIME_TOL", "20"))            # حداکثر اختلاف مجاز ساعت اسکرین‌شات با الان (دقیقه)
@@ -503,30 +503,54 @@ def ref_info(c):
 
 
 def ai_check(img, c):
-    """بررسی کلی (کانال، پست، ساعت). تشخیص ری‌اکشن اینجا نیست. خروجی: (دیکشنری یا None، خطا)"""
+    """بررسی کلی و ساده: اسکرین‌شات تلگرامه و کانال درسته؟ (پست و ساعت اینجا نیست). خروجی: (دیکشنری یا None، خطا)"""
     if not AI_ON:
         return None, "AI_BASE_URL / AI_API_KEY / AI_MODEL تنظیم نشده"
-    desc, extra, err = ref_info(c)
-    if err:
-        return None, err
     prompt = (
-        'You verify a user-submitted Telegram screenshot (the FIRST image) for a "react to this post" task. '
-        "Light and dark themes are both valid.\n"
+        "This is a user-submitted Telegram screenshot. Light and dark themes are both valid.\n"
         f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}).\n'
-        f'The exact target post: {"; ".join(desc) or "unknown"}. If a second image is attached it is that post\'s original media.\n'
         "Answer ONLY with one JSON object, no markdown:\n"
-        '{"is_telegram_screenshot": true|false, "channel_match": true|false|null, "post_match": true|false, '
-        '"status_bar_time": "HH:MM"|null, "confidence": 0.0-1.0}\n'
-        "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
-        "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
-        "- post_match: true if the target post (same text and/or same media) is visible in the screenshot. A different post is false.\n"
-        "- status_bar_time: ONLY the phone clock in the system status bar at the very top (next to battery/signal icons). "
-        "NEVER the small timestamps inside message bubbles (next to the eye/views counter) - those are post times. Null if unreadable.\n"
-        "- confidence: how well you can read the screenshot (never lowered by the theme).")
-    txt, err = ai_request(prompt, [img] + extra)
+        '{"is_telegram_screenshot": true|false, "channel_match": true|false|null, "confidence": 0.0-1.0}\n'
+        "- is_telegram_screenshot: a genuine Telegram app screen, not an obviously edited/fake image or a meme.\n"
+        "- channel_match: the channel/group name shown in the top header matches the expected title (same name, small "
+        "differences in emoji/decoration are fine); false if a clearly different name; null if no name is visible.\n"
+        "- confidence: how readable the screenshot is (never lowered by the theme).")
+    txt, err = ai_request(prompt, [img])
     if not txt:
         return None, err
     return parse_json(txt)
+
+
+def status_crop(b, left_only=False):
+    """برش نوار وضعیت بالای عکس و بزرگ‌کردنش تا مدل فقط ساعت رو بخونه (به متن‌های دیگه‌ی عکس گیر نده)"""
+    from PIL import Image
+    im = Image.open(io.BytesIO(b)).convert("RGB")
+    W, H = im.size
+    im = im.crop((0, 0, int(W * (0.5 if left_only else 1)), max(40, int(H * 0.055))))
+    k = 2.0 if left_only else 1.5
+    im = im.resize((int(im.width * k), int(im.height * k)), Image.LANCZOS)
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=92)
+    return out.getvalue()
+
+
+def ai_clock(b, left_only=False):
+    """خوندن ساعت نوار وضعیت گوشی از برش بالای عکس. خروجی: (رشته‌ی HH:MM یا None، خطا)"""
+    prompt = (
+        "This is the top strip of a phone screenshot. Read the phone clock from the system status bar "
+        "(the digits next to the small status icons). Ignore any faded or blurred text behind it. "
+        'Answer ONLY with JSON: {"clock": "HH:MM"|null}. Use null unless you can read all the digits clearly; never guess.')
+    try:
+        txt, err = ai_request(prompt, [status_crop(b, left_only)])
+    except Exception as e:
+        return None, str(e)
+    if not txt:
+        return None, err
+    d, err = parse_json(txt)
+    if not isinstance(d, dict):
+        return None, err
+    m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*$", str(d.get("clock") or ""))
+    return (f"{int(m[1])}:{m[2]}" if m else None), ""
 
 
 def find_chips(b):
@@ -630,8 +654,8 @@ def ai_reaction_check(img, c):
     return parse_json(txt)
 
 
-def judge(v, has_hint):
-    """تصمیم روی بررسی کلی: approve یا reject (نامطمئن = رد)"""
+def judge(v, has_hint=True):
+    """تصمیم روی بررسی کلی ساده: اسکرین‌شات تلگرام + کانال (نامطمئن = رد)"""
     if not isinstance(v, dict):
         return "reject", "بررسی عکس الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن"
     try:
@@ -643,18 +667,25 @@ def judge(v, has_hint):
     if v.get("is_telegram_screenshot") is not True:
         return "reject", "این تصویر اسکرین‌شات معتبر تلگرام نیست"
     if v.get("channel_match") is not True:
-        return "reject", "اسم کانال داخل عکس دیده نمی‌شه یا با تسک نمی‌خونه"
-    if has_hint and v.get("post_match") is not True:
-        return "reject", "پست مورد نظر داخل عکس دیده نمی‌شه"
-    if v.get("post_match") is False:
-        return "reject", "پست داخل عکس با تسک نمی‌خونه"
-    if not time_ok(v.get("status_bar_time")):
-        return "reject", f"ساعت داخل عکس ({v.get('status_bar_time')}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
+        return "reject", "اسم کانال بالای عکس دیده نمی‌شه یا با تسک نمی‌خونه؛ اسکرین‌شات کامل (با هدر کانال) بفرست"
     return "approve", ""
 
 
+def clock_verdict(img):
+    """ساعت گوشی در عکس با الان. فقط وقتی رد می‌کنه که دو بار خوندنِ جدا هر دو یک ساعتِ ناهمخوان بدن؛ نخوندن/شک = قبول.
+    خروجی: None (قبول) یا متن دلیل رد"""
+    t1, _ = ai_clock(img, False)
+    if t1 is None or time_ok(t1):
+        return None
+    t2, _ = ai_clock(img, True)
+    if t2 is not None and t2 == t1:
+        return f"ساعت داخل عکس ({t1}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
+    return None
+
+
 def ai_verdict(img, c):
-    """۱) چک پیکسلی چیپ پررنگ  ۲) بررسی کلی مدل (کانال/پست/ساعت)  ۳) مدل فقط می‌گه چیپ پررنگ مال پست تسکه یا نه. خروجی: (حکم، دلیل، خطا)"""
+    """۱) چک پیکسلی چیپ پررنگ  ۲) مدل: اسکرین‌شات تلگرام و کانال درسته؟  ۳) مدل: چیپ پررنگ مال پست تسکه؟ (خودش تطبیق پست رو هم شامل می‌شه)
+    ۴) ساعت نوار وضعیت از روی برش بالای عکس. خروجی: (حکم، دلیل، خطا)"""
     boxes = find_chips(img) if PIXEL_CHECK else None
     if boxes is not None and not boxes:
         return "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو (چیپ پررنگ) زیر پست دیده نمی‌شه", ""
@@ -670,13 +701,17 @@ def ai_verdict(img, c):
                 return None, "", err
             own = [t for t in (r.get("tags") or []) if isinstance(t, dict) and t.get("own_post") is True]
             if not own:
-                verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (ری‌اکشن پست دیگه حساب نمی‌شه)"
+                verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (پست تسک باید با ری‌اکشنش داخل عکس باشه)"
         else:
             r, err = ai_retry(ai_reaction_check, img, c)
             if r is None:
                 return None, "", err
             if not str(r.get("selected_emoji") or "").strip():
                 verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه"
+    if verdict == "approve":
+        why2 = clock_verdict(img)
+        if why2:
+            verdict, why = "reject", why2
     if verdict != "approve":
         log.info("ai reject: %s | %s | %s | %s", why, json.dumps(v, ensure_ascii=False)[:500], json.dumps(r, ensure_ascii=False)[:300], boxes)
         if AI_DEBUG:
