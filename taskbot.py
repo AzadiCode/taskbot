@@ -423,9 +423,9 @@ def ai_request(prompt, img, mime="image/jpeg"):
     base = {"model": AI_MODEL, "messages": msgs}
     err = ""
     # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
-    for body in (dict(base, temperature=0, max_tokens=900), dict(base, max_completion_tokens=900), base):
+    for body in (dict(base, temperature=0, max_tokens=600), dict(base, max_completion_tokens=600), base):
         try:
-            r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=60)
+            r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=90)
         except Exception as e:
             return None, f"اتصال به {url} ناموفق: {e}"
         try:
@@ -457,75 +457,82 @@ def ai_alert(err):
             send(a, "⚠️ خطای مدل ویژن (دستور /aitest برای تست دستی):\n" + err[:800])
 
 
-def ai_check(img, c):
-    """خروجی: (دیکشنری نتیجه یا None، متن خطا)"""
-    if not AI_ON:
-        return None, "AI_BASE_URL / AI_API_KEY / AI_MODEL تنظیم نشده"
-    imgs, ref_desc = [img], []
-    if c.get("hint"):
-        ref_desc.append(f'the post text starts with: "{c["hint"]}"')
-    if c.get("ref_photo"):
-        ref = fetch_file(c["ref_photo"])
-        if not ref:
-            return None, "نتونستم عکس مرجع پست رو بگیرم"
-        imgs.append(ref)
-        ref_desc.append("the SECOND image is the original post media (reference)")
-    prompt = (
-        'You verify a user-submitted Telegram screenshot (the FIRST image) for a "react to this post" task.\n'
-        f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}).\n'
-        f'The exact target post: {"; ".join(ref_desc) or "unknown"}.\n'
-        "Answer ONLY with one JSON object, no markdown:\n"
-        '{"is_telegram_screenshot": bool, "channel_match": true|false|null, "post_match": true|false|null, '
-        '"reaction_highlighted": true|false|null, "highlighted_reaction": "<the emoji that is highlighted>"|null, '
-        '"target_chips_row_y_pct": 0..100|null, "theme": "light"|"dark", "chips": [{"emoji": "<emoji>", "style": "solid"|"tinted"}], '
-        '"status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
-        "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
-        "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
-        "- post_match: true ONLY if the post that carries the highlighted reaction in the screenshot is exactly the target post "
-        "(same text and/or same media). A DIFFERENT post from the same channel must be false. If you cannot clearly read/see "
-        "the post content, answer false.\n"
-        "- reaction_highlighted: under THAT post one reaction chip is visibly highlighted/selected (the user's own reaction). "
-        "false if reactions are visible but none is selected; null if no reactions are visible.\n"
-        "- highlighted_reaction: the exact emoji of the highlighted reaction chip, null if you cannot point to one.\n"
-        "- target_chips_row_y_pct: vertical position (percent of the image height, 0=top edge, 100=bottom edge) of the CENTER of the "
-        "reaction-chip row that belongs to the target post's own bubble (the row just above that bubble's views/time footer). "
-        "Chips of a different, older or newer post must never be used here. null if the target post has no chips or is not visible.\n"
-        "- theme: whether the Telegram UI is light (white/bright) or dark. Both themes are fully valid and must NOT lower confidence.\n"
-        "- confidence: how well you could read the screenshot content; it must not depend on light/dark theme.\n"
-        "- chips: list EVERY reaction chip under the target post. style=\"solid\" only if the chip has a strong, saturated, fully "
-        "filled accent background (blue/green) with white/contrasting text; style=\"tinted\" if it is pale, translucent or "
-        "outlined with colored text.\n"
-        "HOW TO FIND THE SELECTED CHIP (any theme: white, light, dark, navy, black, custom colors): compare the chips of the target post "
-        "with EACH OTHER, never with a fixed color. Unselected chips all share one calm, translucent/tinted look (grey in dark themes, "
-        "pale tint in light themes). The user's own selected chip is the one that stands out from the rest: a strong, solid, saturated "
-        "accent fill (blue/green/etc.) with white or high-contrast text. If every chip has the same look, nobody reacted: "
-        "reaction_highlighted=false. If there is a single chip, it is selected only if it has that strong solid accent fill, not the calm tint.\n"
+def small_jpeg(b, maxw=900):
+    """کوچک‌کردن عکس قبل از ارسال به مدل (سریع‌تر و پایدارتر)؛ تشخیص پیکسلی روی عکس اصلی انجام می‌شه"""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(b)).convert("RGB")
+        if im.width > maxw:
+            im = im.resize((maxw, int(im.height * maxw / im.width)), Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=88)
+        return out.getvalue()
+    except Exception:
+        return b
 
-        "- status_bar_time: ONLY the phone clock in the very top-left (or top-center) system status bar, next to the battery/signal "
-        "icons. NEVER use the small timestamps inside message bubbles (next to the eye/views counter, like 10:10) - those are post "
-        "times, not the phone clock. If the status bar is cropped or unreadable, null.\n"
-        "TARGET POST ONLY: judge reactions ONLY on the chips that sit inside the SAME message bubble as the target post, directly "
-        "above that bubble's views/time footer. Reaction chips that belong to ANOTHER post (e.g. a chip row at the top of the "
-        "screen just above the target's bubble, or any other bubble) must be completely ignored and must NOT appear in chips. "
-        "If the target post is visible but has no reaction chips under it, reaction_highlighted=false even if other posts show "
-        "reactions.\n"
-        "Be strict: reactions on a post are normally all unhighlighted (grey in dark theme, pale tint in light theme) unless the user reacted. "
-        "If you are not clearly sure, answer false.")
-    txt, err = ai_request(prompt, imgs)
-    if not txt:
-        return None, err
-    m = re.search(r"\{.*\}", txt, re.S)
+
+def ai_retry(fn, *a):
+    """یک بار تکرار روی خطای موقت (قطعی شبکه، پاسخ خالی، JSON خراب)"""
+    r, err = fn(*a)
+    if r is None and "تنظیم نشده" not in (err or ""):
+        time.sleep(1.5)
+        r, err = fn(*a)
+    return r, err
+
+
+def parse_json(txt):
+    m = re.search(r"\{.*\}", txt or "", re.S)
     try:
         return json.loads(m.group(0)), ""
     except Exception:
-        return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
+        return None, f"پاسخ مدل JSON نبود: {(txt or '')[:300]}"
 
 
-def has_selected_chip(b, yc=None, tol=0.045):
+def ref_info(c):
+    """توضیح پست هدف برای پرامپت + عکس مرجع. خروجی: (لیست توضیح، لیست عکس‌های اضافه، خطا)"""
+    desc, extra = [], []
+    if c.get("hint"):
+        desc.append(f'the post text starts with: "{c["hint"]}"')
+    if c.get("ref_photo"):
+        ref = fetch_file(c["ref_photo"])
+        if not ref:
+            return desc, extra, "نتونستم عکس مرجع پست رو بگیرم"
+        extra.append(small_jpeg(ref, 600))
+        desc.append("the reference image is the original post media")
+    return desc, extra, ""
+
+
+def ai_check(img, c):
+    """بررسی کلی (کانال، پست، ساعت). تشخیص ری‌اکشن اینجا نیست. خروجی: (دیکشنری یا None، خطا)"""
+    if not AI_ON:
+        return None, "AI_BASE_URL / AI_API_KEY / AI_MODEL تنظیم نشده"
+    desc, extra, err = ref_info(c)
+    if err:
+        return None, err
+    prompt = (
+        'You verify a user-submitted Telegram screenshot (the FIRST image) for a "react to this post" task. '
+        "Light and dark themes are both valid.\n"
+        f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}).\n'
+        f'The exact target post: {"; ".join(desc) or "unknown"}. If a second image is attached it is that post\'s original media.\n'
+        "Answer ONLY with one JSON object, no markdown:\n"
+        '{"is_telegram_screenshot": true|false, "channel_match": true|false|null, "post_match": true|false, '
+        '"status_bar_time": "HH:MM"|null, "confidence": 0.0-1.0}\n'
+        "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
+        "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
+        "- post_match: true if the target post (same text and/or same media) is visible in the screenshot. A different post is false.\n"
+        "- status_bar_time: ONLY the phone clock in the system status bar at the very top (next to battery/signal icons). "
+        "NEVER the small timestamps inside message bubbles (next to the eye/views counter) - those are post times. Null if unreadable.\n"
+        "- confidence: how well you can read the screenshot (never lowered by the theme).")
+    txt, err = ai_request(prompt, [img] + extra)
+    if not txt:
+        return None, err
+    return parse_json(txt)
+
+
+def find_chips(b):
     """بررسی پیکسلی بدون وابستگی به مدل: ری‌اکشنِ زده‌شده‌ی کاربر در تلگرام یه چیپ قرصی‌شکلِ پر و پررنگ (رنگ اکسنت) می‌شه؛
-    چیپ‌های نزده در همه‌ی تم‌ها کم‌رنگ/شفافن. اگه هیچ قرص پررنگی توی عکس نباشه یعنی ری‌اکشن نخورده.
-    yc = مرکز ردیف چیپ‌های «همون پست تسک» (کسری از ارتفاع عکس)؛ فقط قرص‌های پررنگِ همون ردیف حساب می‌شن، نه ری‌اکشن پست‌های دیگه.
-    خروجی: True/False؛ None = بررسی ممکن نشد (Pillow نیست یا خطا) → رد نمی‌کنیم"""
+    چیپ‌های نزده در همه‌ی تم‌ها کم‌رنگ/شفافن. خروجی: لیست جعبه‌ها (x0,y0,x1,y1 به‌صورت کسری از ابعاد عکس)،
+    لیست خالی = هیچ چیپ پررنگی نیست = ری‌اکشن نخورده؛ None = بررسی ممکن نشد (Pillow نیست یا خطا)"""
     try:
         from PIL import Image
         im = Image.open(io.BytesIO(b)).convert("RGB")
@@ -536,10 +543,11 @@ def has_selected_chip(b, yc=None, tol=0.045):
         w, h = im.size
         mask = bytearray(w * h)
         for i in range(w * h):
-            if S[i] > 130 and V[i] > 130:          # رنگ اشباع‌شده و روشن
+            if S[i] > 130 and V[i] > 130:
                 mask[i] = 1
+        out = []
         for i0 in range(w * h):
-            if not mask[i0]:
+            if mask[i0] != 1:
                 continue
             st, mask[i0] = [i0], 2
             n, x0, x1, y0, y1 = 0, w, 0, h, 0
@@ -554,50 +562,76 @@ def has_selected_chip(b, yc=None, tol=0.045):
                         st.append(j)
             bw, bh = x1 - x0 + 1, y1 - y0 + 1
             if 0.045 * w <= bh <= 0.11 * w and 1.4 <= bw / bh <= 4.5 and n / (bw * bh) >= 0.55 and n >= 0.012 * w * w / 4:
-                if yc is None or abs((y0 + y1) / 2 / h - yc) <= tol:
-                    return True
-        return False
+                out.append((x0 / w, y0 / h, (x1 + 1) / w, (y1 + 1) / h))
+        out.sort(key=lambda t: t[1])
+        return out[:6]
     except Exception as e:
         log.warning("pixel check failed: %s", e)
         return None
 
 
-def ai_reaction_check(img, c):
-    """بررسی دوم: فقط ری‌اکشن (پرامپت جدا و ساده). خروجی: (دیکشنری یا None، خطا)"""
-    imgs, ref = [img], []
-    if c.get("hint"):
-        ref.append(f'the post text starts with: "{c["hint"]}"')
-    if c.get("ref_photo"):
-        rf = fetch_file(c["ref_photo"])
-        if rf:
-            imgs.append(rf)
-            ref.append("the SECOND image is the original post media (reference)")
+def mark_chips(b, boxes):
+    """روی هر چیپ پررنگِ پیداشده یه کادر قرمز و شماره می‌کشه تا مدل فقط بگه هر شماره مال کدوم پسته (سؤال ساده‌تر از مختصات)"""
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.open(io.BytesIO(small_jpeg(b))).convert("RGB")
+    W, H = im.size
+    d = ImageDraw.Draw(im)
+    try:
+        font = ImageFont.load_default(size=max(18, W // 28))
+    except TypeError:
+        font = ImageFont.load_default()
+    r = max(14, W // 40)
+    for k, (x0, y0, x1, y1) in enumerate(boxes, 1):
+        X0, Y0, X1, Y1 = x0 * W, y0 * H, x1 * W, y1 * H
+        d.rectangle([X0 - 3, Y0 - 3, X1 + 3, Y1 + 3], outline=(255, 0, 0), width=4)
+        cx, cy = X0 - r, max(r, Y0 - r)
+        cx = max(r, cx)
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 0, 0))
+        d.text((cx, cy), str(k), fill=(255, 255, 255), font=font, anchor="mm")
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=88)
+    return out.getvalue()
+
+
+def ai_owner_check(img, boxes, c):
+    """هر چیپ پررنگِ شماره‌دار مال همون پست تسکه یا پست دیگه؟ خروجی: (دیکشنری یا None، خطا)"""
+    desc, extra, err = ref_info(c)
+    if err:
+        return None, err
     prompt = (
-        "The FIRST image is a Telegram screenshot (any theme: white, light, dark, navy, black, custom). "
-        f'Target post: {"; ".join(ref) or "unknown"}.\n'
-        "Find the reaction chips (small rounded pills with an emoji and a count) that sit INSIDE THE SAME message bubble as the "
-        "target post, directly above that bubble's views/time footer. Completely ignore chips of any other post.\n"
-        "Compare those chips with EACH OTHER (never with a fixed color). Unselected chips all share one identical calm look "
-        "(translucent/grey/pale tint). The user's own selected chip is different from the rest: a strong, solid, saturated accent "
-        "fill with white/high-contrast text. If all chips look the same, nobody reacted.\n"
-        "Answer ONLY one JSON object, no markdown:\n"
-        '{"chips": [{"emoji": "<emoji>", "differs_from_others": true|false}], "all_chips_identical": true|false, '
-        '"selected_emoji": "<emoji>"|null}\n'
-        "selected_emoji = the emoji of the one chip that differs (solid accent fill); null if all chips look identical, if there are "
-        "no chips under the target post, or if you are not sure. If only one chip exists, it counts only if it has the strong solid "
-        "accent fill. When unsure answer null.")
-    txt, err = ai_request(prompt, imgs)
+        "The FIRST image is a Telegram screenshot. Some reaction chips are marked with a red box and a red numbered tag. "
+        f'Target post: {"; ".join(desc) or "unknown"}. If a second image is attached it is that post\'s original media.\n'
+        "For EACH numbered chip decide whether it sits in the SAME message bubble as the target post (the target's own reaction "
+        "row, right above that bubble's eye/views counter and time) or belongs to a DIFFERENT post (an older/newer bubble above "
+        "or below, or a different message). A chip directly above the target's top edge or under the next bubble is a different post.\n"
+        'Answer ONLY one JSON object, no markdown: {"tags": [{"n": 1, "own_post": true|false}]}\n'
+        "If you are not sure about a tag, own_post=false.")
+    txt, err = ai_request(prompt, [mark_chips(img, boxes)] + extra)
     if not txt:
         return None, err
-    m = re.search(r"\{.*\}", txt, re.S)
-    try:
-        return json.loads(m.group(0)), ""
-    except Exception:
-        return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
+    return parse_json(txt)
+
+
+def ai_reaction_check(img, c):
+    """جایگزین وقتی تشخیص پیکسلی ممکن نیست: فقط مدل (کم‌اعتمادتر). خروجی: (دیکشنری یا None، خطا)"""
+    desc, extra, err = ref_info(c)
+    if err:
+        return None, err
+    prompt = (
+        "The FIRST image is a Telegram screenshot (any theme). "
+        f'Target post: {"; ".join(desc) or "unknown"}.\n'
+        "Look ONLY at the reaction chips inside the SAME message bubble as the target post (right above its views/time footer); "
+        "ignore other posts. Compare those chips with each other: unselected ones share one calm tinted look, the user's own "
+        "selected chip is a strong solid saturated accent fill. If all look the same, nobody reacted.\n"
+        'Answer ONLY one JSON object: {"selected_emoji": "<emoji>"|null}. null if unsure, if all look alike or if no chips.')
+    txt, err = ai_request(prompt, [small_jpeg(img)] + extra)
+    if not txt:
+        return None, err
+    return parse_json(txt)
 
 
 def judge(v, has_hint):
-    """تصمیم کاملاً خودکار: approve یا reject (نامطمئن = رد با درخواست عکس واضح‌تر؛ کاربر می‌تونه دوباره بفرسته)"""
+    """تصمیم روی بررسی کلی: approve یا reject (نامطمئن = رد)"""
     if not isinstance(v, dict):
         return "reject", "بررسی عکس الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن"
     try:
@@ -614,48 +648,40 @@ def judge(v, has_hint):
         return "reject", "پست مورد نظر داخل عکس دیده نمی‌شه"
     if v.get("post_match") is False:
         return "reject", "پست داخل عکس با تسک نمی‌خونه"
-    if v.get("reaction_highlighted") is not True or not v.get("highlighted_reaction"):
-        return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
-    chips = [x for x in (v.get("chips") or []) if isinstance(x, dict)]
-    styles = [str(x.get("style")) for x in chips]
-    if len(chips) >= 2 and len(set(styles)) == 1:
-        return "reject", "همه‌ی ری‌اکشن‌های زیر پست یک شکل‌ان؛ ری‌اکشن خودت مشخص نیست"
-    if len(chips) == 1 and styles[0] != "solid":
-        return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
     if not time_ok(v.get("status_bar_time")):
         return "reject", f"ساعت داخل عکس ({v.get('status_bar_time')}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
     return "approve", ""
 
 
 def ai_verdict(img, c):
-    """دو بررسی با پرامپت متفاوت (کلی + فقط ری‌اکشن)؛ فقط اگه هر دو تأیید کنن تأیید می‌شه. خروجی: (حکم، دلیل، خطا)"""
-    v, err = ai_check(img, c)
+    """۱) چک پیکسلی چیپ پررنگ  ۲) بررسی کلی مدل (کانال/پست/ساعت)  ۳) مدل فقط می‌گه چیپ پررنگ مال پست تسکه یا نه. خروجی: (حکم، دلیل، خطا)"""
+    boxes = find_chips(img) if PIXEL_CHECK else None
+    if boxes is not None and not boxes:
+        return "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو (چیپ پررنگ) زیر پست دیده نمی‌شه", ""
+    v, err = ai_retry(ai_check, small_jpeg(img), c)
     if v is None:
         return None, "", err
     verdict, why = judge(v, True)
-    if verdict == "approve" and PIXEL_CHECK:                 # چک پیکسلی فقط روی ردیف چیپ‌های خودِ پست تسک
-        try:
-            yc = float(v.get("target_chips_row_y_pct")) / 100
-            if not 0 <= yc <= 1:
-                raise ValueError
-        except (TypeError, ValueError):
-            yc = None
-        if yc is None:
-            verdict, why = "reject", "ری‌اکشن زیر پستِ تسک دیده نمی‌شه؛ کل پست رو با ری‌اکشن‌هاش داخل کادر بگیر"
-        elif has_selected_chip(img, yc) is False:
-            verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (ری‌اکشن پست دیگه حساب نمی‌شه)"
     r = None
     if verdict == "approve":
-        r, err = ai_reaction_check(img, c)
-        if r is None:
-            return None, "", err
-        if r.get("all_chips_identical") is True or not str(r.get("selected_emoji") or "").strip():
-            verdict, why = "reject", "ری‌اکشن انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه (همه‌ی ری‌اکشن‌ها یک شکل‌ان)"
+        if boxes:
+            r, err = ai_retry(ai_owner_check, img, boxes, c)
+            if r is None:
+                return None, "", err
+            own = [t for t in (r.get("tags") or []) if isinstance(t, dict) and t.get("own_post") is True]
+            if not own:
+                verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (ری‌اکشن پست دیگه حساب نمی‌شه)"
+        else:
+            r, err = ai_retry(ai_reaction_check, img, c)
+            if r is None:
+                return None, "", err
+            if not str(r.get("selected_emoji") or "").strip():
+                verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه"
     if verdict != "approve":
-        log.info("ai reject: %s | %s | %s", why, json.dumps(v, ensure_ascii=False)[:600], json.dumps(r, ensure_ascii=False)[:400])
+        log.info("ai reject: %s | %s | %s | %s", why, json.dumps(v, ensure_ascii=False)[:500], json.dumps(r, ensure_ascii=False)[:300], boxes)
         if AI_DEBUG:
             for a in ADMINS:
-                send(a, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:900] + "\n" + json.dumps(r, ensure_ascii=False)[:600])
+                send(a, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:700] + "\n" + json.dumps(r, ensure_ascii=False)[:400])
         return "reject", why, ""
     return "approve", "", ""
 
