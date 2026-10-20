@@ -402,9 +402,53 @@ def time_ok(s):
     return min(d, 720 - d) <= 12
 
 
+def ai_request(prompt, img, mime="image/jpeg"):
+    """تماس با API سازگار با OpenAI. خروجی: (متن، خطا). خطا شامل کد HTTP و پاسخ سرور است تا علت واقعی معلوم بشه"""
+    url = AI_BASE_URL + "/chat/completions"
+    msgs = [{"role": "user", "content": [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(img).decode()}}]}]
+    base = {"model": AI_MODEL, "messages": msgs}
+    err = ""
+    # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
+    for body in (dict(base, temperature=0, max_tokens=500), dict(base, max_completion_tokens=500), base):
+        try:
+            r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=60)
+        except Exception as e:
+            return None, f"اتصال به {url} ناموفق: {e}"
+        try:
+            j = r.json()
+        except Exception:
+            return None, f"HTTP {r.status_code} پاسخ غیر JSON: {getattr(r, 'text', '')[:200]}"
+        if r.status_code == 200 and j.get("choices"):
+            c = (j["choices"][0].get("message") or {}).get("content")
+            if isinstance(c, list):
+                c = " ".join(p.get("text", "") for p in c if isinstance(p, dict))
+            if c and str(c).strip():
+                return str(c), ""
+            err = f"پاسخ خالی از مدل: {str(j)[:300]}"
+        else:
+            err = f"HTTP {r.status_code}: {str(j)[:300]}"
+        if r.status_code != 400:
+            break
+    return None, err
+
+
+_ai_alert = {"t": 0}
+
+
+def ai_alert(err):
+    log.warning("ai error: %s", err)
+    if time.time() - _ai_alert["t"] > 600:
+        _ai_alert["t"] = time.time()
+        for a in ADMINS:
+            send(a, "⚠️ خطای مدل ویژن (دستور /aitest برای تست دستی):\n" + err[:800])
+
+
 def ai_check(img, c):
+    """خروجی: (دیکشنری نتیجه یا None، متن خطا)"""
     if not AI_ON:
-        return None
+        return None, "AI_BASE_URL / AI_API_KEY / AI_MODEL تنظیم نشده"
     hint = (f'Expected post text/keyword: "{c["hint"]}".' if c.get("hint") else "No post text hint was provided.")
     prompt = (
         'You verify a user-submitted Telegram screenshot for a "react to this post" task.\n'
@@ -418,17 +462,14 @@ def ai_check(img, c):
         "- reaction_highlighted: under the post one reaction chip is visibly highlighted/selected (the user's own reaction). "
         "false if reactions are visible but none is selected; null if no reactions are visible.\n"
         "- status_bar_time: the phone clock in the status bar if readable, else null.")
+    txt, err = ai_request(prompt, img)
+    if not txt:
+        return None, err
+    m = re.search(r"\{.*\}", txt, re.S)
     try:
-        r = requests.post(AI_BASE_URL + "/chat/completions", headers={"Authorization": "Bearer " + AI_API_KEY}, timeout=60, json={
-            "model": AI_MODEL, "temperature": 0, "max_tokens": 300,
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}}]}]})
-        txt = r.json()["choices"][0]["message"]["content"]
-        return json.loads(re.search(r"\{.*\}", txt, re.S).group(0))
-    except Exception as e:
-        log.warning("ai_check failed: %s", e)
-        return None
+        return json.loads(m.group(0)), ""
+    except Exception:
+        return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
 
 
 def judge(v, has_hint):
@@ -479,7 +520,14 @@ def verify_shot(uid, chat, cid_s, ph):
                     return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.",
                                 [[btn("🏠 منو", "home")]])
             db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
-        verdict, why = judge(ai_check(img, c), bool(c.get("hint")))
+        v, err = ai_check(img, c)
+        if v is None:                                   # مشکل از سرویس مدله، نه از عکس کاربر
+            db.shots.delete_one({"_id": fid})
+            db.counters.update_one({"_id": f"ai:{uid}:{day()}"}, {"$inc": {"n": -1}})
+            ai_alert(err)
+            return send(chat, "⚠️ سرویس بررسی عکس الان در دسترس نیست (مشکل از عکس تو نیست). "
+                              "چند دقیقه دیگه دوباره «انجام دادم» رو بزن.", [[btn("🎯 تسک‌ها", "earn")]])
+        verdict, why = judge(v, bool(c.get("hint")))
         if verdict == "reject":
             db.shots.delete_one({"_id": fid})
             return send(chat, f"❌ {why}.\nاگه تسک رو درست انجام دادی، از همین تسک دوباره «انجام دادم» رو بزن و عکس بهتری بفرست.",
@@ -741,6 +789,11 @@ def admin_cmd(uid, chat, cmd, args):
         by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "paid", "reversed")}
         return send(chat, f"📊 کاربران: {db.users.count_documents({})}\nکمپین فعال: {db.campaigns.count_documents({'status': 'active'})}\n"
                           + "\n".join(f"{k}: {v}" for k, v in by.items()))
+    if cmd == "aitest":
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+        txt, err = ai_request('Reply with only this JSON: {"ok": true}', png, "image/png")
+        return send(chat, (f"✅ مدل جواب داد:\n{txt[:500]}" if txt else f"❌ خطا:\n{err}")
+                    + f"\n\nBASE: {AI_BASE_URL or '-'}\nMODEL: {AI_MODEL or '-'}")
     if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
         add_points(int(args[0]), int(args[1]), "admin")
         return send(chat, "انجام شد.")
@@ -755,7 +808,7 @@ def admin_cmd(uid, chat, cmd, args):
         if r:
             add_points(r["owner"], r["remaining"] * r["cost"], "refund", r["_id"])
         return send(chat, "کمپین متوقف شد و باقی‌مانده برگشت خورد." if r else "کمپین فعالی پیدا نشد.")
-    send(chat, "دستورها: /stats  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
+    send(chat, "دستورها: /stats  /aitest  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
 
 
 # ───────────────────────── مسیریابی آپدیت‌ها ─────────────────────────
