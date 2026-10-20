@@ -5,7 +5,7 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
 
 مدل کار:
 - کاربر با انجام تسک «امتیاز» می‌گیره و با امتیاز، تسک خودش رو ثبت می‌کنه (هزینه‌ی ثبت > پاداش؛ اقتصاد تورم نمی‌کنه)
-- امتیاز بعد از انجام تسک HOLD_HOURS ساعت «معلق» می‌مونه، بعد دوباره چک می‌شه و قطعی می‌شه
+- عضویتِ تأییدشده، بازدید پس از رعایت زمان، و ری‌اکشنِ قابل‌تأیید پاداش فوری می‌گیرند؛ موارد نیازمند بررسی/تأیید شمارش طبق مسیر مخصوص خودشان مدیریت می‌شوند
 - عضویت  : getChatMember (ربات باید ادمین کانال/گروه باشه) + چک دوباره‌ی آخر دوره‌ی معلق (لفت = برگشت امتیاز + اخطار)
 - ری‌اکشن : گروه/سوپرگروه با ربات ادمین → تأیید فردی با message_reaction
             کانال → تأیید تجمیعی با message_reaction_count؛ هر واحد افزایش شمارش حداکثر یک ادعا را تأیید می‌کند.
@@ -68,7 +68,7 @@ REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # �
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v36-forward-post-input"
+VERSION      = "v38-task-destination-return-view-9s"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -86,7 +86,7 @@ TZ_NAME      = os.environ.get("TZ_NAME", "Asia/Tehran")        # برای مقا
 TYPES = {
     "join":  {"title": "👥 عضویت",   "reward": 3, "cost": 4, "wait": 0},
     "react": {"title": "❤️ ری‌اکشن", "reward": 2, "cost": 3, "wait": 10},
-    "view":  {"title": "👁 بازدید",  "reward": 1, "cost": 2, "wait": 15},
+    "view":  {"title": "👁 بازدید",  "reward": 1, "cost": 2, "wait": 9},
 }
 
 logging.basicConfig(level=logging.INFO)
@@ -327,6 +327,15 @@ def bot_deep_link(cid):
     return f"https://t.me/{username}?start=task_{cid}" if username else ""
 
 
+def task_listing_url(c):
+    """لینک مستقیم همان پست تسک در کانال ویترین، با fallback به خود کانال."""
+    mid = c.get("listing_message_id")
+    name = TASKS_CHANNEL.lstrip("@")
+    if mid and name and not name.startswith("-") and re.fullmatch(r"[A-Za-z0-9_]{5,32}", name):
+        return f"https://t.me/{name}/{mid}"
+    return tasks_channel_url()
+
+
 def main_kb():
     rows = [[btn("🎯 شروع کسب امتیاز", "earn")],
             [btn("➕ ساخت کمپین", "new"), btn("📊 کمپین‌های من", "my")]]
@@ -543,12 +552,21 @@ def claim_text(code, c):
             "dup": "این تسک رو قبلاً انجام دادی."}[code]
 
 
-def after_ok(cq, chat, mid, c):
-    ans(cq, "✅ ثبت شد")
-    view(chat, mid, f"🕓 <b>درخواستت ثبت شد و در انتظار بررسی است.</b>\n\n"
-         f"🎁 پاداش این تسک: {c['reward']} امتیاز\n"
-         f"⏳ بررسی نهایی حداکثر تا {HOLD_HOURS:g} ساعت انجام می‌شود. اگر تسک تأیید شود، پاداش به موجودی‌ات اضافه می‌شود و پیام دریافت می‌کنی.",
-         [[btn("📣 بازگشت به کانال تسک‌ها", url=tasks_channel_url(), style="primary")], [btn("🏠 منوی اصلی", "home")]])
+def after_ok(cq, chat, mid, c, comp=None):
+    """تسک بازدید بعد از گذشت زمان لازم فوراً پاداش می‌گیرد؛ بازدید واقعی قابل اثبات قطعی نیست."""
+    ans(cq, "🎉 پاداش واریز شد")
+    if comp:
+        moved = db.completions.update_one(
+            {"_id": comp["_id"], "status": "pending"},
+            {"$set": {"status": "settling", "verified_at": time.time(), "due": time.time(), "lock": time.time()}}
+        )
+        if moved.modified_count:
+            pay(comp)
+    return view(chat, mid,
+         f"🎉 <b>درخواستت ثبت شد و پاداش پرداخت شد!</b>\n\n"
+         f"💰 {c['reward']} امتیاز به موجودی‌ات اضافه شد.",
+         [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")],
+          [btn("🎯 تسک بعدی", "earn", style="success")], [btn("🏠 منوی اصلی", "home")]])
 
 
 def on_claim(cq, uid, chat, mid, cid_s):
@@ -621,7 +639,7 @@ def on_claim(cq, uid, chat, mid, cid_s):
                                f"⏱ مهلت انجام: {window_min} دقیقه\n\n"
                                f"منتظر آپدیت شمارش تلگرام هستیم؛ ممکن است چند دقیقه طول بکشد (حداکثر فرصت اضافه: {REACTION_UPDATE_GRACE // 60} دقیقه). "
                                "اگر افزایش معتبر شمارش در بازهٔ تسک ثبت شود، پاداش به‌صورت خودکار و فوری واریز می‌شود و پیام تأیید می‌گیری.",
-                    [[btn("📣 بازگشت به کانال تسک‌ها", url=tasks_channel_url(), style="primary")], [btn("🏠 منوی اصلی", "home")]])
+                    [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")], [btn("🏠 منوی اصلی", "home")]])
     elif c["type"] == "react":
         db.states.replace_one({"_id": uid}, {"_id": uid, "step": "shot", "cid": str(cid), "t": time.time()}, upsert=True)
         ans(cq)
@@ -631,7 +649,7 @@ def on_claim(cq, uid, chat, mid, cid_s):
 
     # عضویت و ری‌اکشنِ قابل‌تأیید با Bot API همان لحظه بررسی شده‌اند؛
     # برای این دو نوع تسک پاداش را بی‌دلیل ۲۴ ساعت معلق نکن.
-    instant = (c.get("type") == "join" or
+    instant = (c.get("type") in ("join", "view") or
                (c.get("type") == "react" and c.get("mode") == "auto"))
     code, comp = grant(uid, c, "pending")
     if code != "ok":
@@ -646,10 +664,11 @@ def on_claim(cq, uid, chat, mid, cid_s):
             pay(comp)
         ans(cq, "✅ بررسی شد و پاداش واریز شد")
         return view(chat, mid,
-                    f"🎉 <b>تسک تأیید شد!</b>\n\n💰 پاداش {c['reward']} امتیاز همین حالا به موجودی‌ات اضافه شد.",
-                    [[btn("🎯 تسک بعدی", "earn", style="success")],
+                    f"🎉 <b>تسک ثبت شد و پاداش پرداخت شد!</b>\n\n💰 {c['reward']} امتیاز همین حالا به موجودی‌ات اضافه شد.",
+                    [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")],
+                     [btn("🎯 تسک بعدی", "earn", style="success")],
                      [btn("👤 حساب کاربری", "acc", style="primary")]])
-    after_ok(cq, chat, mid, c)
+    after_ok(cq, chat, mid, c, comp)
 
 
 # ───────────────────────── اسکرین‌شات: ضدتکرار + مدل ویژن ─────────────────────────
@@ -1315,7 +1334,13 @@ def pay(comp):
         return
     db.users.update_one({"_id": comp["uid"]}, {"$inc": {"hold": -comp["reward"], "points": comp["reward"], "earned": comp["reward"]}})
     ledger(comp["uid"], comp["reward"], "task", comp["cid"])
-    send(comp["uid"], f"🎉 <b>تسکت تأیید شد!</b>\n\n💰 پاداش {comp['reward']} امتیاز با موفقیت به موجودی‌ات اضافه شد. ممنون از مشارکتت ❤️", [[btn("🎯 انجام تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]])
+    c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
+    kb = []
+    task_url = link_of(c) if c else tasks_channel_url()
+    if task_url:
+        kb.append([btn("↩️ بازگشت به انجام مأموریت", url=task_url, style="primary")])
+    kb.extend([[btn("🎯 انجام تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]])
+    send(comp["uid"], f"🎉 <b>تسکت تأیید شد!</b>\n\n💰 پاداش {comp['reward']} امتیاز با موفقیت به موجودی‌ات اضافه شد. ممنون از مشارکتت ❤️", kb)
 
 
 def settle(comp):
@@ -1734,7 +1759,7 @@ def open_linked_task(uid, chat, cid_s):
                 "، درخواستت را ثبت کن.\n\n"
                 "درخواست پس از بررسی تأیید یا رد می‌شود و نتیجه همین‌جا اعلام خواهد شد.",
                 [[btn("✅ انجام دادم", f"c:{cid}", style="success")],
-                 [btn("📣 بازگشت به کانال", url=tasks_channel_url(), style="primary")]])
+                 [btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")]])
 
 
 def on_message(msg):
