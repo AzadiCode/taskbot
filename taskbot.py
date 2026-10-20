@@ -561,12 +561,11 @@ def after_ok(cq, chat, mid, c, comp=None):
             {"$set": {"status": "settling", "verified_at": time.time(), "due": time.time(), "lock": time.time()}}
         )
         if moved.modified_count:
-            pay(comp)
+            pay(comp, notify=False)
     return view(chat, mid,
-         f"🎉 <b>درخواستت ثبت شد و پاداش پرداخت شد!</b>\n\n"
+         f"🎉 <b>تسک ثبت شد و پاداش پرداخت شد!</b>\n\n"
          f"💰 {c['reward']} امتیاز به موجودی‌ات اضافه شد.",
-         [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")],
-          [btn("🎯 تسک بعدی", "earn", style="success")], [btn("🏠 منوی اصلی", "home")]])
+         [[btn("🎯 تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]])
 
 
 def on_claim(cq, uid, chat, mid, cid_s):
@@ -661,12 +660,11 @@ def on_claim(cq, uid, chat, mid, cid_s):
             {"$set": {"status": "settling", "lock": time.time()}}
         )
         if moved.modified_count:
-            pay(comp)
+            pay(comp, notify=False)
         ans(cq, "✅ بررسی شد و پاداش واریز شد")
         return view(chat, mid,
                     f"🎉 <b>تسک ثبت شد و پاداش پرداخت شد!</b>\n\n💰 {c['reward']} امتیاز همین حالا به موجودی‌ات اضافه شد.",
-                    [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")],
-                     [btn("🎯 تسک بعدی", "earn", style="success")],
+                    [[btn("🎯 تسک بعدی", "earn", style="success")],
                      [btn("👤 حساب کاربری", "acc", style="primary")]])
     after_ok(cq, chat, mid, c, comp)
 
@@ -1327,7 +1325,7 @@ def undo(comp, had_hold, strike, why):
     send(comp["uid"], f"⚠️ {why}" + (f"\nیک اخطار ثبت شد ({STRIKE_LIMIT} اخطار = بسته شدن انجام تسک)." if strike else ""))
 
 
-def pay(comp):
+def pay(comp, notify=True):
     r = db.completions.find_one_and_update({"_id": comp["_id"], "status": "settling"},
                                            {"$set": {"status": "paid", "paid": time.time()}})
     if not r:
@@ -1335,12 +1333,9 @@ def pay(comp):
     db.users.update_one({"_id": comp["uid"]}, {"$inc": {"hold": -comp["reward"], "points": comp["reward"], "earned": comp["reward"]}})
     ledger(comp["uid"], comp["reward"], "task", comp["cid"])
     c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
-    kb = []
-    task_url = link_of(c) if c else tasks_channel_url()
-    if task_url:
-        kb.append([btn("↩️ بازگشت به انجام مأموریت", url=task_url, style="primary")])
-    kb.extend([[btn("🎯 انجام تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]])
-    send(comp["uid"], f"🎉 <b>تسکت تأیید شد!</b>\n\n💰 پاداش {comp['reward']} امتیاز با موفقیت به موجودی‌ات اضافه شد. ممنون از مشارکتت ❤️", kb)
+    if notify:
+        kb = [[btn("🎯 انجام تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]]
+        send(comp["uid"], f"🎉 <b>تسکت تأیید شد!</b>\n\n💰 پاداش {comp['reward']} امتیاز با موفقیت به موجودی‌ات اضافه شد. ممنون از مشارکتت ❤️", kb)
 
 
 def settle(comp):
