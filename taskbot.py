@@ -36,8 +36,21 @@ ADMINS      = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""
 # مدل ویژن (اختیاری؛ هر API سازگار با OpenAI). اگه تنظیم نشه، اسکرین‌شات‌ها می‌رن برای بازبینی صاحب کمپین
 AI_BASE_URL = re.sub(r"/chat/completions/?$", "", os.environ.get("AI_BASE_URL", "").strip().rstrip("/"))
 AI_API_KEY  = os.environ.get("AI_API_KEY", "")
-AI_MODEL    = os.environ.get("AI_MODEL", "")
-AI_ON       = bool(AI_BASE_URL and AI_API_KEY and AI_MODEL)
+# AI_MODEL می‌تونه چند مدل باشه (با ویرگول، ; یا خط جدید جدا کن). ترتیب = اولویت. هر آیتم یکی از این شکل‌هاست:
+#   model                       ← با AI_BASE_URL و AI_API_KEY بالا
+#   model|https://base/v1       ← همون کلید، سرویس دیگه
+#   model|https://base/v1|key   ← سرویس و کلید جدا
+AI_ENDPOINTS = []
+for _it in re.split(r"[,;\n]+", os.environ.get("AI_MODEL", "")):
+    _p = [x.strip() for x in _it.split("|")]
+    if _p[0]:
+        _b = re.sub(r"/chat/completions/?$", "", (_p[1] if len(_p) > 1 and _p[1] else AI_BASE_URL).rstrip("/"))
+        _k = _p[2] if len(_p) > 2 and _p[2] else AI_API_KEY
+        _lab = _p[0] if _b == AI_BASE_URL else f"{_p[0]}@{_b.split('//')[-1].split('/')[0]}"
+        AI_ENDPOINTS.append({"label": _lab, "model": _p[0], "base": _b, "key": _k})
+AI_MODEL    = AI_ENDPOINTS[0]["model"] if AI_ENDPOINTS else ""
+AI_ON       = any(e["base"] and e["key"] for e in AI_ENDPOINTS)
+AI_BUDGET   = int(os.environ.get("AI_BUDGET", "60"))                # سقف کل ثانیه‌ی یک درخواست (همه‌ی مدل‌ها روی هم)
 
 START_POINTS = int(os.environ.get("START_POINTS", "20"))        # هدیه‌ی شروع
 HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
@@ -48,7 +61,7 @@ MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v28-failclosed"
+VERSION      = "v28-multimodel"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_REQUIRED = os.environ.get("CLOCK_REQUIRED", "1") != "0"       # =0: اگه ساعت خونده نشد رد نکن
 try:
@@ -423,36 +436,99 @@ def now_str():
         return datetime.now(timezone(timedelta(hours=3, minutes=30))).strftime("%H:%M")
 
 
-def ai_request(prompt, img, mime="image/jpeg"):
-    imgs = img if isinstance(img, list) else [img]
-    """تماس با API سازگار با OpenAI. خروجی: (متن، خطا). خطا شامل کد HTTP و پاسخ سرور است تا علت واقعی معلوم بشه"""
-    url = AI_BASE_URL + "/chat/completions"
-    msgs = [{"role": "user", "content": [{"type": "text", "text": prompt}] + [
-        {"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(x).decode()}} for x in imgs]}]
-    base = {"model": AI_MODEL, "messages": msgs}
-    err = ""
+_mlock = threading.Lock()
+_morder = [e["label"] for e in AI_ENDPOINTS]
+_mstat = {e["label"]: {"fails": 0, "until": 0.0, "err": "", "ms": None} for e in AI_ENDPOINTS}
+_mby = {e["label"]: e for e in AI_ENDPOINTS}
+
+
+def _model_list():
+    """مدل‌های آماده به ترتیب اولویت؛ مدل‌هایی که تازه خراب شدن (در استراحت) آخر صف می‌رن و فقط اگه بقیه جواب ندادن امتحان می‌شن"""
+    now = time.time()
+    with _mlock:
+        ready = [m for m in _morder if _mstat[m]["until"] <= now]
+        cool = sorted((m for m in _morder if _mstat[m]["until"] > now), key=lambda m: _mstat[m]["until"])
+    return ready + cool
+
+
+def _mark_fail(m, err, hard=False):
+    with _mlock:
+        st = _mstat[m]
+        st["fails"] += 1
+        st["err"] = err[:160]
+        st["until"] = time.time() + (600 if hard else min(30 * 2 ** (st["fails"] - 1), 600))
+        if m in _morder:
+            _morder.remove(m)
+            _morder.append(m)                      # مدل خراب می‌ره آخر صف
+    log.warning("AI model %s failed (%s) -> moved to end of queue", m, err[:120])
+
+
+def _mark_ok(m, ms):
+    with _mlock:
+        _mstat[m].update(fails=0, until=0.0, err="", ms=ms)
+
+
+def _json_ok(txt):
+    m = re.search(r"\{.*\}", txt or "", re.S)
+    try:
+        json.loads(m.group(0))
+        return True
+    except Exception:
+        return False
+
+
+def _ai_call(e, msgs, timeout):
+    """یک تماس با یک مدل. خروجی: (متن، خطا، hard) ؛ hard = خطای دائمی (کلید/نام مدل غلط) → استراحت طولانی"""
+    url = e["base"] + "/chat/completions"
+    base = {"model": e["model"], "messages": msgs}
+    err, hard = "", False
     # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
     for body in (dict(base, temperature=0, max_tokens=600), dict(base, max_completion_tokens=600), base):
         try:
-            r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=AI_TIMEOUT)
-        except Exception as e:
-            return None, f"اتصال به {url} ناموفق: {e}"
+            r = requests.post(url, headers={"Authorization": "Bearer " + e["key"]}, json=body, timeout=timeout)
+        except Exception as ex:
+            return None, f"اتصال/تایم‌اوت: {str(ex)[:120]}", False
         try:
             j = r.json()
         except Exception:
-            return None, f"HTTP {r.status_code} پاسخ غیر JSON: {getattr(r, 'text', '')[:200]}"
+            return None, f"HTTP {r.status_code} پاسخ غیر JSON: {getattr(r, 'text', '')[:120]}", r.status_code in (401, 403, 404)
         if r.status_code == 200 and j.get("choices"):
             c = (j["choices"][0].get("message") or {}).get("content")
             if isinstance(c, list):
                 c = " ".join(p.get("text", "") for p in c if isinstance(p, dict))
             if c and str(c).strip():
-                return str(c), ""
-            err = f"پاسخ خالی از مدل: {str(j)[:300]}"
+                if _json_ok(str(c)):
+                    return str(c), "", False
+                return None, f"پاسخ JSON نبود: {str(c)[:100]}", False
+            err = f"پاسخ خالی: {str(j)[:150]}"
         else:
-            err = f"HTTP {r.status_code}: {str(j)[:300]}"
+            err = f"HTTP {r.status_code}: {str(j)[:200]}"
+            hard = r.status_code in (401, 403, 404)
         if r.status_code != 400:
             break
-    return None, err
+    return None, err, hard
+
+
+def ai_request(prompt, img, mime="image/jpeg", only=None):
+    """تماس با مدل‌ها به ترتیب اولویت؛ هر مدلی خطا/تایم‌اوت/پاسخ غیر JSON بده، می‌ره آخر صف و فوری مدل بعدی امتحان می‌شه.
+    خروجی: (متن، خطا). only = فقط همین مدل (برای /aitest)"""
+    imgs = img if isinstance(img, list) else [img]
+    msgs = [{"role": "user", "content": [{"type": "text", "text": prompt}] + [
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(x).decode()}} for x in imgs]}]
+    deadline, errs = time.time() + AI_BUDGET, []
+    for m in ([only] if only else _model_list()):
+        remain = deadline - time.time()
+        if remain < 3:
+            errs.append("سقف زمانی تموم شد")
+            break
+        t0 = time.time()
+        txt, err, hard = _ai_call(_mby[m], msgs, min(AI_TIMEOUT, remain))
+        if txt:
+            _mark_ok(m, int((time.time() - t0) * 1000))
+            return txt, ""
+        _mark_fail(m, err, hard)
+        errs.append(f"{m}: {err}")
+    return None, " | ".join(errs)[:900] or "هیچ مدلی تنظیم نشده"
 
 
 _ai_alert = {"t": 0}
@@ -1082,11 +1158,20 @@ def admin_cmd(uid, chat, cmd, args):
                           + "\n".join(f"{k}: {v}" for k, v in by.items()))
     if cmd == "aitest":
         png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
-        txt, err = ai_request('Reply with only this JSON: {"ok": true}', png, "image/png")
-        return send(chat, (f"✅ مدل جواب داد:\n{txt[:500]}" if txt else f"❌ خطا:\n{err}")
-                    + f"\n\nBASE: {AI_BASE_URL or '-'}\nMODEL: {AI_MODEL or '-'}"
+        res = {}
+
+        def _t(m):
+            t0 = time.time()
+            txt, err = ai_request('Reply with only this JSON: {"ok": true}', png, "image/png", only=m)
+            res[m] = (bool(txt), round(time.time() - t0, 1), (txt or err)[:90])
+        ths = [threading.Thread(target=_t, args=(e["label"],)) for e in AI_ENDPOINTS]
+        [t.start() for t in ths]
+        [t.join(AI_TIMEOUT + 10) for t in ths]
+        lines = [(f"✅ {m} — {res[m][1]}s" if res[m][0] else f"❌ {m} — {res[m][1]}s\n    {res[m][2]}") for m in [e["label"] for e in AI_ENDPOINTS] if m in res]
+        return send(chat, "تست تک‌تک مدل‌ها:\n" + ("\n".join(lines) or "هیچ مدلی تنظیم نشده")
+                    + "\n\nترتیب فعلی اولویت:\n" + "\n".join(f"{i}. {m}" for i, m in enumerate(_model_list(), 1))
                     + f"\n\nنسخه: {VERSION}\nPillow: {'✅' if PIL_OK else '❌ نصب نیست'}\nPIXEL_CHECK: {PIXEL_CHECK}  CLOCK_REQUIRED: {CLOCK_REQUIRED}"
-                    + f"\nTIME_TOL: {TIME_TOL}  TZ: {TZ_NAME}  ساعت سرور: {now_str()}  AI_TIMEOUT: {AI_TIMEOUT}")
+                    + f"\nTIME_TOL: {TIME_TOL}  TZ: {TZ_NAME}  ساعت سرور: {now_str()}  AI_TIMEOUT: {AI_TIMEOUT}  AI_BUDGET: {AI_BUDGET}")
     if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
         add_points(int(args[0]), int(args[1]), "admin")
         return send(chat, "انجام شد.")
