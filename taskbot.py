@@ -33,6 +33,8 @@ BASE_URL    = os.environ["BASE_URL"].rstrip("/")                 # مثلا http
 MONGO_URI   = os.environ.get("MONGO_URI", "").strip()           # خالی = حافظه‌ی موقت (ذخیره نمی‌شه)
 SECRET_KEY  = os.environ.get("SECRET_KEY", BOT_TOKEN)
 ADMINS      = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""))}   # مثلا 12345,67890
+TASKS_CHANNEL = os.environ.get("TASKS_CHANNEL", "").strip()  # مثلا @MyTasksChannel؛ ربات باید ادمین کانال باشد
+TASKS_CHANNEL_URL = os.environ.get("TASKS_CHANNEL_URL", "").strip()  # اختیاری؛ لینک عمومی کانال فهرست تسک‌ها
 
 # مدل ویژن (اختیاری؛ هر API سازگار با OpenAI). اگه تنظیم نشه، اسکرین‌شات‌ها می‌رن برای بازبینی صاحب کمپین
 AI_BASE_URL = re.sub(r"/chat/completions/?$", "", os.environ.get("AI_BASE_URL", "").strip().rstrip("/"))
@@ -65,7 +67,7 @@ SHOT_WINDOW  = 600                                              # مهلت ار�
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # فرصت اضافه برای تأخیر آپدیت شمارش تلگرام
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v32-channel-count"
+VERSION      = "v33-polished-task-channel"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -130,21 +132,40 @@ def btn(text, data=None, url=None):
     return {"text": text, "url": url} if url else {"text": text, "callback_data": data}
 
 
+_HTML_TAG_RE = re.compile(r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote)>|<a\s+href=(?:\"[^\"]*\"|'[^']*')\s*>|</a>", re.I)
+
+def telegram_html(text):
+    """HTML امن برای Bot API: متن معمولی escape می‌شود و فقط تگ‌های مجاز تلگرام حفظ می‌شوند."""
+    import html
+    raw = str(text or "")
+    out, pos = [], 0
+    for m in _HTML_TAG_RE.finditer(raw):
+        out.append(html.escape(raw[pos:m.start()], quote=False))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(html.escape(raw[pos:], quote=False))
+    return "".join(out)
+
+
 def send(chat, text, kb=None):
-    p = {"chat_id": chat, "text": text[:4000], "disable_web_page_preview": True}
+    p = {"chat_id": chat, "text": telegram_html(str(text)[:4000]), "parse_mode": "HTML", "disable_web_page_preview": True}
     if kb:
         p["reply_markup"] = {"inline_keyboard": kb}
     return tg("sendMessage", **p)
 
 
 def view(chat, mid, text, kb=None):
-    """اگه پیام قبلی هست ویرایشش می‌کنه (منوها تمیز بمونن)، وگرنه پیام جدید می‌فرسته"""
+    """پیام قبلی را ویرایش می‌کند تا منوها مرتب بمانند؛ در غیر این صورت پیام تازه می‌فرستد."""
+    safe_text = telegram_html(str(text)[:4000])
     if mid:
-        r = tg("editMessageText", chat_id=chat, message_id=mid, text=text[:4000],
+        r = tg("editMessageText", chat_id=chat, message_id=mid, text=safe_text, parse_mode="HTML",
                disable_web_page_preview=True, reply_markup={"inline_keyboard": kb or []})
         if r.get("ok") or "not modified" in str(r.get("description", "")):
             return
-    send(chat, text, kb)
+    p = {"chat_id": chat, "text": safe_text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if kb:
+        p["reply_markup"] = {"inline_keyboard": kb}
+    return tg("sendMessage", **p)
 
 
 def ans(cq, text=None, alert=False):
@@ -227,42 +248,64 @@ def counter_get(key):
 HOME_KB = [[btn("🏠 منوی اصلی", "home")]]
 
 
+def tasks_channel_url():
+    if TASKS_CHANNEL_URL:
+        return TASKS_CHANNEL_URL
+    name = TASKS_CHANNEL.lstrip("@")
+    if name and not name.startswith("-") and re.fullmatch(r"[A-Za-z0-9_]{5,32}", name):
+        return f"https://t.me/{name}"
+    return ""
+
+
+def bot_deep_link(cid):
+    username = _me.get("username") or ""
+    return f"https://t.me/{username}?start=task_{cid}" if username else ""
+
+
 def main_kb():
-    return [[btn("🎯 انجام تسک و کسب امتیاز", "earn")],
-            [btn("➕ ثبت تسک جدید", "new"), btn("📋 تسک‌های من", "my")],
-            [btn("📡 پایش ری‌اکشن‌ها", "rwatch")],
-            [btn("👤 حساب من", "acc"), btn("❓ راهنما", "help")]]
+    rows = [[btn("🎯 شروع کسب امتیاز", "earn")],
+            [btn("➕ ساخت کمپین", "new"), btn("📊 کمپین‌های من", "my")]]
+    ch_url = tasks_channel_url()
+    if ch_url:
+        rows.append([btn("📣 ویترین تسک‌ها", url=ch_url)])
+    rows += [[btn("📡 پایش ری‌اکشن‌ها", "rwatch")],
+             [btn("👤 حساب کاربری", "acc"), btn("📘 راهنمای استفاده", "help")]]
+    return rows
 
 
 def menu_text(u):
-    return (f"سلام {u.get('name') or ''} 👋\n\n💰 موجودی: {u.get('points', 0)} امتیاز"
-            + (f"  (⏳ معلق: {u['hold']})" if u.get("hold") else "")
-            + "\n\nبا انجام تسک‌های بقیه امتیاز بگیر و با امتیاز، عضو/ری‌اکشن/بازدید برای کانال و پست خودت بگیر.")
+    name = u.get("name") or "دوست من"
+    hold = f"\n⏳ <b>پاداش‌های در انتظار:</b> {u['hold']} امتیاز" if u.get("hold") else ""
+    channel_line = "\n📣 فهرست عمومی تسک‌ها از دکمهٔ <b>ویترین تسک‌ها</b> در دسترس است." if tasks_channel_url() else ""
+    return (f"🤖 <b>به تاسک‌پلاس خوش اومدی، {name}!</b>\n\n"
+            f"اینجا می‌تونی با انجام تسک‌های دیگران امتیاز بگیری و با امتیازت برای کانال یا پست خودت کمپین بسازی.\n\n"
+            f"💰 <b>موجودی قابل‌استفاده:</b> {u.get('points', 0)} امتیاز{hold}"
+            f"{channel_line}\n\n<b>از کجا شروع کنیم؟</b> یکی از گزینه‌های پایین رو انتخاب کن؛ من قدم‌به‌قدم راهنماییت می‌کنم.")
 
 
 def help_text():
     t = TYPES
     return (
-        "❓ راهنما\n\n"
-        "🎯 انجام تسک: تسک رو انجام بده و «انجام دادم» رو بزن؛ امتیاز بعد از بازبینی نهایی قطعی می‌شه.\n"
-        f"• {t['join']['title']}: {t['join']['reward']} امتیاز — اتوماتیک تأیید می‌شه\n"
-        f"• {t['react']['title']}: {t['react']['reward']} امتیاز — گروه با رویداد فردی؛ کانال با افزایش شمارش تجمیعی\n"
-        f"• {t['view']['title']}: {t['view']['reward']} امتیاز — با صبر کردن چند ثانیه\n\n"
-        f"⏳ پاداش عضویت {HOLD_HOURS:g} ساعت معلق می‌ماند و در پایان دوباره بررسی می‌شود. در تسک ری‌اکشن کانال، در صورت دریافت افزایش معتبر شمارش، پاداش فوری است.\n"
-        f"اخطارهای مکرر ({STRIKE_LIMIT} اخطار) انجام تسک را می‌بندد.\n\n"
-        "➕ ثبت تسک: هزینه‌ی هر واحد "
-        f"عضویت {t['join']['cost']}، ری‌اکشن {t['react']['cost']}، بازدید {t['view']['cost']} امتیازه. "
-        "ربات باید در کانال/گروه شما ادمین باشه (برای عضویت الزامیه). فقط کانال/گروه عمومی (با یوزرنیم) پشتیبانی می‌شه.\n\n"
-        "📡 ری‌اکشن در کانال: ربات باید ادمین کانال باشد. تأیید با افزایش شمارش کل ری‌اکشن‌ها انجام می‌شود، نه شناسایی هویت فردی؛ آپدیت‌های تلگرام ممکن است چند دقیقه تأخیر داشته باشند.\n"
-        "در زمان ثبت کمپین، مهلت انجام هر تسک ۲ یا ۵ دقیقه انتخاب می‌شود و در صورت دریافت افزایش معتبر شمارش، پاداش فوری پرداخت می‌شود."
-    )
+        "📘 <b>راهنمای سریع تاسک‌پلاس</b>\n\n"
+        "<b>🎯 کسب امتیاز</b>\nتسکی رو از فهرست انتخاب کن، دستورالعملش رو انجام بده و دکمهٔ «انجام دادم» رو بزن. نتیجه رو همین‌جا بهت اعلام می‌کنم.\n\n"
+        f"<b>{t['join']['title']}</b> — پاداش {t['join']['reward']} امتیاز؛ عضویت با ربات بررسی می‌شه و پاداش تا {HOLD_HOURS:g} ساعت در انتظار بازبینی می‌مونه.\n"
+        f"<b>{t['react']['title']}</b> — پاداش {t['react']['reward']} امتیاز؛ در گروه، در صورت پشتیبانی تأیید فردی انجام می‌شه؛ در کانال، افزایش شمارش کل بررسی می‌شه.\n"
+        f"<b>{t['view']['title']}</b> — پاداش {t['view']['reward']} امتیاز؛ زمان لازم رو رعایت کن.\n\n"
+        "<b>➕ ساخت کمپین</b>\nنوع تسک، لینک مقصد و تعداد موردنظرت رو وارد کن. پیش از ثبت، هزینه و روش تأیید رو بهت نشون می‌دم. برای تأیید عضویت، ربات باید ادمین کانال یا گروه مقصد باشه.\n\n"
+        "<b>📡 ری‌اکشن کانال؛ شفاف و مهم</b>\nدر این روش، افزایش شمارش کلی ری‌اکشن‌ها بررسی می‌شه؛ این شمارش هویت شخصی واکنش‌دهنده رو مشخص نمی‌کنه. تلگرام ممکنه آپدیت شمارش رو با تأخیر بفرسته، پس پرداخت فوری فقط زمانی انجام می‌شه که افزایش معتبر دریافت و به تسک اختصاص داده بشه.\n\n"
+        f"<b>🛡️ رعایت قوانین</b>\nهر کاربر برای هر کمپین فقط یک بار می‌تونه درخواست ثبت کنه. تخلف یا برداشتن عضویت/ری‌اکشن در تسک‌های مشمول بازبینی ممکنه باعث برگشت امتیاز و اخطار بشه. سقف اخطار: {STRIKE_LIMIT}.\n\n"
+        "برای دیدن تسک‌های موجود، «🎯 شروع کسب امتیاز» رو بزن؛ برای بررسی وضعیت کمپین‌های خودت، «📊 کمپین‌های من» رو انتخاب کن.")
 
 
 def acc_text(u):
     n = db.campaigns.count_documents({"owner": u["_id"], "status": "active"})
-    return (f"👤 حساب من\n\n💰 موجودی قابل خرج: {u.get('points', 0)}\n⏳ معلق: {u.get('hold', 0)}\n"
-            f"🏆 مجموع کسب‌شده: {u.get('earned', 0)}\n⚠️ اخطار: {u.get('strikes', 0)}/{STRIKE_LIMIT}\n"
-            f"📋 تسک فعال: {n}")
+    return ("👤 <b>حساب کاربری تو</b>\n\n"
+            f"💰 <b>موجودی قابل‌استفاده:</b> {u.get('points', 0)} امتیاز\n"
+            f"⏳ <b>پاداش در انتظار:</b> {u.get('hold', 0)} امتیاز\n"
+            f"🏆 <b>مجموع امتیاز کسب‌شده:</b> {u.get('earned', 0)}\n"
+            f"🛡️ <b>اخطارها:</b> {u.get('strikes', 0)} از {STRIKE_LIMIT}\n"
+            f"📋 <b>کمپین‌های فعال تو:</b> {n} از {MAX_ACTIVE}\n\n"
+            "هر زمان خواستی می‌تونی از منوی اصلی تسک انجام بدی یا کمپین تازه بسازی.")
 
 
 def link_of(c):
@@ -271,22 +314,27 @@ def link_of(c):
 
 def task_text(c):
     t = TYPES[c["type"]]
-    head = f"{t['title']}  •  پاداش: {t['reward']} امتیاز\n📌 {c.get('title') or c['uname']}\n\n"
+    head = (f"{t['title']}  ·  <b>پاداش: {t['reward']} امتیاز</b>\n"
+            f"📌 <b>مقصد:</b> {c.get('title') or c['uname']}\n\n")
     if c["type"] == "join":
-        how = (f"۱) «باز کردن» رو بزن و عضو شو\n۲) برگرد و «انجام دادم» رو بزن\n\n"
-               f"⚠️ پاداش {HOLD_HOURS:g} ساعت معلق می‌مونه؛ لفت بدی برمی‌گرده و اخطار می‌گیری.")
+        how = ("<b>مراحل انجام</b>\n۱. دکمهٔ «باز کردن مقصد» رو بزن.\n۲. عضو کانال یا گروه شو.\n۳. برگرد و «انجام دادم» رو انتخاب کن.\n\n"
+               f"⏳ پاداش به مدت {HOLD_HOURS:g} ساعت در انتظار بازبینی می‌مونه. اگر زودتر خارج بشی، امتیاز ممکنه برگشت بخوره و اخطار ثبت بشه.")
     elif c["type"] == "view":
-        how = f"۱) «باز کردن» رو بزن و پست رو ببین\n۲) حداقل {t['wait']} ثانیه صبر کن و «انجام دادم» رو بزن"
+        how = ("<b>مراحل انجام</b>\n۱. مقصد رو باز کن و پست رو ببین.\n"
+               f"۲. حداقل {t['wait']} ثانیه صبر کن.\n۳. به ربات برگرد و «انجام دادم» رو بزن.\n\n"
+               "ℹ️ توجه: بازدید به‌تنهایی از طریق Bot API قابل اثبات قطعی نیست؛ این تسک بر اساس زمان ثبت‌شده مدیریت می‌شه.")
     elif c.get("mode") == "auto":
-        how = ("۱) «باز کردن» رو بزن و روی پست ری‌اکشن بزن\n۲) «انجام دادم» رو بزن\n\n"
-               f"⚠️ ری‌اکشن رو تا {HOLD_HOURS:g} ساعت برندار؛ برداری امتیاز برمی‌گرده و اخطار می‌گیری.")
+        how = ("<b>مراحل انجام</b>\n۱. پست مقصد رو باز کن.\n۲. ری‌اکشن خواسته‌شده رو ثبت کن.\n۳. به ربات برگرد و «انجام دادم» رو بزن.\n\n"
+               f"⏳ ری‌اکشن رو تا {HOLD_HOURS:g} ساعت نگه دار؛ برداشتنش می‌تونه باعث برگشت امتیاز و ثبت اخطار بشه.")
     elif c.get("mode") == "count":
-        how = (f"۱) روی پست ری‌اکشن بزن\n۲) حداکثر تا {c.get('window_min', 5)} دقیقه «انجام دادم» رو بزن\n\n"
-               "🔎 بررسی با افزایش شمارش کل ری‌اکشن‌های پست انجام می‌شود؛ هویت فردی از شمارش قابل تشخیص نیست. "
-               "اگر افزایش معتبر در این بازه ثبت شود، پاداش فوری پرداخت می‌شود. دریافت آپدیت تلگرام ممکن است چند دقیقه دیرتر باشد.")
+        how = ("<b>مراحل انجام</b>\n۱. پست مقصد رو باز کن و ری‌اکشن بزن.\n"
+               f"۲. حداکثر تا {c.get('window_min', 5)} دقیقه به ربات برگرد و «انجام دادم» رو انتخاب کن.\n\n"
+               "📡 <b>نحوهٔ بررسی:</b> افزایش شمارش کل ری‌اکشن‌های پست بررسی می‌شه؛ این روش هویت فردی واکنش‌دهنده رو مشخص نمی‌کنه. اگر افزایش معتبر در بازهٔ تسک دریافت و به درخواستت اختصاص داده بشه، پاداش فوری واریز می‌شه.\n"
+               "⏱ ممکنه خود تلگرام آپدیت شمارش رو با تأخیر ارسال کنه؛ تا پایان بررسی، پیام وضعیت رو نگه دار.")
     else:
-        how = ("۱) «باز کردن» رو بزن و روی پست ری‌اکشن بزن\n۲) از پست اسکرین‌شات بگیر (اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ات دیده بشه)\n"
-               "۳) «انجام دادم» رو بزن و عکس رو بفرست")
+        how = ("<b>مراحل انجام</b>\n۱. پست مقصد رو باز کن و ری‌اکشن بزن.\n"
+               "۲. اسکرین‌شاتی بگیر که نام کانال، پست و ری‌اکشن انتخاب‌شده مشخص باشه.\n"
+               f"۳. به ربات برگرد، «انجام دادم» رو بزن و عکس رو ارسال کن.\n\n⏱ مهلت ارسال عکس: {SHOT_WINDOW // 60} دقیقه.")
     return head + how
 
 
@@ -344,6 +392,72 @@ def show_task(uid, chat, mid=None):
                                    [btn("⏭ بعدی", f"nx:{c['_id']}"), btn("🏠 منو", "home")]])
 
 
+def campaign_listing_text(c):
+    t = TYPES.get(c.get("type"), {"title": "📌 تسک"})
+    remaining = max(0, int(c.get("remaining", 0)))
+    completed = max(0, int(c.get("target", 0)) - remaining)
+    if c.get("status") == "cancelled":
+        state = "⛔ کمپین لغو شده"
+    elif c.get("status") == "active" and remaining:
+        state = "🟢 در حال جذب مشارکت"
+    else:
+        state = "✅ ظرفیت تکمیل شد"
+    target = c.get("title") or c.get("uname") or "تسک جدید"
+    if c.get("type") == "react" and c.get("mode") == "count":
+        method = f"📡 <b>روش بررسی:</b> شمارش تجمیعی ری‌اکشن‌ها\n⏱ <b>مهلت انجام:</b> {int(c.get('window_min', 5))} دقیقه"
+    elif c.get("type") == "join":
+        method = "🛡 <b>روش بررسی:</b> بررسی عضویت با ربات"
+    elif c.get("type") == "view":
+        method = "⏱ <b>روش بررسی:</b> رعایت زمان تعیین‌شده"
+    else:
+        method = "🛡 <b>روش بررسی:</b> بررسی ری‌اکشن"
+    return (f"✨ <b>تسک تازه در ویترین!</b>\n\n"
+            f"{t['title']}\n<b>🎯 مقصد:</b> {target}\n"
+            f"💎 <b>پاداش:</b> {c.get('reward', 0)} امتیاز\n"
+            f"👥 <b>ظرفیت اولیه:</b> {c.get('target', 0)} نفر\n"
+            f"📈 <b>ثبت‌شده:</b> {completed} از {c.get('target', 0)}\n"
+            f"🧩 <b>ظرفیت باقی‌مانده:</b> {remaining}\n{method}\n\n"
+            f"📍 <b>وضعیت:</b> {state}\n\n"
+            "برای مشاهدهٔ دستورالعمل و ثبت انجام، دکمهٔ زیر رو بزن. نتیجه و پیام واریز پاداش مستقیماً داخل ربات بهت اعلام می‌شه.")
+
+
+def campaign_listing_keyboard(c):
+    rows = []
+    deep = bot_deep_link(c.get("_id"))
+    if deep and c.get("status") == "active" and int(c.get("remaining", 0)) > 0:
+        rows.append([btn("🎯 مشاهده و انجام تسک", url=deep)])
+    target_link = link_of(c)
+    if target_link:
+        rows.append([btn("🔗 باز کردن پست مقصد", url=target_link)])
+    return rows
+
+
+def publish_campaign(c):
+    """انتشار کمپین در کانال ویترین؛ در صورت تنظیم نبودن کانال، کمپین داخل ربات همچنان در دسترس می‌ماند."""
+    if not TASKS_CHANNEL:
+        log.warning("TASKS_CHANNEL تنظیم نشده؛ کمپین %s در کانال ویترین منتشر نشد", c.get("_id"))
+        return False
+    r = tg("sendMessage", chat_id=TASKS_CHANNEL, text=telegram_html(campaign_listing_text(c)), parse_mode="HTML",
+           disable_web_page_preview=True, reply_markup={"inline_keyboard": campaign_listing_keyboard(c)})
+    if not r.get("ok"):
+        log.error("publish_campaign failed for %s: %s", c.get("_id"), r.get("description"))
+        return False
+    result = r.get("result", {})
+    db.campaigns.update_one({"_id": c["_id"]}, {"$set": {"listing_chat_id": result.get("chat", {}).get("id"),
+                                                              "listing_message_id": result.get("message_id"),
+                                                              "listed_at": time.time()}})
+    return True
+
+
+def refresh_campaign_listing(cid):
+    c = db.campaigns.find_one({"_id": cid})
+    if not c or not c.get("listing_chat_id") or not c.get("listing_message_id"):
+        return
+    tg("editMessageText", chat_id=c["listing_chat_id"], message_id=c["listing_message_id"],
+       text=telegram_html(campaign_listing_text(c)), parse_mode="HTML", disable_web_page_preview=True,
+       reply_markup={"inline_keyboard": campaign_listing_keyboard(c)})
+
+
 def grant(uid, c, status, extra=None):
     """گرفتن یک ظرفیت از کمپین + ثبت انجام. خروجی: (کد، comp)  کد: ok | full | dup | limit"""
     if not counter_take(f"d:{uid}:{day()}", DAILY_TASKS):
@@ -365,6 +479,7 @@ def grant(uid, c, status, extra=None):
         return "dup", None
     if status == "pending":
         db.users.update_one({"_id": uid}, {"$inc": {"hold": c["reward"]}})
+    refresh_campaign_listing(c["_id"])
     if r["remaining"] == 1 and status != "count_pending":
         send(c["owner"], f"🎉 کمپین «{c.get('title') or c['uname']}» ({TYPES[c['type']]['title']}) تکمیل شد!\n"
                          f"تأیید نهایی طی {HOLD_HOURS:g} ساعت انجام می‌شه و اگه کسی تخلف کنه ظرفیتش دوباره باز می‌شه.")
@@ -978,6 +1093,7 @@ def fail_count_claim(comp, reason):
     c = db.campaigns.find_one({"_id": r["cid"]}) or {}
     if c.get("status") == "active":
         db.campaigns.update_one({"_id": r["cid"], "status": "active"}, {"$inc": {"remaining": 1}})
+        refresh_campaign_listing(r["cid"])
     else:
         if c.get("cost"):
             add_points(r["owner"], c["cost"], "refund", r["cid"])
@@ -1097,6 +1213,8 @@ def undo(comp, had_hold, strike, why):
     if inc:
         db.users.update_one({"_id": comp["uid"]}, {"$inc": inc})
     r = db.campaigns.update_one({"_id": comp["cid"], "status": "active"}, {"$inc": {"remaining": 1}})
+    if r.matched_count:
+        refresh_campaign_listing(comp["cid"])
     if not r.matched_count:
         c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
         if c.get("cost"):
@@ -1178,9 +1296,9 @@ def set_state(uid, step, d):
 def start_new(cq, uid, chat, mid):
     ans(cq)
     t = TYPES
-    view(chat, mid, "➕ ثبت تسک جدید — نوعش رو انتخاب کن:\n\n"
-         + "\n".join(f"{v['title']}: هزینه‌ی هر واحد {v['cost']} امتیاز" for v in t.values()),
-         [[btn(f"{v['title']} ({v['cost']})", f"nt:{k}") for k, v in t.items()], [btn("🏠 منوی اصلی", "home")]])
+    view(chat, mid, "🧩 <b>ساخت کمپین جدید</b>\n\nاول نوع فعالیتی رو انتخاب کن که می‌خوای برای کانال یا پستت سفارش بدی. هزینهٔ هر واحد قبل از ثبت نهایی بهت نمایش داده می‌شه.\n\n"
+         + "\n".join(f"{v['title']} — <b>{v['cost']} امتیاز</b> برای هر واحد" for v in t.values()),
+         [[btn(f"{v['title']} · {v['cost']} امتیاز", f"nt:{k}") for k, v in t.items()], [btn("↩️ بازگشت به منو", "home")]])
 
 
 def pick_type(cq, uid, chat, mid, typ):
@@ -1191,11 +1309,10 @@ def pick_type(cq, uid, chat, mid, typ):
     ans(cq)
     set_state(uid, "link", {"type": typ})
     if typ == "join":
-        txt = ("👥 یوزرنیم یا لینک کانال/گروه عمومیت رو بفرست (مثلاً @mychannel).\n\n"
-               f"⚠️ اول ربات @{_me.get('username', '')} رو ادمین اون کانال/گروه کن؛ بدون اون عضویت قابل تأیید نیست.")
+        txt = ("👥 <b>مقصد کمپین عضویت</b>\n\nیوزرنیم یا لینک عمومی کانال/گروه رو بفرست؛ مثلاً <code>@mychannel</code>.\n\n"
+               f"🛡️ برای اینکه بتونم عضویت رو بررسی کنم، ابتدا ربات <code>@{_me.get('username', '')}</code> رو در مقصد ادمین کن.")
     else:
-        txt = ("🔗 لینک پست رو بفرست (مثلاً https://t.me/mychannel/123).\n"
-               "فقط پست‌های کانال/گروه عمومی (با یوزرنیم) پشتیبانی می‌شه.")
+        txt = ("🔗 <b>لینک پست مقصد</b>\n\nلینک دقیق پستی رو بفرست که می‌خوای براش کمپین بسازی؛ مثلاً <code>https://t.me/mychannel/123</code>.\n\nفقط پست‌های عمومی که با یوزرنیم در دسترس هستن پشتیبانی می‌شن.")
     view(chat, mid, txt, [[btn("❌ انصراف", "home")]])
 
 
@@ -1255,8 +1372,8 @@ def on_state_text(uid, chat, text, st):
                                       "توجه: تلگرام شمارش را از طریق API به‌صورت فوری قابل‌خواندن نمی‌کند؛ آپدیت‌ها ممکن است چند دقیقه تأخیر داشته باشند.",
                                 [[btn("❌ انصراف", "home")]])
                 set_state(uid, "window", d)
-                return send(chat, f"📡 شمارش فعلی پست دریافت شده: {snap.get('total', 0)} ری‌اکشن.\nمهلت انجام هر تسک را انتخاب کن:",
-                            [[btn("⏱ ۲ دقیقه", "rw:2"), btn("⏱ ۵ دقیقه", "rw:5")], [btn("❌ انصراف", "home")]])
+                return send(chat, f"📡 <b>پایش پست آماده است</b>\n\nآخرین شمارش دریافت‌شده: <b>{snap.get('total', 0)} ری‌اکشن</b>.\n\nحالا مهلتی رو انتخاب کن که کاربر برای انجام هر تسک در اختیار داشته باشه. توجه کن که تلگرام ممکنه خودِ آپدیت شمارش رو دیرتر ارسال کنه.",
+                            [[btn("⏱️ ۲ دقیقه", "rw:2"), btn("⏱️ ۵ دقیقه", "rw:5")], [btn("❌ لغو کمپین", "home")]])
             else:
                 if not AI_ON:
                     return send(chat, "❌ برای گروه، ربات باید ادمین باشد تا ری‌اکشن فردی را ببیند؛ برای کانال، ربات باید ادمین باشد تا شمارش تجمیعی را پایش کند.")
@@ -1345,10 +1462,23 @@ def confirm_new(cq, uid, chat, mid):
     if typ == "react" and d.get("mode") == "count":
         campaign.update(window_min=int(d.get("window_min", 5)), base_count=int(snap.get("total", 0)),
                         base_updated_at=float(snap.get("updated_at", time.time())), post_key=post_key(d["chat_id"], d["mid"]))
-    db.campaigns.insert_one(campaign)
-    ans(cq, "✅ ثبت شد")
-    view(chat, mid, f"✅ تسک ثبت شد و در لیست کاربران قرار گرفت!\nهر زمان تکمیل شد خبرت می‌کنم.",
-         [[btn("📋 تسک‌های من", "my")], [btn("🏠 منو", "home")]])
+    campaign["_id"] = db.campaigns.insert_one(campaign).inserted_id
+    listed = publish_campaign(campaign)
+    if not listed:
+        db.campaigns.update_one({"_id": campaign["_id"], "status": "active"}, {"$set": {"status": "cancelled"}})
+        add_points(uid, d["qty"] * t["cost"], "refund", campaign["_id"])
+        ans(cq, "ویترین در دسترس نیست", True)
+        return view(chat, mid,
+                    "⚠️ <b>کمپین منتشر نشد و هزینه برگشت خورد.</b>\n\n"
+                    "برای اینکه همهٔ کمپین‌ها در کانال ویترین نمایش داده بشن، مدیر ربات باید متغیر <code>TASKS_CHANNEL</code> رو تنظیم کنه، ربات رو در کانال ادمین کنه و دسترسی ارسال/ویرایش پیام بده.\n\n"
+                    "بعد از آماده شدن ویترین، می‌تونی کمپین رو دوباره ثبت کنی؛ امتیاز هزینه‌شده به حسابت برگشته.",
+                    [[btn("📊 کمپین‌های من", "my")], [btn("🏠 منوی اصلی", "home")]])
+    ans(cq, "کمپین منتشر شد")
+    msg = ("🚀 <b>کمپینت با موفقیت منتشر شد!</b>\n\n"
+           "تسک در کانال ویترین قرار گرفت و کاربران از همون‌جا وارد ربات می‌شن تا دستورالعمل رو ببینن و انجام تسک رو ثبت کنن.\n\n"
+           "🔔 پس از تأیید هر انجام، نتیجه و وضعیت واریز پاداش به کاربر داخل ربات اعلام می‌شه. وضعیت کمپینت رو هم می‌تونی از بخش «کمپین‌های من» پیگیری کنی.")
+    kb = [[btn("📣 مشاهدهٔ تسک در ویترین", url=tasks_channel_url())], [btn("📊 کمپین‌های من", "my")], [btn("🏠 منوی اصلی", "home")]]
+    view(chat, mid, msg, kb)
 
 
 def my_campaigns(cq, uid, chat, mid):
@@ -1392,6 +1522,7 @@ def cancel_campaign(cq, uid, chat, mid, cid_s, sure):
         refund = r["remaining"] * r["cost"]
         if refund:
             add_points(uid, refund, "refund", cid)
+        refresh_campaign_listing(cid)
         ans(cq, f"لغو شد؛ {refund} امتیاز برگشت", True)
     render_my(uid, chat, mid)
 
@@ -1438,6 +1569,36 @@ def admin_cmd(uid, chat, cmd, args):
 
 
 # ───────────────────────── مسیریابی آپدیت‌ها ─────────────────────────
+def open_linked_task(uid, chat, cid_s):
+    try:
+        cid = ObjectId(cid_s)
+    except (InvalidId, TypeError):
+        return send(chat, "🔎 این لینک تسک معتبر نیست یا ناقصه. از ویترین، یک تسک فعال رو انتخاب کن.", main_kb())
+    c = db.campaigns.find_one({"_id": cid})
+    if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
+        return send(chat, "⏳ این تسک دیگه ظرفیت نداره. از ویترین یک تسک دیگه انتخاب کن.", main_kb())
+    u = db.users.find_one({"_id": uid}) or {}
+    if c.get("owner") == uid:
+        return send(chat, "ℹ️ این کمپین متعلق به خودته؛ نمی‌تونی تسک خودت رو انجام بدی.", main_kb())
+    if db.completions.find_one({"uid": uid, "cid": cid}):
+        return send(chat, "✅ این تسک قبلاً توسط حساب تو ثبت شده. برای تسک‌های دیگه به ویترین برگرد.",
+                    [[btn("📣 بازگشت به ویترین", url=tasks_channel_url())], [btn("🏠 منوی اصلی", "home")]])
+    if u.get("strikes", 0) >= STRIKE_LIMIT:
+        return send(chat, "⛔ فعلاً امکان انجام تسک برات غیرفعاله؛ تعداد اخطارها به حد مجاز رسیده.", main_kb())
+    if c.get("type") == "react" and c.get("mode") == "count":
+        snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
+        if not snap:
+            return send(chat, "📡 شمارش این پست فعلاً تازه نیست؛ این تسک موقتاً در دسترس نیست. کمی بعد دوباره از ویترین امتحان کن.", main_kb())
+        ses = {"t": time.time(), "baseline_total": int(snap.get("total", 0)),
+               "baseline_at": float(snap.get("updated_at", time.time())), "post_key": post_key(c["chat_id"], c["mid"])}
+    else:
+        ses = {"t": time.time()}
+    db.sessions.update_one({"_id": f"{uid}:{cid}"}, {"$set": ses}, upsert=True)
+    return send(chat, "🎯 <b>تسک آمادهٔ انجامه</b>\n\n" + task_text(c) + "\n\nوقتی مراحل بالا رو انجام دادی، روی «انجام دادم» بزن تا بررسی رو شروع کنم.",
+                [[btn("🔗 باز کردن مقصد", url=link_of(c))], [btn("✅ انجام دادم", f"c:{cid}")],
+                 [btn("📣 برگشت به ویترین", url=tasks_channel_url())], [btn("🏠 منوی اصلی", "home")]])
+
+
 def on_message(msg):
     if msg["chat"]["type"] != "private" or "from" not in msg:
         return
@@ -1449,6 +1610,8 @@ def on_message(msg):
         cmd, args = parts[0].split("@")[0].lower(), parts[1:]
         if cmd in ("start", "menu"):
             db.states.delete_one({"_id": uid})
+            if cmd == "start" and args and args[0].startswith("task_"):
+                return open_linked_task(uid, chat, args[0][5:])
             return send(chat, menu_text(u), main_kb())
         if cmd == "help":
             return send(chat, help_text(), HOME_KB)
@@ -1660,10 +1823,14 @@ def setup():
     bot_id()
     r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
            allowed_updates=["message", "callback_query", "message_reaction", "message_reaction_count"])
-    tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"},
-                                   {"command": "help", "description": "راهنما"},
+    tg("setMyCommands", commands=[{"command": "start", "description": "شروع و منوی اصلی"},
+                                   {"command": "help", "description": "راهنمای استفاده"},
                                    {"command": "reactwatch", "description": "پایش شمارش ری‌اکشن‌ها (ادمین)"}])
     log.info("webhook: %s", r)
+    if TASKS_CHANNEL:
+        log.info("TASKS_CHANNEL configured: %s", TASKS_CHANNEL)
+    else:
+        log.warning("TASKS_CHANNEL تنظیم نشده؛ انتشار خودکار کمپین‌ها در کانال ویترین غیرفعال است")
     threading.Thread(target=worker, daemon=True).start()
 
 
