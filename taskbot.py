@@ -16,6 +16,7 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
 اجرا: gunicorn app:app
 """
 import os, re, io, json, time, hmac, hashlib, base64, random, logging, threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 import requests
@@ -47,6 +48,14 @@ MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
+VERSION      = "v28-failclosed"
+AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
+CLOCK_REQUIRED = os.environ.get("CLOCK_REQUIRED", "1") != "0"       # =0: اگه ساعت خونده نشد رد نکن
+try:
+    import PIL.Image  # noqa
+    PIL_OK = True
+except Exception:
+    PIL_OK = False
 PIXEL_CHECK  = os.environ.get("PIXEL_CHECK", "1") != "0"        # بررسی پیکسلی چیپ پررنگ ری‌اکشن (قبل از مدل)؛ =0 خاموش
 AI_DEBUG     = os.environ.get("AI_DEBUG", "") == "1"           # =1: جواب خام مدل برای هر رد شدن به ادمین‌ها فرستاده می‌شه
 TIME_TOL     = int(os.environ.get("TIME_TOL", "20"))            # حداکثر اختلاف مجاز ساعت اسکرین‌شات با الان (دقیقه)
@@ -425,7 +434,7 @@ def ai_request(prompt, img, mime="image/jpeg"):
     # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
     for body in (dict(base, temperature=0, max_tokens=600), dict(base, max_completion_tokens=600), base):
         try:
-            r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=90)
+            r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=AI_TIMEOUT)
         except Exception as e:
             return None, f"اتصال به {url} ناموفق: {e}"
         try:
@@ -521,27 +530,27 @@ def ai_check(img, c):
     return parse_json(txt)
 
 
-def status_crop(b, left_only=False):
-    """برش نوار وضعیت بالای عکس و بزرگ‌کردنش تا مدل فقط ساعت رو بخونه (به متن‌های دیگه‌ی عکس گیر نده)"""
+def status_crop(b, mode=0):
+    """برش نوار وضعیت بالای عکس و بزرگ‌کردنش تا مدل فقط ساعت رو بخونه. سه برش متفاوت برای خوندن مستقل"""
     from PIL import Image
     im = Image.open(io.BytesIO(b)).convert("RGB")
     W, H = im.size
-    im = im.crop((0, 0, int(W * (0.5 if left_only else 1)), max(40, int(H * 0.055))))
-    k = 2.0 if left_only else 1.5
+    fw, fh, k = ((1.0, 0.055, 1.5), (0.5, 0.055, 2.0), (0.6, 0.07, 2.5))[mode]
+    im = im.crop((0, 0, int(W * fw), max(40, int(H * fh))))
     im = im.resize((int(im.width * k), int(im.height * k)), Image.LANCZOS)
     out = io.BytesIO()
     im.save(out, "JPEG", quality=92)
     return out.getvalue()
 
 
-def ai_clock(b, left_only=False):
-    """خوندن ساعت نوار وضعیت گوشی از برش بالای عکس. خروجی: (رشته‌ی HH:MM یا None، خطا)"""
+def ai_clock(b, mode=0):
+    """خوندن ساعت نوار وضعیت گوشی از برش بالای عکس. خروجی: (رشته‌ی H:MM یا None، خطا)"""
     prompt = (
         "This is the top strip of a phone screenshot. Read the phone clock from the system status bar "
         "(the digits next to the small status icons). Ignore any faded or blurred text behind it. "
         'Answer ONLY with JSON: {"clock": "HH:MM"|null}. Use null unless you can read all the digits clearly; never guess.')
     try:
-        txt, err = ai_request(prompt, [status_crop(b, left_only)])
+        txt, err = ai_request(prompt, [status_crop(b, mode)])
     except Exception as e:
         return None, str(e)
     if not txt:
@@ -671,52 +680,84 @@ def judge(v, has_hint=True):
     return "approve", ""
 
 
-def clock_verdict(img):
-    """ساعت گوشی در عکس با الان. فقط وقتی رد می‌کنه که دو بار خوندنِ جدا هر دو یک ساعتِ ناهمخوان بدن؛ نخوندن/شک = قبول.
-    خروجی: None (قبول) یا متن دلیل رد"""
-    t1, _ = ai_clock(img, False)
-    if t1 is None or time_ok(t1):
+def _mins(t):
+    m = re.match(r"^(\d{1,2}):(\d{2})", t)
+    return int(m[1]) * 60 + int(m[2])
+
+
+def clock_decide(img, reads):
+    """ساعت گوشی در عکس با الان. فقط وقتی دو خوندنِ مستقل با هم موافق باشن حکم می‌دیم (حدس تکی مدل اعتبار نداره).
+    اگه دو خوندن موافق نبود، یه خوندن سوم هم گرفته می‌شه. خروجی: None (قبول) یا متن دلیل رد"""
+    reads = [x for x in reads if x]
+
+    def pair():
+        for i in range(len(reads)):
+            for j in range(i + 1, len(reads)):
+                d = abs(_mins(reads[i]) - _mins(reads[j])) % 720
+                if min(d, 720 - d) <= 1:
+                    return reads[i]
         return None
-    t2, _ = ai_clock(img, True)
-    if t2 is not None and t2 == t1:
-        return f"ساعت داخل عکس ({t1}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
-    return None
+
+    t = pair()
+    if t is None:
+        t3, _ = ai_clock(img, 2)
+        if t3:
+            reads.append(t3)
+            t = pair()
+    if t is None:
+        if CLOCK_REQUIRED:
+            return "ساعت نوار بالای گوشی داخل عکس خونده نشد؛ اسکرین‌شات کامل با نوار وضعیت (ساعت) بالای صفحه بفرست"
+        return None
+    if time_ok(t):
+        return None
+    return f"ساعت داخل عکس ({t}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
+
+
+def _safe(fn, *a):
+    try:
+        return fn(*a)
+    except Exception as e:
+        log.exception("%s", getattr(fn, "__name__", "fn"))
+        return None, f"{getattr(fn, '__name__', 'fn')}: {e}"
 
 
 def ai_verdict(img, c):
-    """۱) چک پیکسلی چیپ پررنگ  ۲) مدل: اسکرین‌شات تلگرام و کانال درسته؟  ۳) مدل: چیپ پررنگ مال پست تسکه؟ (خودش تطبیق پست رو هم شامل می‌شه)
-    ۴) ساعت نوار وضعیت از روی برش بالای عکس. خروجی: (حکم، دلیل، خطا)"""
+    """۱) چک پیکسلی چیپ پررنگ  ۲) به‌موازات: مدل کلی، مالکیت چیپ، دو خوندن ساعت  ۳) تصمیم.
+    همه‌ی چک‌ها بسته‌اند: اگه ابزاری کار نکنه (مثلاً Pillow) هیچ‌چیز تأیید نمی‌شه. خروجی: (حکم، دلیل، خطا)"""
+    if PIXEL_CHECK and not PIL_OK:
+        return None, "", "Pillow نصب نیست ولی PIXEL_CHECK روشنه؛ Pillow رو به requirements.txt اضافه کن"
     boxes = find_chips(img) if PIXEL_CHECK else None
+    if PIXEL_CHECK and boxes is None:
+        return None, "", "چک پیکسلی خطا داد (لاگ سرور رو ببین)"
     if boxes is not None and not boxes:
         return "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو (چیپ پررنگ) زیر پست دیده نمی‌شه", ""
-    v, err = ai_retry(ai_check, small_jpeg(img), c)
-    if v is None:
-        return None, "", err
+    small = small_jpeg(img)
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        f_gen = ex.submit(_safe, ai_retry, ai_check, small, c)
+        f_own = (ex.submit(_safe, ai_retry, ai_owner_check, img, boxes, c) if boxes
+                 else ex.submit(_safe, ai_retry, ai_reaction_check, img, c))
+        f_c0 = ex.submit(_safe, ai_clock, img, 0)
+        f_c1 = ex.submit(_safe, ai_clock, img, 1)
+        (v, e1), (r, e2), (t0, _), (t1, _) = f_gen.result(), f_own.result(), f_c0.result(), f_c1.result()
+    if v is None or r is None:
+        return None, "", e1 or e2 or "پاسخ مدل نیومد"
     verdict, why = judge(v, True)
-    r = None
     if verdict == "approve":
         if boxes:
-            r, err = ai_retry(ai_owner_check, img, boxes, c)
-            if r is None:
-                return None, "", err
             own = [t for t in (r.get("tags") or []) if isinstance(t, dict) and t.get("own_post") is True]
             if not own:
                 verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (پست تسک باید با ری‌اکشنش داخل عکس باشه)"
-        else:
-            r, err = ai_retry(ai_reaction_check, img, c)
-            if r is None:
-                return None, "", err
-            if not str(r.get("selected_emoji") or "").strip():
-                verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه"
+        elif not str(r.get("selected_emoji") or "").strip():
+            verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه"
     if verdict == "approve":
-        why2 = clock_verdict(img)
+        why2 = clock_decide(img, [t0, t1])
         if why2:
             verdict, why = "reject", why2
     if verdict != "approve":
-        log.info("ai reject: %s | %s | %s | %s", why, json.dumps(v, ensure_ascii=False)[:500], json.dumps(r, ensure_ascii=False)[:300], boxes)
+        log.info("ai reject: %s | %s | %s | clocks=%s | %s", why, json.dumps(v, ensure_ascii=False)[:400], json.dumps(r, ensure_ascii=False)[:300], [t0, t1], boxes)
         if AI_DEBUG:
             for a in ADMINS:
-                send(a, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:700] + "\n" + json.dumps(r, ensure_ascii=False)[:400])
+                send(a, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:600] + "\n" + json.dumps(r, ensure_ascii=False)[:400] + f"\nclocks={[t0, t1]}")
         return "reject", why, ""
     return "approve", "", ""
 
@@ -1043,7 +1084,9 @@ def admin_cmd(uid, chat, cmd, args):
         png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
         txt, err = ai_request('Reply with only this JSON: {"ok": true}', png, "image/png")
         return send(chat, (f"✅ مدل جواب داد:\n{txt[:500]}" if txt else f"❌ خطا:\n{err}")
-                    + f"\n\nBASE: {AI_BASE_URL or '-'}\nMODEL: {AI_MODEL or '-'}")
+                    + f"\n\nBASE: {AI_BASE_URL or '-'}\nMODEL: {AI_MODEL or '-'}"
+                    + f"\n\nنسخه: {VERSION}\nPillow: {'✅' if PIL_OK else '❌ نصب نیست'}\nPIXEL_CHECK: {PIXEL_CHECK}  CLOCK_REQUIRED: {CLOCK_REQUIRED}"
+                    + f"\nTIME_TOL: {TIME_TOL}  TZ: {TZ_NAME}  ساعت سرور: {now_str()}  AI_TIMEOUT: {AI_TIMEOUT}")
     if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
         add_points(int(args[0]), int(args[1]), "admin")
         return send(chat, "انجام شد.")
