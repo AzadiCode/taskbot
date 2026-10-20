@@ -465,6 +465,7 @@ def ai_check(img, c):
         "Answer ONLY with one JSON object, no markdown:\n"
         '{"is_telegram_screenshot": bool, "channel_match": true|false|null, "post_match": true|false|null, '
         '"reaction_highlighted": true|false|null, "highlighted_reaction": "<the emoji that is highlighted>"|null, '
+        '"theme": "light"|"dark", "chips": [{"emoji": "<emoji>", "style": "solid"|"tinted"}], '
         '"status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
         "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
         "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
@@ -474,8 +475,17 @@ def ai_check(img, c):
         "- reaction_highlighted: under THAT post one reaction chip is visibly highlighted/selected (the user's own reaction). "
         "false if reactions are visible but none is selected; null if no reactions are visible.\n"
         "- highlighted_reaction: the exact emoji of the highlighted reaction chip, null if you cannot point to one.\n"
+        "- theme: whether the Telegram UI is light (white/bright) or dark.\n"
+        "- chips: list EVERY reaction chip under the target post. style=\"solid\" only if the chip has a strong, saturated, fully "
+        "filled accent background (blue/green) with white/contrasting text; style=\"tinted\" if it is pale, translucent or "
+        "outlined with colored text.\n"
+        "IMPORTANT (works the same in light and dark theme): in LIGHT theme ALL normal unselected reaction chips are ALSO colored "
+        "(pale blue/green tint with blue/green count text), so colour alone does NOT mean selected. A chip is selected ONLY if it "
+        "is visibly different from the other chips: a solid filled background while the others are pale/tinted. "
+        "If all chips look identical in style, nobody reacted: reaction_highlighted=false. "
+        "If only one chip is visible, it counts only if it is solid-filled with white/contrasting text, not a pale tint.\n"
         "- status_bar_time: the phone clock in the status bar if readable, else null.\n"
-        "Be strict: reactions on a post are normally all unhighlighted (grey) unless the user reacted. "
+        "Be strict: reactions on a post are normally all unhighlighted (grey in dark theme, pale tint in light theme) unless the user reacted. "
         "If you are not clearly sure, answer false.")
     txt, err = ai_request(prompt, imgs)
     if not txt:
@@ -507,6 +517,12 @@ def judge(v, has_hint):
         return "reject", "پست داخل عکس با تسک نمی‌خونه"
     if v.get("reaction_highlighted") is not True or not v.get("highlighted_reaction"):
         return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
+    chips = [x for x in (v.get("chips") or []) if isinstance(x, dict)]
+    styles = [str(x.get("style")) for x in chips]
+    if not chips or "solid" not in styles:
+        return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
+    if len(chips) >= 2 and len(set(styles)) == 1:
+        return "reject", "ری‌اکشن‌ها همه یک شکل‌ان؛ ری‌اکشن خودت مشخص نیست"
     if not time_ok(v.get("status_bar_time")):
         return "reject", "ساعت داخل عکس با الان نمی‌خونه؛ اسکرین‌شات تازه بفرست"
     return "approve", ""
@@ -514,12 +530,15 @@ def judge(v, has_hint):
 
 def ai_verdict(img, c):
     """دو بررسی مستقل؛ فقط اگه هر دو تأیید کنن تأیید می‌شه (جلوگیری از اشتباه تصادفی مدل). خروجی: (حکم، دلیل، خطا)"""
-    res = []
+    res, emojis = [], []
     for _ in range(2):
         v, err = ai_check(img, c)
         if v is None:
             return None, "", err
         res.append(judge(v, True))
+        emojis.append(str(v.get("highlighted_reaction") or "").strip())
+    if emojis[0] != emojis[1]:
+        return "reject", "ری‌اکشن داخل عکس واضح نیست؛ اسکرین‌شات واضح‌تر بفرست", ""
     for verdict, why in res:
         if verdict != "approve":
             return "reject", why, ""
