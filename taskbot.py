@@ -68,7 +68,7 @@ REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # �
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v35-admin-guard"
+VERSION      = "v36-forward-post-input"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -1397,7 +1397,8 @@ def pick_type(cq, uid, chat, mid, typ):
         txt = ("👥 <b>مقصد کمپین عضویت</b>\n\nیوزرنیم یا لینک عمومی کانال/گروه رو بفرست؛ مثلاً <code>@mychannel</code>.\n\n"
                f"🛡️ برای اینکه بتونم عضویت رو بررسی کنم، ابتدا ربات <code>@{_me.get('username', '')}</code> رو در مقصد ادمین کن.")
     else:
-        txt = ("🔗 <b>لینک پست مقصد</b>\n\nلینک دقیق پستی رو بفرست که می‌خوای براش کمپین بسازی؛ مثلاً <code>https://t.me/mychannel/123</code>.\n\nفقط پست‌های عمومی که با یوزرنیم در دسترس هستن پشتیبانی می‌شن.")
+        txt = ("🔗 <b>انتخاب پست مقصد</b>\n\nلینک پست رو بفرست؛ یا اگر لینک نداره، خودِ پیام رو از کانال برای ربات فوروارد کن.\n\n"
+               "فورواردِ پست کانال معمولاً شناسهٔ دقیق پست رو مشخص می‌کنه. در گروه‌ها تلگرام ممکنه شناسهٔ پیام اصلی رو در اطلاعات فوروارد پنهان کنه؛ در این حالت برای ری‌اکشن خودکار باید لینک پست یا یوزرنیم گروه + شمارهٔ پیام رو وارد کنی.")
     view(chat, mid, txt, [[btn("❌ انصراف", "home")]])
 
 
@@ -1751,6 +1752,19 @@ def on_message(msg):
         return
     if st and st.get("step") == "ref":
         return on_ref(uid, chat, msg, st)
+    if st and st.get("step") == "link" and msg.get("forward_origin"):
+        origin = msg.get("forward_origin") or {}
+        if origin.get("type") == "channel":
+            source = origin.get("chat") or {}
+            source_username = source.get("username")
+            source_mid = origin.get("message_id")
+            if source_username and source_mid:
+                # لینک داخلی از متادیتای فوروارد ساخته می‌شود؛ کاربر لازم نیست لینک پست را کپی کند.
+                return on_state_text(uid, chat, f"https://t.me/{source_username}/{source_mid}", st)
+            return send(chat, "❌ فوروارد دریافت شد، اما تلگرام شناسهٔ عمومی پست را در اختیار ربات نگذاشت. لینک پست را بفرست یا برای مقصد عمومی، @یوزرنیم و شمارهٔ پیام را وارد کن.", [[btn("❌ انصراف", "home")]])
+        if origin.get("type") == "chat":
+            return send(chat, "⚠️ فورواردِ پیام گروه دریافت شد، اما تلگرام شناسهٔ پیام اصلی گروه را در اطلاعات فوروارد نمی‌دهد؛ برای اینکه ری‌اکشن دقیقاً روی همان پیام بررسی شود، لینک پیام یا یوزرنیم گروه و شمارهٔ پیام لازم است.", [[btn("❌ انصراف", "home")]])
+        return send(chat, "⚠️ فوروارد دریافت شد، ولی اطلاعات مبدأ برای شناسایی دقیق پست کافی نیست. لینک پست را بفرست؛ برای گروه‌های خصوصی، تلگرام ممکن است شناسهٔ پیام اصلی را پنهان کند.", [[btn("❌ انصراف", "home")]])
     if st and text:
         return on_state_text(uid, chat, text, st)
     if st:
