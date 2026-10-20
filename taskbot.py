@@ -8,11 +8,12 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
 - امتیاز بعد از انجام تسک HOLD_HOURS ساعت «معلق» می‌مونه، بعد دوباره چک می‌شه و قطعی می‌شه
 - عضویت  : getChatMember (ربات باید ادمین کانال/گروه باشه) + چک دوباره‌ی آخر دوره‌ی معلق (لفت = برگشت امتیاز + اخطار)
 - ری‌اکشن : گروه با ربات ادمین → تأیید خودکار با message_reaction (برداشتن ری‌اکشن هم دیده می‌شه)
-            کانال (ری‌اکشن‌ها ناشناس‌اند) → اسکرین‌شات + مدل ویژن (کانال/پست/هایلایت/ساعت) + ضدتکرار
+            کانال (ری‌اکشن‌ها ناشناس‌اند) → اسکرین‌شات + موتور محلی (چک پیکسلی چیپ + OCR ساعت/اسم کانال + تطبیق تصویر پست) + ضدتکرار
+            (بدون هیچ API: VISION_MODE=local | auto = محلی + کمک مدل فقط در حالت «نامطمئن» | ai = رفتار قبلی)
             (file_unique_id و هش تصویری). تصمیم کاملاً خودکاره: تأیید یا رد؛ نامطمئن = درخواست عکس واضح‌تر
 - بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
-نیازمندی‌ها: flask pymongo requests gunicorn Pillow   (Pillow برای تشخیص عکس تکراریِ دوباره‌آپلودشده لازمه؛ mongomock اختیاری برای تست)
+نیازمندی‌ها: flask pymongo requests gunicorn Pillow rapidocr-onnxruntime   (Pillow برای تشخیص عکس تکراریِ دوباره‌آپلودشده لازمه؛ mongomock اختیاری برای تست)
 اجرا: gunicorn app:app
 """
 import os, re, io, json, time, hmac, hashlib, base64, random, logging, threading
@@ -62,7 +63,7 @@ MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v31-clockstrict"
+VERSION      = "v32-local"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -835,6 +836,268 @@ def ai_verdict(img, c, since=None):
     return "approve", "", ""
 
 
+# ───────────────────────── موتور محلی: بدون API و بدون مدل آنلاین ─────────────────────────
+# چک پیکسلی چیپ + OCR محلی (ONNX روی همین سرور) + تطبیق تصویر پست (ORB) + منطق موقعیت (فوتر پست).
+# هیچ تماس شبکه‌ای نداره، پس قطع و وصل و سقف رایگان و کند شدن سرویس‌دهنده معنی نداره.
+# VISION_MODE: auto (پیش‌فرض: اول محلی؛ فقط اگه «نامطمئن» بود و AI تنظیم شده باشه از مدل کمک می‌گیره) | local | ai (رفتار قبلی)
+VISION_MODE = os.environ.get("VISION_MODE", "auto").strip().lower()
+OCR_MAXW    = int(os.environ.get("OCR_MAXW", "1000"))           # عرض عکس برای OCR (کوچک‌تر = سریع‌تر و کم‌مصرف‌تر)
+try:
+    import importlib.util as _iu
+    LOCAL_ON = _iu.find_spec("rapidocr_onnxruntime") is not None and _iu.find_spec("cv2") is not None
+except Exception:
+    LOCAL_ON = False
+VISION_ON = AI_ON or LOCAL_ON
+
+_ocr = {"eng": None, "err": "", "lock": threading.Lock()}
+_FA_NORM = str.maketrans({"ي": "ی", "ك": "ک", "ۀ": "ه", "ة": "ه", "أ": "ا", "إ": "ا", "ؤ": "و"})
+
+
+def _ocr_engine():
+    with _ocr["lock"]:
+        if _ocr["eng"] is None and not _ocr["err"]:
+            try:
+                from rapidocr_onnxruntime import RapidOCR
+                _ocr["eng"] = RapidOCR()
+            except Exception as e:
+                _ocr["err"] = f"OCR محلی بالا نیومد: {e}"[:200]
+                log.warning(_ocr["err"])
+        return _ocr["eng"]
+
+
+def ocr_read(b, maxw=None):
+    """OCR محلی. خروجی: لیست (متن، اطمینان، (x0,y0,x1,y1) کسری از ابعاد عکس) یا None اگه موتور در دسترس نیست"""
+    eng = _ocr_engine()
+    if eng is None:
+        return None
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(b)).convert("RGB")
+        if maxw and im.width > maxw:
+            im = im.resize((maxw, int(im.height * maxw / im.width)), Image.LANCZOS)
+        w, h = im.size
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=92)
+        with _ocr["lock"]:                                   # یک موتور مشترک؛ درخواست‌ها پشت سر هم اجرا می‌شن
+            res, _ = eng(buf.getvalue())
+        out = []
+        for box, txt, conf in (res or []):
+            xs, ys = [p[0] for p in box], [p[1] for p in box]
+            out.append((str(txt), float(conf), (min(xs) / w, min(ys) / h, max(xs) / w, max(ys) / h)))
+        return out
+    except Exception as e:
+        log.warning("local ocr failed: %s", e)
+        return None
+
+
+def norm_txt(s):
+    s = re.sub(r"[\u064b-\u065f\u0670]", "", str(s or "")).translate(FA).translate(_FA_NORM).lower()
+    return re.sub(r"[^0-9a-z\u0600-\u06ff]+", "", s)       # ایموجی، فاصله، نیم‌فاصله و علامت‌ها حذف می‌شن
+
+
+def latin_len(s):
+    return len(re.findall(r"[a-z0-9]", norm_txt(s)))
+
+
+def fuzzy_in(needle, hay):
+    """شباهت (۰ تا ۱) نزدیک‌ترین تکه‌ی hay به needle؛ تحمل خطای OCR"""
+    from difflib import SequenceMatcher
+    n, hy = norm_txt(needle), norm_txt(hay)
+    if len(n) < 3 or not hy:
+        return 0.0
+    if n in hy:
+        return 1.0
+    best = 0.0
+    for L in {len(n), max(3, len(n) - 2), len(n) + 2}:
+        for i in range(0, max(1, len(hy) - L + 1)):
+            best = max(best, SequenceMatcher(None, n, hy[i:i + L]).ratio())
+    return best
+
+
+_CLK = re.compile(r"(?<!\d)(\d{1,2})\s*[:：]\s*(\d{2})(?!\d)")
+_FOOT = re.compile(r"^(?:\S{1,8}\s+)?(?:edited\s+)?\d{1,2}\s*:\s*\d{2}(?:\s?[ap]m)?$", re.I)      # فوتر حباب: «1.2K 14:20» یا «edited 14:20»
+
+
+def _clock_of(txt):
+    m = _CLK.search(str(txt).translate(FA))
+    return f"{int(m[1])}:{m[2]}" if m and int(m[1]) <= 23 and int(m[2]) <= 59 else None
+
+
+def local_clock_reads(img, items, since=None):
+    """ساعت نوار وضعیت: یک‌بار از OCR کل عکس (فقط نوار بالا)، یک‌بار از برش بزرگ‌شده‌ی نوار بالا"""
+    reads = [t for t in (_clock_of(x[0]) for x in items if x[2][3] <= 0.07 and x[1] >= 0.5) if t]
+    if any(time_ok(t, since) for t in reads):
+        return reads                                         # خوندنِ اول قبوله؛ OCR دوم لازم نیست (سریع‌تر)
+    try:
+        crop = ocr_read(status_crop(img, 2)) or []
+        reads += [t for t in (_clock_of(x[0]) for x in crop if x[1] >= 0.5) if t]
+    except Exception as e:
+        log.warning("clock crop failed: %s", e)
+    return reads
+
+
+def locate_ref(shot, ref):
+    """پیدا کردن عکس مرجع پست داخل اسکرین‌شات با ORB + هوموگرافی (مستقل از زبان، تم و اندازه). خروجی: (x0,y0,x1,y1) کسری یا None"""
+    try:
+        import cv2
+        import numpy as np
+        s = cv2.imdecode(np.frombuffer(shot, np.uint8), cv2.IMREAD_GRAYSCALE)
+        r = cv2.imdecode(np.frombuffer(ref, np.uint8), cv2.IMREAD_GRAYSCALE)
+        if s is None or r is None:
+            return None
+        if s.shape[1] > 900:
+            s = cv2.resize(s, (900, int(s.shape[0] * 900 / s.shape[1])))
+        if r.shape[1] > 600:
+            r = cv2.resize(r, (600, int(r.shape[0] * 600 / r.shape[1])))
+        orb = cv2.ORB_create(2000)
+        ks, ds = orb.detectAndCompute(s, None)
+        kr, dr = orb.detectAndCompute(r, None)
+        if ds is None or dr is None or len(kr) < 25 or len(ks) < 25:
+            return None
+        mt = cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(dr, ds, k=2)
+        good = [m[0] for m in mt if len(m) == 2 and m[0].distance < 0.75 * m[1].distance]
+        if len(good) < 14:
+            return None
+        src = np.float32([kr[g.queryIdx].pt for g in good]).reshape(-1, 1, 2)
+        dst = np.float32([ks[g.trainIdx].pt for g in good]).reshape(-1, 1, 2)
+        M, mask = cv2.findHomography(src, dst, cv2.RANSAC, 4.0)
+        if M is None or int(mask.sum()) < 12:
+            return None
+        h, w = r.shape
+        pts = cv2.perspectiveTransform(np.float32([[0, 0], [w, 0], [w, h], [0, h]]).reshape(-1, 1, 2), M).reshape(-1, 2)
+        Hs, Ws = s.shape
+        (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
+        box = (max(0.0, x0 / Ws), max(0.0, y0 / Hs), min(1.0, x1 / Ws), min(1.0, y1 / Hs))
+        return box if (box[2] - box[0]) >= 0.2 and (box[3] - box[1]) >= 0.04 else None
+    except Exception as e:
+        log.warning("locate_ref failed: %s", e)
+        return None
+
+
+def locate_hint(items, hint):
+    """پیدا کردن خط‌های متن پست (فقط لاتین/عدد؛ OCR پیش‌فرض فارسی رو مطمئن نمی‌خونه). خروجی: (x0,y0,x1,y1) یا None"""
+    from difflib import SequenceMatcher
+    h = norm_txt(hint)
+    if latin_len(hint) < 6:
+        return None
+    hit = []
+    for t, conf, bb in items:
+        n = norm_txt(t)
+        if len(n) < 6 or conf < 0.6:
+            continue
+        mm = SequenceMatcher(None, n, h).find_longest_match(0, len(n), 0, len(h))
+        if mm.size >= max(6, 0.7 * len(n)):
+            hit.append(bb)
+    if not hit:
+        return None
+    return (min(b[0] for b in hit), min(b[1] for b in hit), max(b[2] for b in hit), max(b[3] for b in hit))
+
+
+def own_chips(boxes, anchor, items, max_gap=0.35):
+    """چیپ‌هایی که توی حباب همون پست‌اند: زیر پست، بالای اولین فوروتر (ساعت/بازدید) بعد از پست، و نه خیلی دور"""
+    ax0, ay0, ax1, ay1 = anchor
+    foot = [x[2][1] for x in items if x[2][1] >= ay1 - 0.01 and len(str(x[0])) <= 16 and _FOOT.match(str(x[0]).translate(FA).strip()) and x[1] >= 0.5]
+    foot_y = min(foot) if foot else None
+    if foot_y is None:
+        max_gap = min(max_gap, 0.25)                         # فوتر دیده نشد → فقط چیپ‌های خیلی نزدیک
+    out = []
+    for b in boxes:
+        if b[1] < ay1 - 0.04 or b[1] - ay1 > max_gap:
+            continue
+        if foot_y is not None and b[3] > foot_y + 0.01:      # چیپ زیرِ فوتر پست = مال حباب بعدیه
+            continue
+        out.append(b)
+    return out
+
+
+def local_verdict(img, c, since=None):
+    """خروجی: (approve | reject | unsure | None، دلیل، خطا). reject فقط با شواهد منفی روشن؛ نداشتن شواهد کافی = unsure"""
+    if not PIL_OK:
+        return None, "", "Pillow نصب نیست"
+    boxes = find_chips(img)
+    if boxes is None:
+        return None, "", "چک پیکسلی خطا داد (لاگ سرور رو ببین)"
+    if not boxes:
+        return "reject", "ری‌اکشنی نزدی (یا تو عکس دیده نمی‌شه)؛ اول ری‌اکشن بزن بعد اسکرین‌شات بگیر", ""
+    items = ocr_read(img, OCR_MAXW)
+    if items is None:
+        return None, "", _ocr["err"] or "OCR محلی در دسترس نیست (rapidocr-onnxruntime نصب نیست؟)"
+    bad, unsure = [], []
+    # ۱) ساعت گوشی
+    reads = local_clock_reads(img, items, since)
+    why = clock_decide(reads, since)
+    if why:
+        (bad if reads and not any(time_ok(t, since) for t in reads) else unsure).append(why)
+    # ۲) اسم کانال (فقط وقتی عنوان لاتین/عدد داره؛ عنوان فارسی با تطبیق تصویر پست پوشش داده می‌شه)
+    title = c.get("title") or ""
+    if latin_len(title) >= 3:
+        hdr = " ".join(x[0] for x in items if 0.03 <= x[2][1] <= 0.22 and x[1] >= 0.4)
+        sc = fuzzy_in(norm_txt(title)[:24], hdr)
+        if sc < 0.5:
+            bad.append("اسم کانال بالای عکس دیده نمی‌شه")
+        elif sc < 0.72:
+            unsure.append("اسم کانال بالای عکس واضح نیست")
+    # ۳) پیدا کردن پست تسک + مالکیت ری‌اکشن
+    anchor = None
+    if c.get("ref_photo"):
+        ref = fetch_file(c["ref_photo"])
+        if ref:
+            anchor = locate_ref(img, ref)
+    if anchor is None and c.get("hint"):
+        anchor = locate_hint(items, c["hint"])
+    if anchor is None:
+        unsure.append("پستِ تسک توی عکس پیدا نشد؛ اسکرین‌شات رو طوری بگیر که خودِ پست و ری‌اکشنش کامل دیده بشه")
+    elif not own_chips(boxes, anchor, items):
+        bad.append("ری‌اکشنت مالِ پستِ تسک نیست؛ روی خودِ پست تسک ری‌اکشن بزن")
+    log.info("local: bad=%s unsure=%s clocks=%s anchor=%s boxes=%s", bad, unsure, reads, anchor, boxes)
+    if bad:
+        return "reject", "\n".join("• " + x for x in bad) if len(bad) > 1 else bad[0], ""
+    if unsure:
+        return "unsure", "\n".join("• " + x for x in unsure) if len(unsure) > 1 else unsure[0], ""
+    return "approve", "", ""
+
+
+def vision_verdict(img, c, since=None):
+    """مسیر یکپارچه: محلی اول؛ فقط در حالت auto و فقط وقتی محلی «نامطمئن» بود، مدل (اگه تنظیم شده) کمک می‌کنه.
+    خروجی مثل ai_verdict: (حکم، دلیل، خطا)؛ حکم None = مشکل سرویس/ابزار (نه عکس کاربر)"""
+    if VISION_MODE == "ai" or not LOCAL_ON:
+        return ai_verdict(img, c, since)
+    v, why, err = local_verdict(img, c, since)
+    if AI_DEBUG and v in ("reject", "unsure"):
+        for a_ in ADMINS:
+            send(a_, f"🔎 محلی: {v}\n{why}")
+    if v in ("approve", "reject"):
+        return v, why, ""
+    if VISION_MODE == "auto" and AI_ON:
+        v2 = ai_verdict(img, c, since)
+        if v2[0] is not None:
+            return v2
+    if v == "unsure":
+        return "reject", why, ""
+    return None, "", err
+
+
+def local_selftest():
+    if not LOCAL_ON:
+        return "❌ نصب نیست (rapidocr-onnxruntime رو به requirements.txt اضافه کن)"
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        im = Image.new("RGB", (900, 140), (20, 20, 20))
+        try:
+            f = ImageFont.load_default(size=70)
+        except TypeError:
+            f = ImageFont.load_default()
+        ImageDraw.Draw(im).text((30, 25), "12:34", fill=(255, 255, 255), font=f)
+        b = io.BytesIO()
+        im.save(b, "PNG")
+        t0 = time.time()
+        items = ocr_read(b.getvalue())
+        txt = " ".join(x[0] for x in items or [])
+        return f"{'✅' if '12:34' in txt else '⚠️'} OCR محلی ({time.time() - t0:.1f}s) خوند: {txt[:30]!r}"
+    except Exception as e:
+        return f"❌ {e}"[:150]
+
+
 def verify_shot(uid, chat, cid_s, ph, since=None):
     """در ترد جدا اجرا می‌شه (تماس با مدل ممکنه کند باشه)"""
     fid = ph["file_unique_id"]
@@ -862,7 +1125,7 @@ def verify_shot(uid, chat, cid_s, ph, since=None):
                     db.shots.delete_one({"_id": fid})
                     return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
             db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
-        verdict, why, err = ai_verdict(img, c, since)
+        verdict, why, err = vision_verdict(img, c, since)
         if verdict is None:                             # مشکل از سرویس مدله، نه از عکس کاربر
             db.shots.delete_one({"_id": fid})
             db.counters.update_one({"_id": f"ai:{uid}:{day()}"}, {"$inc": {"n": -1}})
@@ -1033,7 +1296,7 @@ def on_state_text(uid, chat, text, st):
             if ch["type"] in ("group", "supergroup") and bot_is_admin(ch["id"]):
                 d["mode"] = "auto"
             else:
-                if not AI_ON:
+                if not VISION_ON:
                     return send(chat, "❌ ری‌اکشن برای کانال‌ها فعلاً فعال نیست. ری‌اکشن فقط برای گروهی که ربات ادمینشه (تأیید خودکار) ممکنه.")
                 d["mode"] = "shot"
                 set_state(uid, "ref", d)
@@ -1055,7 +1318,7 @@ def on_state_text(uid, chat, text, st):
         set_state(uid, "confirm", d)
         how = {"join": "تأیید خودکار با عضویت‌سنجی + چک دوباره‌ی آخر دوره‌ی معلق",
                "view": "تأیید زمانی (بازدید قابل راستی‌آزمایی دقیق نیست)",
-               "react": "تأیید خودکار (گروه)" if d.get("mode") == "auto" else "اسکرین‌شات + بررسی خودکار هوش مصنوعی + ضدتکرار"}[typ]
+               "react": "تأیید خودکار (گروه)" if d.get("mode") == "auto" else "اسکرین‌شات + بررسی خودکار (پیکسل + OCR) + ضدتکرار"}[typ]
         return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} امتیاز\n"
                           f"🛡 تأیید: {how}\n\nثبت بشه؟",
                     [[btn(f"✅ ثبت و کسر {q * cost} امتیاز", "ok")], [btn("❌ انصراف", "home")]])
@@ -1167,6 +1430,7 @@ def admin_cmd(uid, chat, cmd, args):
         [t.join(AI_TIMEOUT + 10) for t in ths]
         lines = [(f"✅ {m} — {res[m][1]}s" if res[m][0] else f"❌ {m} — {res[m][1]}s\n    {res[m][2]}") for m in [e["label"] for e in AI_ENDPOINTS] if m in res]
         return send(chat, "تست تک‌تک مدل‌ها:\n" + ("\n".join(lines) or "هیچ مدلی تنظیم نشده")
+                    + f"\n\nموتور محلی (VISION_MODE={VISION_MODE}): {local_selftest()}"
                     + "\n\nترتیب فعلی اولویت:\n" + "\n".join(f"{i}. {m}" for i, m in enumerate(_model_list(), 1))
                     + f"\n\nنسخه: {VERSION}\nPillow: {'✅' if PIL_OK else '❌ نصب نیست'}\nPIXEL_CHECK: {PIXEL_CHECK}  CLOCK_REQUIRED: {CLOCK_REQUIRED}"
                     + f"\nTIME_TOL: {TIME_TOL}  TZ: {TZ_NAME}  ساعت سرور: {now_str()}  AI_TIMEOUT: {AI_TIMEOUT}  AI_BUDGET: {AI_BUDGET}")
@@ -1298,6 +1562,8 @@ def index():
 
 def setup():
     bot_id()
+    if LOCAL_ON and VISION_MODE != "ai":
+        threading.Thread(target=_ocr_engine, daemon=True).start()      # گرم‌کردن موتور OCR تا اولین اسکرین‌شات کند نشه
     r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
            allowed_updates=["message", "callback_query", "message_reaction"])
     tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"}, {"command": "help", "description": "راهنما"}])

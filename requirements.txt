@@ -1,6 +1,7 @@
 flask
-gunicorn
-requests
 pymongo
+requests
+gunicorn
+Pillow
+rapidocr-onnxruntime
 mongomock
-pillow
