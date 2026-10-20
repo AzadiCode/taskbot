@@ -517,6 +517,40 @@ def ai_check(img, c):
         return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
 
 
+def ai_reaction_check(img, c):
+    """بررسی دوم: فقط ری‌اکشن (پرامپت جدا و ساده). خروجی: (دیکشنری یا None، خطا)"""
+    imgs, ref = [img], []
+    if c.get("hint"):
+        ref.append(f'the post text starts with: "{c["hint"]}"')
+    if c.get("ref_photo"):
+        rf = fetch_file(c["ref_photo"])
+        if rf:
+            imgs.append(rf)
+            ref.append("the SECOND image is the original post media (reference)")
+    prompt = (
+        "The FIRST image is a Telegram screenshot (any theme: white, light, dark, navy, black, custom). "
+        f'Target post: {"; ".join(ref) or "unknown"}.\n'
+        "Find the reaction chips (small rounded pills with an emoji and a count) that sit INSIDE THE SAME message bubble as the "
+        "target post, directly above that bubble's views/time footer. Completely ignore chips of any other post.\n"
+        "Compare those chips with EACH OTHER (never with a fixed color). Unselected chips all share one identical calm look "
+        "(translucent/grey/pale tint). The user's own selected chip is different from the rest: a strong, solid, saturated accent "
+        "fill with white/high-contrast text. If all chips look the same, nobody reacted.\n"
+        "Answer ONLY one JSON object, no markdown:\n"
+        '{"chips": [{"emoji": "<emoji>", "differs_from_others": true|false}], "all_chips_identical": true|false, '
+        '"selected_emoji": "<emoji>"|null}\n'
+        "selected_emoji = the emoji of the one chip that differs (solid accent fill); null if all chips look identical, if there are "
+        "no chips under the target post, or if you are not sure. If only one chip exists, it counts only if it has the strong solid "
+        "accent fill. When unsure answer null.")
+    txt, err = ai_request(prompt, imgs)
+    if not txt:
+        return None, err
+    m = re.search(r"\{.*\}", txt, re.S)
+    try:
+        return json.loads(m.group(0)), ""
+    except Exception:
+        return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
+
+
 def judge(v, has_hint):
     """تصمیم کاملاً خودکار: approve یا reject (نامطمئن = رد با درخواست عکس واضح‌تر؛ کاربر می‌تونه دوباره بفرسته)"""
     if not isinstance(v, dict):
@@ -537,27 +571,36 @@ def judge(v, has_hint):
         return "reject", "پست داخل عکس با تسک نمی‌خونه"
     if v.get("reaction_highlighted") is not True or not v.get("highlighted_reaction"):
         return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
+    chips = [x for x in (v.get("chips") or []) if isinstance(x, dict)]
+    styles = [str(x.get("style")) for x in chips]
+    if len(chips) >= 2 and len(set(styles)) == 1:
+        return "reject", "همه‌ی ری‌اکشن‌های زیر پست یک شکل‌ان؛ ری‌اکشن خودت مشخص نیست"
+    if len(chips) == 1 and styles[0] != "solid":
+        return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
     if not time_ok(v.get("status_bar_time")):
         return "reject", f"ساعت داخل عکس ({v.get('status_bar_time')}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
     return "approve", ""
 
 
 def ai_verdict(img, c):
-    """دو بررسی؛ فقط اگه هر دو تأیید کنن تأیید می‌شه. خروجی: (حکم، دلیل، خطا)"""
-    res, raws = [], []
-    for _ in range(2):
-        v, err = ai_check(img, c)
-        if v is None:
+    """دو بررسی با پرامپت متفاوت (کلی + فقط ری‌اکشن)؛ فقط اگه هر دو تأیید کنن تأیید می‌شه. خروجی: (حکم، دلیل، خطا)"""
+    v, err = ai_check(img, c)
+    if v is None:
+        return None, "", err
+    verdict, why = judge(v, True)
+    r = None
+    if verdict == "approve":
+        r, err = ai_reaction_check(img, c)
+        if r is None:
             return None, "", err
-        raws.append(v)
-        res.append(judge(v, True))
-    for verdict, why in res:
-        if verdict != "approve":
-            log.info("ai reject: %s | %s", why, json.dumps(raws, ensure_ascii=False)[:900])
-            if AI_DEBUG:
-                for a in ADMINS:
-                    send(a, "🔎 رد شد: " + why + "\n" + json.dumps(raws[0], ensure_ascii=False)[:900])
-            return "reject", why, ""
+        if r.get("all_chips_identical") is True or not str(r.get("selected_emoji") or "").strip():
+            verdict, why = "reject", "ری‌اکشن انتخاب‌شده‌ی تو زیر پست دیده نمی‌شه (همه‌ی ری‌اکشن‌ها یک شکل‌ان)"
+    if verdict != "approve":
+        log.info("ai reject: %s | %s | %s", why, json.dumps(v, ensure_ascii=False)[:600], json.dumps(r, ensure_ascii=False)[:400])
+        if AI_DEBUG:
+            for a in ADMINS:
+                send(a, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:900] + "\n" + json.dumps(r, ensure_ascii=False)[:600])
+        return "reject", why, ""
     return "approve", "", ""
 
 
