@@ -66,8 +66,9 @@ MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپی
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # فرصت اضافه برای تأخیر آپدیت شمارش تلگرام
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
+ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v34-channel-first-flow"
+VERSION      = "v35-admin-guard"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -108,6 +109,7 @@ db.completions.create_index([("status", 1), ("claim_expires", 1)])
 
 HOOK_SECRET = hashlib.sha256(("hook" + SECRET_KEY).encode()).hexdigest()[:32]
 _me = {}
+_last_admin_check = 0.0
 
 
 # ───────────────────────── ابزارهای تلگرام ─────────────────────────
@@ -192,9 +194,59 @@ def member_ok(r):
     return r.get("status") in ("creator", "administrator", "member") or (r.get("status") == "restricted" and r.get("is_member"))
 
 
-def bot_is_admin(chat_id):
+def bot_admin_status(chat_id):
+    """True/False برای پاسخ معتبر تلگرام؛ None برای خطای موقت API."""
     r = tg("getChatMember", chat_id=chat_id, user_id=bot_id())
-    return bool(r.get("ok") and r["result"].get("status") in ("administrator", "creator"))
+    if not r.get("ok") or not isinstance(r.get("result"), dict):
+        return None
+    return r["result"].get("status") in ("administrator", "creator")
+
+
+def bot_is_admin(chat_id):
+    return bot_admin_status(chat_id) is True
+
+
+def campaign_needs_admin(c):
+    # مسیر فعلی شمارش ری‌اکشن کانال عمداً از منطق جدید جدا نگه داشته می‌شود.
+    if not c:
+        return False
+    # کمپین‌های قدیمی که پیش از افزودن این فیلد ساخته شده‌اند هم پوشش داده می‌شوند.
+    required = c.get("admin_required")
+    if required is None:
+        required = c.get("type") == "join" or (c.get("type") == "react" and c.get("mode") == "auto")
+    return bool(required and (c.get("type") == "join" or
+                              (c.get("type") == "react" and c.get("mode") == "auto")))
+
+
+def monitor_campaign_admins(now=None):
+    """پایش دوره‌ای ادمین برای عضویت و ری‌اکشن گروه؛ خطای API وضعیت را تغییر نمی‌دهد."""
+    global _last_admin_check
+    now = time.time() if now is None else now
+    if now - _last_admin_check < max(15, ADMIN_MONITOR_INTERVAL):
+        return
+    _last_admin_check = now
+    query = {"status": "active", "$and": [
+        {"$or": [{"admin_required": True}, {"admin_required": {"$exists": False}}]},
+        {"$or": [{"type": "join"}, {"type": "react", "mode": "auto"}]}
+    ]}
+    for c in db.campaigns.find(query).sort([("admin_checked_at", 1)]).limit(100):
+        state = bot_admin_status(c.get("chat_id"))
+        if state is None:
+            continue
+        paused = bool(c.get("admin_paused"))
+        if state and paused:
+            db.campaigns.update_one({"_id": c["_id"], "status": "active"},
+                {"$set": {"admin_paused": False, "admin_checked_at": now, "admin_restored_at": now},
+                 "$unset": {"admin_lost_at": ""}})
+            refresh_campaign_listing(c["_id"])
+            send(c.get("owner"), f"✅ دسترسی ربات در «{c.get('title') or c.get('uname') or 'کمپین'}» برگشت؛ کمپین دوباره فعال است.")
+        elif not state and not paused:
+            db.campaigns.update_one({"_id": c["_id"], "status": "active"},
+                {"$set": {"admin_paused": True, "admin_checked_at": now, "admin_lost_at": now}})
+            refresh_campaign_listing(c["_id"])
+            send(c.get("owner"), f"⛔ ربات دسترسی ادمین مقصد «{c.get('title') or c.get('uname') or 'کمپین'}» را از دست داده است. کمپین موقتاً متوقف شد و پس از بازیابی دسترسی ادامه می‌یابد.")
+        else:
+            db.campaigns.update_one({"_id": c["_id"], "status": "active"}, {"$set": {"admin_checked_at": now}})
 
 
 def resolve_chat(uname):
@@ -371,6 +423,8 @@ def next_task(uid, skip):
     candidates = db.campaigns.find({"status": "active", "remaining": {"$gt": 0}, "owner": {"$ne": uid},
                                     "_id": {"$nin": ids}}, sort=[("created", 1)])
     for c in candidates:
+        if c.get("admin_paused") and campaign_needs_admin(c):
+            continue
         if c.get("type") == "react" and c.get("mode") == "count":
             if not fresh_reaction_snapshot(c.get("chat_id"), c.get("mid")):
                 continue
@@ -395,6 +449,8 @@ def campaign_listing_text(c):
     target = c.get("title") or c.get("uname") or "تسک جدید"
     if c.get("status") == "cancelled":
         state = "🔴 لغو شده"
+    elif c.get("admin_paused") and campaign_needs_admin(c):
+        state = "⛔ توقف موقت: دسترسی ربات"
     elif c.get("status") == "active" and remaining:
         state = "🟢 فعال"
     else:
@@ -422,7 +478,7 @@ def campaign_listing_keyboard(c):
     if target_link:
         rows.append([btn("🔗 رفتن به پست مقصد", url=target_link, style="primary")])
     deep = bot_deep_link(c.get("_id"))
-    if deep and c.get("status") == "active" and int(c.get("remaining", 0)) > 0:
+    if deep and c.get("status") == "active" and int(c.get("remaining", 0)) > 0 and not (c.get("admin_paused") and campaign_needs_admin(c)):
         rows.append([btn("🎁 دریافت پاداش", url=deep, style="success")])
     return rows
 
@@ -505,6 +561,17 @@ def on_claim(cq, uid, chat, mid, cid_s):
     if not c or c["status"] != "active" or c["remaining"] <= 0:
         ans(cq, "این تسک دیگه ظرفیت نداره", True)
         return show_task(uid, chat, mid)
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            return ans(cq, "این کمپین موقتاً متوقف شده؛ دسترسی ربات در حال بازیابی است.", True)
+        admin_status = bot_admin_status(c.get("chat_id"))
+        if admin_status is None:
+            return ans(cq, "بررسی دسترسی مقصد موقتاً ممکن نیست؛ کمی بعد دوباره امتحان کن.", True)
+        if not admin_status:
+            db.campaigns.update_one({"_id": c["_id"], "status": "active"}, {"$set": {"admin_paused": True, "admin_lost_at": time.time()}})
+            refresh_campaign_listing(c["_id"])
+            send(c.get("owner"), f"⛔ کمپین «{c.get('title') or c.get('uname') or 'کمپین'}» به‌دلیل ازدست‌رفتن دسترسی ادمین متوقف شد.")
+            return ans(cq, "کمپین موقتاً متوقف است؛ لطفاً بعداً دوباره امتحان کن.", True)
     if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
         return ans(cq, "امکان انجام این تسک نیست", True)
     if db.completions.find_one({"uid": uid, "cid": cid}):
@@ -1239,9 +1306,22 @@ def settle(comp):
     """پایان دوره‌ی معلق: چک دوباره، بعد پرداخت یا برگشت"""
     c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
     ok = True
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            raise RuntimeError("campaign paused: bot admin access missing")
+        admin_status = bot_admin_status(c.get("chat_id"))
+        if admin_status is None:
+            raise RuntimeError("temporary API error while checking bot admin status")
+        if not admin_status:
+            db.campaigns.update_one({"_id": c["_id"], "status": "active"}, {"$set": {"admin_paused": True, "admin_lost_at": time.time()}})
+            refresh_campaign_listing(c["_id"])
+            send(c.get("owner"), f"⛔ کمپین «{c.get('title') or c.get('uname') or 'کمپین'}» به‌دلیل ازدست‌رفتن دسترسی ادمین متوقف شد.")
+            raise RuntimeError("campaign paused: bot admin access missing")
     if comp["type"] == "join":
         r = tg("getChatMember", chat_id=c.get("chat_id"), user_id=comp["uid"])
-        if r.get("ok") and not member_ok(r["result"]):                 # خطای API = نمی‌شه بررسی کرد → به نفع کاربر
+        if not r.get("ok"):
+            raise RuntimeError("temporary API error while checking user membership")
+        if not member_ok(r["result"]):
             ok = False
     elif comp["type"] == "react" and c.get("mode") == "auto":
         d = db.reacts.find_one({"_id": f"{c.get('chat_id')}:{c.get('mid')}:{comp['uid']}"})
@@ -1258,6 +1338,7 @@ _last = {"clean": 0}
 
 def tick():
     t = time.time()
+    monitor_campaign_admins(t)
     expire_count_claims(t)
     db.completions.update_many({"status": "settling", "lock": {"$lt": t - 600}}, {"$set": {"status": "pending"}})
     while True:
@@ -1269,7 +1350,8 @@ def tick():
             settle(comp)
         except Exception:
             log.exception("settle")
-            db.completions.update_one({"_id": comp["_id"], "status": "settling"}, {"$set": {"status": "pending"}})
+            db.completions.update_one({"_id": comp["_id"], "status": "settling"},
+                                      {"$set": {"status": "pending", "due": time.time() + 60}})
             break
     if t - _last["clean"] > 3600:
         _last["clean"] = t
@@ -1378,6 +1460,8 @@ def on_state_text(uid, chat, text, st):
                 return send(chat, f"📡 <b>پایش پست آماده است</b>\n\nآخرین شمارش دریافت‌شده: <b>{snap.get('total', 0)} ری‌اکشن</b>.\n\nحالا مهلتی رو انتخاب کن که کاربر برای انجام هر تسک در اختیار داشته باشه. توجه کن که تلگرام ممکنه خودِ آپدیت شمارش رو دیرتر ارسال کنه.",
                             [[btn("⏱️ ۲ دقیقه", "rw:2"), btn("⏱️ ۵ دقیقه", "rw:5")], [btn("❌ لغو کمپین", "home")]])
             else:
+                if ch["type"] in ("group", "supergroup"):
+                    return send(chat, f"❌ برای اعتبارسنجی دقیق ری‌اکشن گروه، ربات باید در «{d['title']}» ادمین باشد. پس از ادمین‌کردن، لینک پست را دوباره بفرست.")
                 if not AI_ON:
                     return send(chat, "❌ برای گروه، ربات باید ادمین باشد تا ری‌اکشن فردی را ببیند؛ برای کانال، ربات باید ادمین باشد تا شمارش تجمیعی را پایش کند.")
                 d["mode"] = "shot"
@@ -1407,8 +1491,10 @@ def on_state_text(uid, chat, text, st):
                "react": ("تأیید خودکار فردی (گروه)" if d.get("mode") == "auto" else
                          f"تأیید شمارشی کانال؛ مهلت {d.get('window_min', 5)} دقیقه + پرداخت فوری" if d.get("mode") == "count" else
                          "اسکرین‌شات + بررسی خودکار هوش مصنوعی + ضدتکرار")}[typ]
+        admin_note = ("\n👑 ادمین اجباری ربات: فعال تا پایان کمپین؛ در صورت قطع دسترسی، کمپین موقتاً متوقف می‌شود."
+                      if typ == "join" or (typ == "react" and d.get("mode") == "auto") else "")
         return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} امتیاز\n"
-                          f"🛡 تأیید: {how}\n\nثبت بشه؟",
+                          f"🛡 تأیید: {how}{admin_note}\n\nثبت بشه؟",
                     [[btn(f"✅ ثبت و کسر {q * cost} امتیاز", "ok")], [btn("❌ انصراف", "home")]])
     send(chat, "از منو ادامه بده 👇", main_kb())
 
@@ -1456,12 +1542,23 @@ def confirm_new(cq, uid, chat, mid):
             return view(chat, mid, "📡 شمارش تازه لازم است. از ثبت تسک ری‌اکشن دوباره شروع کن.", main_kb())
     if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
         return ans(cq, f"حداکثر {MAX_ACTIVE} تسک فعال می‌تونی داشته باشی.", True)
+    # کنترل نهایی دسترسی درست پیش از کسر هزینه؛ خطای API به‌معنای تأیید تلقی نمی‌شود.
+    needs_admin = typ == "join" or (typ == "react" and d.get("mode") == "auto")
+    if needs_admin:
+        admin_status = bot_admin_status(d.get("chat_id"))
+        if admin_status is None:
+            return ans(cq, "بررسی ادمین مقصد موقتاً ممکن نیست؛ هزینه‌ای کسر نشد. دوباره تلاش کن.", True)
+        if not admin_status:
+            return ans(cq, "ربات باید هنگام ثبت و تا پایان کمپین ادمین مقصد باشد؛ هزینه‌ای کسر نشد.", True)
     if not spend(uid, d["qty"] * t["cost"], "campaign", d["uname"]):
         return ans(cq, "موجودی کافی نیست", True)
     db.states.delete_one({"_id": uid})
+    admin_required = bool(typ == "join" or (typ == "react" and d.get("mode") == "auto"))
     campaign = {"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
                 "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("ref_text", ""), "ref_photo": d.get("ref_photo"), "target": d["qty"],
-                "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active", "created": time.time()}
+                "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active", "created": time.time(),
+                "admin_required": admin_required, "admin_paused": False,
+                "admin_checked_at": time.time() if admin_required else None}
     if typ == "react" and d.get("mode") == "count":
         campaign.update(window_min=int(d.get("window_min", 5)), base_count=int(snap.get("total", 0)),
                         base_updated_at=float(snap.get("updated_at", time.time())), post_key=post_key(d["chat_id"], d["mid"]))
@@ -1580,6 +1677,18 @@ def open_linked_task(uid, chat, cid_s):
     c = db.campaigns.find_one({"_id": cid})
     if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
         return send(chat, "⏳ این تسک دیگه ظرفیت نداره. از ویترین یک تسک دیگه انتخاب کن.", main_kb())
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            return send(chat, "⛔ این کمپین موقتاً متوقف شده؛ دسترسی ربات در حال بازیابی است.",
+                        [[btn("📣 بازگشت به ویترین", url=tasks_channel_url(), style="primary")]])
+        admin_status = bot_admin_status(c.get("chat_id"))
+        if admin_status is None:
+            return send(chat, "⚠️ بررسی دسترسی مقصد موقتاً ممکن نیست. کمی بعد دوباره امتحان کن.", main_kb())
+        if not admin_status:
+            db.campaigns.update_one({"_id": c["_id"], "status": "active"}, {"$set": {"admin_paused": True, "admin_lost_at": time.time()}})
+            refresh_campaign_listing(c["_id"])
+            send(c.get("owner"), f"⛔ کمپین «{c.get('title') or c.get('uname') or 'کمپین'}» به‌دلیل ازدست‌رفتن دسترسی ادمین متوقف شد.")
+            return send(chat, "⛔ این کمپین موقتاً متوقف است؛ لطفاً بعداً دوباره امتحان کن.", main_kb())
     u = db.users.find_one({"_id": uid}) or {}
     if c.get("owner") == uid:
         return send(chat, "ℹ️ این کمپین متعلق به خودته؛ نمی‌تونی تسک خودت رو انجام بدی.", main_kb())
