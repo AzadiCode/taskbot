@@ -129,7 +129,16 @@ def bot_id():
 
 
 def btn(text, data=None, url=None, style=None):
-    # Telegram Bot API supports primary (blue), success (green), danger (red) button styles.
+    """ساخت دکمه با رنگ‌بندی معنایی؛ دکمه‌های کمکی ساده می‌مانند تا رابط شلوغ نشود."""
+    label = str(text)
+    if style is None:
+        # رنگ‌ها برای اقدام‌های مهم استفاده می‌شوند؛ گزینه‌های اطلاعاتی/بازگشت ساده‌اند.
+        if any(k in label for k in ("انصراف", "لغو", "حذف", "رد درخواست", "توقف")):
+            style = "danger"
+        elif any(k in label for k in ("انجام دادم", "ثبت و کسر", "تأیید", "تایید", "بله، لغو کن", "دریافت پاداش", "ساخت کمپین", "ثبت درخواست")):
+            style = "success"
+        elif any(k in label for k in ("شروع کسب امتیاز", "تسک بعدی", "انجام تسک", "ادامه", "مشاهده تسک", "ویترین تسک", "بازگشت به کانال", "رفتن به پست مقصد", "تسک‌های کانال", "۲ دقیقه", "۵ دقیقه")):
+            style = "primary"
     out = {"text": text, "url": url} if url else {"text": text, "callback_data": data}
     if style in ("primary", "success", "danger"):
         out["style"] = style
@@ -375,8 +384,8 @@ def show_task(uid, chat, mid=None):
     if not ch_url:
         return view(chat, mid, "⚠️ کانال تسک‌ها هنوز تنظیم نشده است. لطفاً بعداً دوباره تلاش کن.", HOME_KB)
     return view(chat, mid,
-                "📣 <b>تسک‌ها فقط از طریق کانال انجام می‌شوند.</b>\n\n"
-                "از کانال، پست تسک را باز کن و کار خواسته‌شده را همان‌جا انجام بده. سپس روی «🎁 دریافت پاداش» در همان پست بزن تا درخواستت در ربات ثبت شود.",
+                "📣 <b>تسک‌ها در کانال انجام می‌شوند.</b>\n\n"
+                "تسک را در کانال کامل کن؛ سپس در همان پست روی «🎁 دریافت پاداش» بزن تا درخواستت ثبت شود.",
                 [[btn("📣 مشاهده تسک‌های کانال", url=ch_url, style="primary")], [btn("🏠 منوی اصلی", "home")]])
 
 
@@ -385,27 +394,27 @@ def campaign_listing_text(c):
     remaining = max(0, int(c.get("remaining", 0)))
     target = c.get("title") or c.get("uname") or "تسک جدید"
     if c.get("status") == "cancelled":
-        state = "⛔ این تسک لغو شده است."
+        state = "🔴 لغو شده"
     elif c.get("status") == "active" and remaining:
-        state = "🟢 آمادهٔ انجام"
+        state = "🟢 فعال"
     else:
-        state = "✅ ظرفیت این تسک تکمیل شده است."
-    if c.get("type") == "react" and c.get("mode") == "count":
-        instruction = f"پست مقصد را باز کن، ری‌اکشن درخواستی را بزن و حداکثر تا {int(c.get('window_min', 5))} دقیقه درخواستت را ثبت کن."
-    elif c.get("type") == "join":
-        instruction = "از طریق پست مقصد وارد کانال شو و عضویتت را انجام بده؛ سپس درخواست پاداش را ثبت کن."
-    elif c.get("type") == "view":
-        instruction = "پست مقصد را باز کن و زمان تعیین‌شده را رعایت کن؛ سپس درخواست پاداش را ثبت کن."
-    else:
-        instruction = "پست مقصد را باز کن و دستورالعمل تسک را کامل انجام بده؛ سپس درخواست پاداش را ثبت کن."
-    return (f"🎯 <b>{t['title']} | تسک جدید</b>\n\n"
-            f"📌 <b>موضوع:</b> {target}\n"
-            f"🎁 <b>پاداش:</b> {c.get('reward', 0)} امتیاز\n"
-            f"👥 <b>ظرفیت باقی‌مانده:</b> {remaining} نفر\n\n"
-            f"📝 <b>روش انجام</b>\n{instruction}\n\n"
-            f"📍 <b>وضعیت:</b> {state}\n\n"
-            "پس از انجام تسک، از همین پست روی «🎁 دریافت پاداش» بزن. ربات درخواستت را ثبت می‌کند و نتیجه را همان‌جا بهت اطلاع می‌دهد.")
+        state = "⚪ تکمیل ظرفیت"
 
+    if c.get("type") == "react" and c.get("mode") == "count":
+        instruction = f"ری‌اکشن درخواستی را روی پست بزن و تا {int(c.get('window_min', 5))} دقیقه درخواست پاداش را ثبت کن."
+    elif c.get("type") == "join":
+        instruction = "از طریق پست مقصد عضو کانال شو؛ سپس درخواست پاداش را ثبت کن."
+    elif c.get("type") == "view":
+        instruction = "پست مقصد را ببین و زمان تعیین‌شده را رعایت کن؛ سپس درخواست پاداش را ثبت کن."
+    else:
+        instruction = "دستور تسک را در پست مقصد کامل کن؛ سپس درخواست پاداش را ثبت کن."
+
+    return (f"🎯 <b>{t['title']}</b>\n"
+            f"📌 {target}\n\n"
+            f"🎁 <b>پاداش:</b> {c.get('reward', 0)} امتیاز  ·  👥 <b>ظرفیت:</b> {remaining} نفر\n"
+            f"📍 <b>وضعیت:</b> {state}\n\n"
+            f"📝 {instruction}\n\n"
+            "پس از انجام کار، از همین پست «🎁 دریافت پاداش» را بزن.")
 
 def campaign_listing_keyboard(c):
     rows = []
@@ -1593,14 +1602,13 @@ def open_linked_task(uid, chat, cid_s):
     else:
         ses = {"t": time.time()}
     db.sessions.update_one({"_id": f"{uid}:{cid}"}, {"$set": ses}, upsert=True)
-    return send(chat, "🎁 <b>ثبت درخواست پاداش</b>\n\n"
-                "اگر تسک را واقعاً در کانال انجام داده‌ای" +
-                (" و ری‌اکشن خواسته‌شده را روی پست ثبت کرده‌ای" if c.get("type") == "react" else "") +
-                "، دکمهٔ زیر را بزن تا درخواستت ثبت و بررسی شود.\n\n"
-                "⚠️ ثبت درخواست به معنی تأیید نهایی نیست. پس از بررسی، نتیجه را همین‌جا بهت اعلام می‌کنم. "
-                "برای تسک‌های ری‌اکشن کانال، ممکن است دریافت آپدیت شمارش تلگرام چند دقیقه زمان ببرد.",
-                [[btn("✅ انجام دادم؛ ثبت درخواست", f"c:{cid}", style="success")],
-                 [btn("📣 بازگشت به کانال تسک‌ها", url=tasks_channel_url(), style="primary")]])
+    return send(chat, "🎁 <b>ثبت انجام تسک</b>\n\n"
+                "اگر کار را در کانال کامل کرده‌ای" +
+                (" و ری‌اکشن خواسته‌شده را زده‌ای" if c.get("type") == "react" else "") +
+                "، درخواستت را ثبت کن.\n\n"
+                "درخواست پس از بررسی تأیید یا رد می‌شود و نتیجه همین‌جا اعلام خواهد شد.",
+                [[btn("✅ انجام دادم", f"c:{cid}", style="success")],
+                 [btn("📣 بازگشت به کانال", url=tasks_channel_url(), style="primary")]])
 
 
 def on_message(msg):
