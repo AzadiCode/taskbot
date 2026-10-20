@@ -46,6 +46,9 @@ STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از ا�
 MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
+CONF_MIN     = float(os.environ.get("CONF_MIN", "0.5"))        # حداقل اطمینان مدل برای قبول عکس
+AI_DEBUG     = os.environ.get("AI_DEBUG", "") == "1"           # =1: جواب خام مدل برای هر رد شدن به ادمین‌ها فرستاده می‌شه
+TIME_TOL     = int(os.environ.get("TIME_TOL", "20"))            # حداکثر اختلاف مجاز ساعت اسکرین‌شات با الان (دقیقه)
 TZ_NAME      = os.environ.get("TZ_NAME", "Asia/Tehran")        # برای مقایسه‌ی ساعت داخل اسکرین‌شات
 
 # نوع تسک: پاداش انجام‌دهنده / هزینه‌ی ثبت برای صاحب کمپین (هر واحد) / حداقل صبر (ثانیه)
@@ -399,7 +402,15 @@ def time_ok(s):
     except Exception:
         ref = datetime.now(timezone(timedelta(hours=3, minutes=30)))
     d = abs(int(m[1]) * 60 + int(m[2]) - (ref.hour * 60 + ref.minute)) % 720
-    return min(d, 720 - d) <= 12
+    return min(d, 720 - d) <= TIME_TOL
+
+
+def now_str():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(TZ_NAME)).strftime("%H:%M")
+    except Exception:
+        return datetime.now(timezone(timedelta(hours=3, minutes=30))).strftime("%H:%M")
 
 
 def ai_request(prompt, img, mime="image/jpeg"):
@@ -411,7 +422,7 @@ def ai_request(prompt, img, mime="image/jpeg"):
     base = {"model": AI_MODEL, "messages": msgs}
     err = ""
     # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
-    for body in (dict(base, temperature=0, max_tokens=500), dict(base, max_completion_tokens=500), base):
+    for body in (dict(base, temperature=0, max_tokens=900), dict(base, max_completion_tokens=900), base):
         try:
             r = requests.post(url, headers={"Authorization": "Bearer " + AI_API_KEY}, json=body, timeout=60)
         except Exception as e:
@@ -475,16 +486,25 @@ def ai_check(img, c):
         "- reaction_highlighted: under THAT post one reaction chip is visibly highlighted/selected (the user's own reaction). "
         "false if reactions are visible but none is selected; null if no reactions are visible.\n"
         "- highlighted_reaction: the exact emoji of the highlighted reaction chip, null if you cannot point to one.\n"
-        "- theme: whether the Telegram UI is light (white/bright) or dark.\n"
+        "- theme: whether the Telegram UI is light (white/bright) or dark. Both themes are fully valid and must NOT lower confidence.\n"
+        "- confidence: how well you could read the screenshot content; it must not depend on light/dark theme.\n"
         "- chips: list EVERY reaction chip under the target post. style=\"solid\" only if the chip has a strong, saturated, fully "
         "filled accent background (blue/green) with white/contrasting text; style=\"tinted\" if it is pale, translucent or "
         "outlined with colored text.\n"
-        "IMPORTANT (works the same in light and dark theme): in LIGHT theme ALL normal unselected reaction chips are ALSO colored "
-        "(pale blue/green tint with blue/green count text), so colour alone does NOT mean selected. A chip is selected ONLY if it "
-        "is visibly different from the other chips: a solid filled background while the others are pale/tinted. "
-        "If all chips look identical in style, nobody reacted: reaction_highlighted=false. "
-        "If only one chip is visible, it counts only if it is solid-filled with white/contrasting text, not a pale tint.\n"
-        "- status_bar_time: the phone clock in the status bar if readable, else null.\n"
+        "HOW TO FIND THE SELECTED CHIP (any theme: white, light, dark, navy, black, custom colors): compare the chips of the target post "
+        "with EACH OTHER, never with a fixed color. Unselected chips all share one calm, translucent/tinted look (grey in dark themes, "
+        "pale tint in light themes). The user's own selected chip is the one that stands out from the rest: a strong, solid, saturated "
+        "accent fill (blue/green/etc.) with white or high-contrast text. If every chip has the same look, nobody reacted: "
+        "reaction_highlighted=false. If there is a single chip, it is selected only if it has that strong solid accent fill, not the calm tint.\n"
+
+        "- status_bar_time: ONLY the phone clock in the very top-left (or top-center) system status bar, next to the battery/signal "
+        "icons. NEVER use the small timestamps inside message bubbles (next to the eye/views counter, like 10:10) - those are post "
+        "times, not the phone clock. If the status bar is cropped or unreadable, null.\n"
+        "TARGET POST ONLY: judge reactions ONLY on the chips that sit inside the SAME message bubble as the target post, directly "
+        "above that bubble's views/time footer. Reaction chips that belong to ANOTHER post (e.g. a chip row at the top of the "
+        "screen just above the target's bubble, or any other bubble) must be completely ignored and must NOT appear in chips. "
+        "If the target post is visible but has no reaction chips under it, reaction_highlighted=false even if other posts show "
+        "reactions.\n"
         "Be strict: reactions on a post are normally all unhighlighted (grey in dark theme, pale tint in light theme) unless the user reacted. "
         "If you are not clearly sure, answer false.")
     txt, err = ai_request(prompt, imgs)
@@ -505,7 +525,7 @@ def judge(v, has_hint):
         conf = float(v.get("confidence") or 0)
     except (TypeError, ValueError):
         conf = 0
-    if conf < 0.6:
+    if conf < CONF_MIN:
         return "reject", "عکس واضح نیست؛ اسکرین‌شات کامل‌تر و واضح‌تر بفرست"
     if v.get("is_telegram_screenshot") is not True:
         return "reject", "این تصویر اسکرین‌شات معتبر تلگرام نیست"
@@ -517,30 +537,26 @@ def judge(v, has_hint):
         return "reject", "پست داخل عکس با تسک نمی‌خونه"
     if v.get("reaction_highlighted") is not True or not v.get("highlighted_reaction"):
         return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
-    chips = [x for x in (v.get("chips") or []) if isinstance(x, dict)]
-    styles = [str(x.get("style")) for x in chips]
-    if not chips or "solid" not in styles:
-        return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
-    if len(chips) >= 2 and len(set(styles)) == 1:
-        return "reject", "ری‌اکشن‌ها همه یک شکل‌ان؛ ری‌اکشن خودت مشخص نیست"
     if not time_ok(v.get("status_bar_time")):
-        return "reject", "ساعت داخل عکس با الان نمی‌خونه؛ اسکرین‌شات تازه بفرست"
+        return "reject", f"ساعت داخل عکس ({v.get('status_bar_time')}) با ساعت الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بفرست"
     return "approve", ""
 
 
 def ai_verdict(img, c):
-    """دو بررسی مستقل؛ فقط اگه هر دو تأیید کنن تأیید می‌شه (جلوگیری از اشتباه تصادفی مدل). خروجی: (حکم، دلیل، خطا)"""
-    res, emojis = [], []
+    """دو بررسی؛ فقط اگه هر دو تأیید کنن تأیید می‌شه. خروجی: (حکم، دلیل، خطا)"""
+    res, raws = [], []
     for _ in range(2):
         v, err = ai_check(img, c)
         if v is None:
             return None, "", err
+        raws.append(v)
         res.append(judge(v, True))
-        emojis.append(str(v.get("highlighted_reaction") or "").strip())
-    if emojis[0] != emojis[1]:
-        return "reject", "ری‌اکشن داخل عکس واضح نیست؛ اسکرین‌شات واضح‌تر بفرست", ""
     for verdict, why in res:
         if verdict != "approve":
+            log.info("ai reject: %s | %s", why, json.dumps(raws, ensure_ascii=False)[:900])
+            if AI_DEBUG:
+                for a in ADMINS:
+                    send(a, "🔎 رد شد: " + why + "\n" + json.dumps(raws[0], ensure_ascii=False)[:900])
             return "reject", why, ""
     return "approve", "", ""
 
