@@ -38,7 +38,7 @@ AI_API_KEY  = os.environ.get("AI_API_KEY", "")
 AI_MODEL    = os.environ.get("AI_MODEL", "")
 AI_ON       = bool(AI_BASE_URL and AI_API_KEY and AI_MODEL)
 
-START_POINTS = int(os.environ.get("START_POINTS", "5"))        # هدیه‌ی شروع
+START_POINTS = int(os.environ.get("START_POINTS", "20"))        # هدیه‌ی شروع
 HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
 DAILY_TASKS  = int(os.environ.get("DAILY_TASKS", "60"))        # سقف تسک روزانه‌ی هر کاربر
 DAILY_AI     = int(os.environ.get("DAILY_AI", "12"))           # سقف بررسی اسکرین‌شات در روز برای هر کاربر
