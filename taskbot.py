@@ -67,7 +67,7 @@ SHOT_WINDOW  = 600                                              # مهلت ار�
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # فرصت اضافه برای تأخیر آپدیت شمارش تلگرام
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v33-polished-task-channel"
+VERSION      = "v34-channel-first-flow"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -128,8 +128,12 @@ def bot_id():
     return _me.get("id")
 
 
-def btn(text, data=None, url=None):
-    return {"text": text, "url": url} if url else {"text": text, "callback_data": data}
+def btn(text, data=None, url=None, style=None):
+    # Telegram Bot API supports primary (blue), success (green), danger (red) button styles.
+    out = {"text": text, "url": url} if url else {"text": text, "callback_data": data}
+    if style in ("primary", "success", "danger"):
+        out["style"] = style
+    return out
 
 
 _HTML_TAG_RE = re.compile(r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote)>|<a\s+href=(?:\"[^\"]*\"|'[^']*')\s*>|</a>", re.I)
@@ -366,76 +370,58 @@ def next_task(uid, skip):
 
 
 def show_task(uid, chat, mid=None):
-    u = db.users.find_one({"_id": uid}) or {}
-    if u.get("strikes", 0) >= STRIKE_LIMIT:
-        return view(chat, mid, "⛔ به‌خاطر اخطارهای مکرر، انجام تسک برات بسته شده. می‌تونی همچنان تسک ثبت کنی.", HOME_KB)
-    if counter_get(f"d:{uid}:{day()}") >= DAILY_TASKS:
-        return view(chat, mid, f"✋ به سقف {DAILY_TASKS} تسک امروز رسیدی. فردا دوباره بیا!", HOME_KB)
-    c = next_task(uid, u.get("skip", []))
-    if not c and u.get("skip"):
-        db.users.update_one({"_id": uid}, {"$set": {"skip": []}})
-        c = next_task(uid, [])
-    if not c:
-        return view(chat, mid, "فعلاً تسک جدیدی نیست 🙂 چند دقیقه‌ی دیگه دوباره سر بزن.",
-                    [[btn("🔄 تلاش دوباره", "earn")], [btn("🏠 منوی اصلی", "home")]])
-    session = {"t": time.time()}
-    if c.get("type") == "react" and c.get("mode") == "count":
-        snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
-        if not snap:
-            return view(chat, mid, "📡 شمارش این پست فعلاً تازه نیست و تسک موقتاً نمایش داده نمی‌شود. صاحب کمپین باید از بخش «پایش ری‌اکشن‌ها» شمارش را تازه کند.",
-                        [[btn("🔄 تلاش دوباره", "earn")], [btn("🏠 منو", "home")]])
-        session.update(baseline_total=int(snap.get("total", 0)), baseline_at=float(snap["updated_at"]),
-                       post_key=post_key(c["chat_id"], c["mid"]))
-    db.sessions.update_one({"_id": f"{uid}:{c['_id']}"}, {"$set": session}, upsert=True)
-    view(chat, mid, task_text(c), [[btn("🔗 باز کردن", url=link_of(c))],
-                                   [btn("✅ انجام دادم", f"c:{c['_id']}")],
-                                   [btn("⏭ بعدی", f"nx:{c['_id']}"), btn("🏠 منو", "home")]])
+    """مسیر کسب امتیاز فقط از کانال است؛ فهرست و لینک پست مقصد داخل ربات نمایش داده نمی‌شود."""
+    ch_url = tasks_channel_url()
+    if not ch_url:
+        return view(chat, mid, "⚠️ کانال تسک‌ها هنوز تنظیم نشده است. لطفاً بعداً دوباره تلاش کن.", HOME_KB)
+    return view(chat, mid,
+                "📣 <b>تسک‌ها فقط از طریق کانال انجام می‌شوند.</b>\n\n"
+                "از کانال، پست تسک را باز کن و کار خواسته‌شده را همان‌جا انجام بده. سپس روی «🎁 دریافت پاداش» در همان پست بزن تا درخواستت در ربات ثبت شود.",
+                [[btn("📣 مشاهده تسک‌های کانال", url=ch_url, style="primary")], [btn("🏠 منوی اصلی", "home")]])
 
 
 def campaign_listing_text(c):
     t = TYPES.get(c.get("type"), {"title": "📌 تسک"})
     remaining = max(0, int(c.get("remaining", 0)))
-    completed = max(0, int(c.get("target", 0)) - remaining)
-    if c.get("status") == "cancelled":
-        state = "⛔ کمپین لغو شده"
-    elif c.get("status") == "active" and remaining:
-        state = "🟢 در حال جذب مشارکت"
-    else:
-        state = "✅ ظرفیت تکمیل شد"
     target = c.get("title") or c.get("uname") or "تسک جدید"
-    if c.get("type") == "react" and c.get("mode") == "count":
-        method = f"📡 <b>روش بررسی:</b> شمارش تجمیعی ری‌اکشن‌ها\n⏱ <b>مهلت انجام:</b> {int(c.get('window_min', 5))} دقیقه"
-    elif c.get("type") == "join":
-        method = "🛡 <b>روش بررسی:</b> بررسی عضویت با ربات"
-    elif c.get("type") == "view":
-        method = "⏱ <b>روش بررسی:</b> رعایت زمان تعیین‌شده"
+    if c.get("status") == "cancelled":
+        state = "⛔ این تسک لغو شده است."
+    elif c.get("status") == "active" and remaining:
+        state = "🟢 آمادهٔ انجام"
     else:
-        method = "🛡 <b>روش بررسی:</b> بررسی ری‌اکشن"
-    return (f"✨ <b>تسک تازه در ویترین!</b>\n\n"
-            f"{t['title']}\n<b>🎯 مقصد:</b> {target}\n"
-            f"💎 <b>پاداش:</b> {c.get('reward', 0)} امتیاز\n"
-            f"👥 <b>ظرفیت اولیه:</b> {c.get('target', 0)} نفر\n"
-            f"📈 <b>ثبت‌شده:</b> {completed} از {c.get('target', 0)}\n"
-            f"🧩 <b>ظرفیت باقی‌مانده:</b> {remaining}\n{method}\n\n"
+        state = "✅ ظرفیت این تسک تکمیل شده است."
+    if c.get("type") == "react" and c.get("mode") == "count":
+        instruction = f"پست مقصد را باز کن، ری‌اکشن درخواستی را بزن و حداکثر تا {int(c.get('window_min', 5))} دقیقه درخواستت را ثبت کن."
+    elif c.get("type") == "join":
+        instruction = "از طریق پست مقصد وارد کانال شو و عضویتت را انجام بده؛ سپس درخواست پاداش را ثبت کن."
+    elif c.get("type") == "view":
+        instruction = "پست مقصد را باز کن و زمان تعیین‌شده را رعایت کن؛ سپس درخواست پاداش را ثبت کن."
+    else:
+        instruction = "پست مقصد را باز کن و دستورالعمل تسک را کامل انجام بده؛ سپس درخواست پاداش را ثبت کن."
+    return (f"🎯 <b>{t['title']} | تسک جدید</b>\n\n"
+            f"📌 <b>موضوع:</b> {target}\n"
+            f"🎁 <b>پاداش:</b> {c.get('reward', 0)} امتیاز\n"
+            f"👥 <b>ظرفیت باقی‌مانده:</b> {remaining} نفر\n\n"
+            f"📝 <b>روش انجام</b>\n{instruction}\n\n"
             f"📍 <b>وضعیت:</b> {state}\n\n"
-            "برای مشاهدهٔ دستورالعمل و ثبت انجام، دکمهٔ زیر رو بزن. نتیجه و پیام واریز پاداش مستقیماً داخل ربات بهت اعلام می‌شه.")
+            "پس از انجام تسک، از همین پست روی «🎁 دریافت پاداش» بزن. ربات درخواستت را ثبت می‌کند و نتیجه را همان‌جا بهت اطلاع می‌دهد.")
 
 
 def campaign_listing_keyboard(c):
     rows = []
-    deep = bot_deep_link(c.get("_id"))
-    if deep and c.get("status") == "active" and int(c.get("remaining", 0)) > 0:
-        rows.append([btn("🎯 مشاهده و انجام تسک", url=deep)])
     target_link = link_of(c)
     if target_link:
-        rows.append([btn("🔗 باز کردن پست مقصد", url=target_link)])
+        rows.append([btn("🔗 رفتن به پست مقصد", url=target_link, style="primary")])
+    deep = bot_deep_link(c.get("_id"))
+    if deep and c.get("status") == "active" and int(c.get("remaining", 0)) > 0:
+        rows.append([btn("🎁 دریافت پاداش", url=deep, style="success")])
     return rows
 
 
 def publish_campaign(c):
-    """انتشار کمپین در کانال ویترین؛ در صورت تنظیم نبودن کانال، کمپین داخل ربات همچنان در دسترس می‌ماند."""
+    """انتشار تسک در کانال عمومی؛ تسک بدون انتشار موفق در کانال قابل انجام نیست."""
     if not TASKS_CHANNEL:
-        log.warning("TASKS_CHANNEL تنظیم نشده؛ کمپین %s در کانال ویترین منتشر نشد", c.get("_id"))
+        log.warning("TASKS_CHANNEL تنظیم نشده؛ کمپین %s در کانال منتشر نشد", c.get("_id"))
         return False
     r = tg("sendMessage", chat_id=TASKS_CHANNEL, text=telegram_html(campaign_listing_text(c)), parse_mode="HTML",
            disable_web_page_preview=True, reply_markup={"inline_keyboard": campaign_listing_keyboard(c)})
@@ -494,8 +480,10 @@ def claim_text(code, c):
 
 def after_ok(cq, chat, mid, c):
     ans(cq, "✅ ثبت شد")
-    view(chat, mid, f"✅ ثبت شد!\n{c['reward']} امتیاز {HOLD_HOURS:g} ساعت معلق می‌مونه و بعد از بازبینی نهایی به موجودی‌ات اضافه می‌شه.",
-         [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
+    view(chat, mid, f"🕓 <b>درخواستت ثبت شد و در انتظار بررسی است.</b>\n\n"
+         f"🎁 پاداش این تسک: {c['reward']} امتیاز\n"
+         f"⏳ بررسی نهایی حداکثر تا {HOLD_HOURS:g} ساعت انجام می‌شود. اگر تسک تأیید شود، پاداش به موجودی‌ات اضافه می‌شود و پیام دریافت می‌کنی.",
+         [[btn("📣 بازگشت به کانال تسک‌ها", url=tasks_channel_url(), style="primary")], [btn("🏠 منوی اصلی", "home")]])
 
 
 def on_claim(cq, uid, chat, mid, cid_s):
@@ -517,7 +505,7 @@ def on_claim(cq, uid, chat, mid, cid_s):
     if not ses:
         ans(cq, "اول تسک رو از منو باز کن", True)
         return show_task(uid, chat, mid)
-    wait = TYPES[c["type"]]["wait"] - (time.time() - ses["t"])
+    wait = 0 if (c.get("type") == "react" and c.get("mode") == "count") else TYPES[c["type"]]["wait"] - (time.time() - ses["t"])
     if wait > 0:
         return ans(cq, f"⏱ هنوز {int(wait) + 1} ثانیه صبر کن و دوباره بزن", True)
 
@@ -534,15 +522,15 @@ def on_claim(cq, uid, chat, mid, cid_s):
     elif c["type"] == "react" and c.get("mode") == "count":
         now = time.time()
         window_min = int(c.get("window_min", 5))
-        started = float(ses.get("t", now))
-        deadline = started + window_min * 60
+        started = float(ses.get("task_started", float(ses.get("t", now)) - window_min * 60))
+        deadline = float(ses.get("task_deadline", now))
         if now > deadline:
-            return ans(cq, f"مهلت {window_min} دقیقه‌ای این تسک تمام شده؛ دوباره تسک را باز کن.", True)
+            return ans(cq, f"مهلت {window_min} دقیقه‌ای این تسک تمام شده؛ از کانال دوباره شروع کن.", True)
         if ses.get("baseline_total") is None or not ses.get("post_key"):
             return ans(cq, "شمارش پایه در دسترس نیست؛ تسک را دوباره باز کن.", True)
         extra = {"post_key": ses["post_key"], "baseline_total": int(ses["baseline_total"]),
                  "baseline_at": float(ses.get("baseline_at", 0)), "task_started": started,
-                 "task_deadline": deadline, "claim_expires": deadline + REACTION_UPDATE_GRACE,
+                 "task_deadline": deadline, "claim_expires": deadline,
                  "day_key": f"d:{uid}:{day()}"}
         code, comp = grant(uid, c, "count_pending", extra=extra)
         if code != "ok":
@@ -552,10 +540,12 @@ def on_claim(cq, uid, chat, mid, cid_s):
         if consume_credit_for_claim(comp):
             return view(chat, mid, "✅ افزایش شمارش تأیید شد؛ پاداش همین حالا پرداخت شد.",
                         [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
-        return view(chat, mid, f"⏳ انجام تسک ثبت شد. منتظر آپدیت شمارش تلگرام هستیم.\n"
-                               f"مهلت انجام: {window_min} دقیقه؛ برای تأخیر احتمالی آپدیت تا {REACTION_UPDATE_GRACE // 60} دقیقه فرصت اضافه داریم.\n"
-                               "اگر افزایش شمارش در بازه ثبت شود، پاداش خودکار و فوری پرداخت می‌شود.",
-                    [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
+        return view(chat, mid, f"🕓 <b>درخواستت ثبت شد و در حال بررسی است.</b>\n\n"
+                               f"🎁 پاداش: {c['reward']} امتیاز\n"
+                               f"⏱ مهلت انجام: {window_min} دقیقه\n\n"
+                               f"منتظر آپدیت شمارش تلگرام هستیم؛ ممکن است چند دقیقه طول بکشد (حداکثر فرصت اضافه: {REACTION_UPDATE_GRACE // 60} دقیقه). "
+                               "اگر افزایش معتبر شمارش در بازهٔ تسک ثبت شود، پاداش به‌صورت خودکار و فوری واریز می‌شود و پیام تأیید می‌گیری.",
+                    [[btn("📣 بازگشت به کانال تسک‌ها", url=tasks_channel_url(), style="primary")], [btn("🏠 منوی اصلی", "home")]])
     elif c["type"] == "react":
         db.states.replace_one({"_id": uid}, {"_id": uid, "step": "shot", "cid": str(cid), "t": time.time()}, upsert=True)
         ans(cq)
@@ -1113,7 +1103,11 @@ def consume_credit_for_claim(comp):
     if c.get("status") != "active":
         fail_count_claim(comp, "کمپین متوقف شده است.")
         return False
-    query = {"post_key": comp.get("post_key"), "old_total": int(comp.get("baseline_total", -1)),
+    # Claims start after the user returns from the channel, so a per-user baseline
+    # captured at that point would already include their reaction. Use unused
+    # aggregate credits from the eligible time window instead. This remains a
+    # count-based estimate and cannot prove the identity of the reactor.
+    query = {"post_key": comp.get("post_key"),
              "event_at": {"$gte": float(comp.get("task_started", 0)), "$lte": float(comp.get("task_deadline", 0))},
              "delta": {"$gt": 0}}
     for credit in db.reaction_credits.find(query).sort([("event_at", 1)]):
@@ -1155,12 +1149,12 @@ def process_count_claims(key, event_at, old_total, new_total, delta):
         invalidate_count_credits(key, -delta)
         return
     claims = db.completions.find({"status": "count_pending", "post_key": key,
-                                  "baseline_total": int(old_total), "task_started": {"$lte": event_at},
+                                  "task_started": {"$lte": event_at},
                                   "task_deadline": {"$gte": event_at}}, sort=[("task_started", 1)])
     for comp in claims:
         if not consume_credit_for_claim(comp):
             # Credit may be consumed by another eligible claim; try next claim only while there are credits.
-            credit_query = {"post_key": key, "old_total": int(old_total),
+            credit_query = {"post_key": key,
                             "event_at": {"$gte": float(comp.get("task_started", 0)), "$lte": float(comp.get("task_deadline", 0))}}
             available = any(int(x.get("used", 0)) < int(x.get("delta", 0)) for x in db.reaction_credits.find(credit_query))
             if not available:
@@ -1229,7 +1223,7 @@ def pay(comp):
         return
     db.users.update_one({"_id": comp["uid"]}, {"$inc": {"hold": -comp["reward"], "points": comp["reward"], "earned": comp["reward"]}})
     ledger(comp["uid"], comp["reward"], "task", comp["cid"])
-    send(comp["uid"], f"💰 {comp['reward']} امتیاز قطعی شد و به موجودی‌ات اضافه شد.")
+    send(comp["uid"], f"🎉 <b>تسکت تأیید شد!</b>\n\n💰 پاداش {comp['reward']} امتیاز با موفقیت به موجودی‌ات اضافه شد. ممنون از مشارکتت ❤️", [[btn("🎯 انجام تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]])
 
 
 def settle(comp):
@@ -1589,14 +1583,24 @@ def open_linked_task(uid, chat, cid_s):
         snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
         if not snap:
             return send(chat, "📡 شمارش این پست فعلاً تازه نیست؛ این تسک موقتاً در دسترس نیست. کمی بعد دوباره از ویترین امتحان کن.", main_kb())
-        ses = {"t": time.time(), "baseline_total": int(snap.get("total", 0)),
-               "baseline_at": float(snap.get("updated_at", time.time())), "post_key": post_key(c["chat_id"], c["mid"])}
+        now = time.time()
+        window_min = int(c.get("window_min", 5))
+        ses = {"t": now, "task_started": now - window_min * 60,
+               "task_deadline": now + REACTION_UPDATE_GRACE,
+               "baseline_total": int(c.get("base_count", snap.get("total", 0))),
+               "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
+               "post_key": post_key(c["chat_id"], c["mid"])}
     else:
         ses = {"t": time.time()}
     db.sessions.update_one({"_id": f"{uid}:{cid}"}, {"$set": ses}, upsert=True)
-    return send(chat, "🎯 <b>تسک آمادهٔ انجامه</b>\n\n" + task_text(c) + "\n\nوقتی مراحل بالا رو انجام دادی، روی «انجام دادم» بزن تا بررسی رو شروع کنم.",
-                [[btn("🔗 باز کردن مقصد", url=link_of(c))], [btn("✅ انجام دادم", f"c:{cid}")],
-                 [btn("📣 برگشت به ویترین", url=tasks_channel_url())], [btn("🏠 منوی اصلی", "home")]])
+    return send(chat, "🎁 <b>ثبت درخواست پاداش</b>\n\n"
+                "اگر تسک را واقعاً در کانال انجام داده‌ای" +
+                (" و ری‌اکشن خواسته‌شده را روی پست ثبت کرده‌ای" if c.get("type") == "react" else "") +
+                "، دکمهٔ زیر را بزن تا درخواستت ثبت و بررسی شود.\n\n"
+                "⚠️ ثبت درخواست به معنی تأیید نهایی نیست. پس از بررسی، نتیجه را همین‌جا بهت اعلام می‌کنم. "
+                "برای تسک‌های ری‌اکشن کانال، ممکن است دریافت آپدیت شمارش تلگرام چند دقیقه زمان ببرد.",
+                [[btn("✅ انجام دادم؛ ثبت درخواست", f"c:{cid}", style="success")],
+                 [btn("📣 بازگشت به کانال تسک‌ها", url=tasks_channel_url(), style="primary")]])
 
 
 def on_message(msg):
@@ -1656,7 +1660,11 @@ def on_callback(cq):
         return view(chat, mid, acc_text(u), HOME_KB)
     if data == "earn":
         ans(cq)
-        return show_task(uid, chat, mid)
+        ch_url = tasks_channel_url()
+        if ch_url:
+            return view(chat, mid, "📣 <b>تسک‌ها فقط در کانال انجام می‌شن</b>\n\nاز کانال، پست موردنظرت رو باز کن و تسک رو همون‌جا انجام بده. بعد روی «🎁 دریافت پاداش» بزن تا درخواستت در ربات ثبت بشه.",
+                        [[btn("📣 مشاهده تسک‌های کانال", url=ch_url, style="primary")], [btn("🏠 منوی اصلی", "home")]])
+        return view(chat, mid, "⚠️ کانال تسک‌ها هنوز تنظیم نشده. لطفاً بعداً دوباره تلاش کن.", HOME_KB)
     if data.startswith("nx:"):
         ans(cq)
         db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
