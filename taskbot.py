@@ -47,6 +47,7 @@ MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.5"))        # حداقل اطمینان مدل برای قبول عکس
+PIXEL_CHECK  = os.environ.get("PIXEL_CHECK", "1") != "0"        # بررسی پیکسلی چیپ پررنگ ری‌اکشن (قبل از مدل)؛ =0 خاموش
 AI_DEBUG     = os.environ.get("AI_DEBUG", "") == "1"           # =1: جواب خام مدل برای هر رد شدن به ادمین‌ها فرستاده می‌شه
 TIME_TOL     = int(os.environ.get("TIME_TOL", "20"))            # حداکثر اختلاف مجاز ساعت اسکرین‌شات با الان (دقیقه)
 TZ_NAME      = os.environ.get("TZ_NAME", "Asia/Tehran")        # برای مقایسه‌ی ساعت داخل اسکرین‌شات
@@ -517,6 +518,45 @@ def ai_check(img, c):
         return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
 
 
+def has_selected_chip(b):
+    """بررسی پیکسلی بدون وابستگی به مدل: ری‌اکشنِ زده‌شده‌ی کاربر در تلگرام یه چیپ قرصی‌شکلِ پر و پررنگ (رنگ اکسنت) می‌شه؛
+    چیپ‌های نزده در همه‌ی تم‌ها کم‌رنگ/شفافن. اگه هیچ قرص پررنگی توی عکس نباشه یعنی ری‌اکشن نخورده.
+    خروجی: True/False؛ None = بررسی ممکن نشد (Pillow نیست یا خطا) → رد نمی‌کنیم"""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(b)).convert("RGB")
+        W = 360
+        im = im.resize((W, max(1, int(im.height * W / im.width))), Image.BILINEAR)
+        hsv = im.convert("HSV")
+        S, V = hsv.getdata(band=1), hsv.getdata(band=2)
+        w, h = im.size
+        mask = bytearray(w * h)
+        for i in range(w * h):
+            if S[i] > 130 and V[i] > 130:          # رنگ اشباع‌شده و روشن
+                mask[i] = 1
+        for i0 in range(w * h):
+            if not mask[i0]:
+                continue
+            st, mask[i0] = [i0], 2
+            n, x0, x1, y0, y1 = 0, w, 0, h, 0
+            while st:
+                i = st.pop()
+                x, y = i % w, i // w
+                n += 1
+                x0, x1, y0, y1 = min(x0, x), max(x1, x), min(y0, y), max(y1, y)
+                for j in (i - 1 if x else -1, i + 1 if x < w - 1 else -1, i - w, i + w if y < h - 1 else -1):
+                    if 0 <= j < w * h and mask[j] == 1:
+                        mask[j] = 2
+                        st.append(j)
+            bw, bh = x1 - x0 + 1, y1 - y0 + 1
+            if 0.045 * w <= bh <= 0.11 * w and 1.4 <= bw / bh <= 4.5 and n / (bw * bh) >= 0.55 and n >= 0.012 * w * w / 4:
+                return True
+        return False
+    except Exception as e:
+        log.warning("pixel check failed: %s", e)
+        return None
+
+
 def ai_reaction_check(img, c):
     """بررسی دوم: فقط ری‌اکشن (پرامپت جدا و ساده). خروجی: (دیکشنری یا None، خطا)"""
     imgs, ref = [img], []
@@ -584,6 +624,8 @@ def judge(v, has_hint):
 
 def ai_verdict(img, c):
     """دو بررسی با پرامپت متفاوت (کلی + فقط ری‌اکشن)؛ فقط اگه هر دو تأیید کنن تأیید می‌شه. خروجی: (حکم، دلیل، خطا)"""
+    if PIXEL_CHECK and has_selected_chip(img) is False:      # بدون چیپ پررنگ = ری‌اکشن نخورده؛ مدل صدا زده نمی‌شه
+        return "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو (چیپ پررنگ) زیر پست دیده نمی‌شه", ""
     v, err = ai_check(img, c)
     if v is None:
         return None, "", err
