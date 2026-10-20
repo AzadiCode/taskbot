@@ -7,14 +7,14 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
 - کاربر با انجام تسک «امتیاز» می‌گیره و با امتیاز، تسک خودش رو ثبت می‌کنه (هزینه‌ی ثبت > پاداش؛ اقتصاد تورم نمی‌کنه)
 - امتیاز بعد از انجام تسک HOLD_HOURS ساعت «معلق» می‌مونه، بعد دوباره چک می‌شه و قطعی می‌شه
 - عضویت  : getChatMember (ربات باید ادمین کانال/گروه باشه) + چک دوباره‌ی آخر دوره‌ی معلق (لفت = برگشت امتیاز + اخطار)
-- ری‌اکشن : گروه با ربات ادمین → تأیید خودکار با message_reaction (برداشتن ری‌اکشن هم دیده می‌شه)
-            کانال (ری‌اکشن‌ها ناشناس‌اند) → اسکرین‌شات + موتور محلی (چک پیکسلی چیپ + OCR ساعت/اسم کانال + تطبیق تصویر پست) + ضدتکرار
-            (بدون هیچ API: VISION_MODE=local | auto = محلی + کمک مدل فقط در حالت «نامطمئن» | ai = رفتار قبلی)
-            (file_unique_id و هش تصویری). تصمیم کاملاً خودکاره: تأیید یا رد؛ نامطمئن = درخواست عکس واضح‌تر
+- ری‌اکشن : گروه/سوپرگروه با ربات ادمین → تأیید فردی با message_reaction
+            کانال → تأیید تجمیعی با message_reaction_count؛ هر واحد افزایش شمارش حداکثر یک ادعا را تأیید می‌کند.
+            مهلت تسک کانال ۲ یا ۵ دقیقه است، پاداش پس از دریافت افزایش معتبر فوری پرداخت می‌شود، و آپدیت ممکن است چند دقیقه تأخیر داشته باشد.
+            شمارش تجمیعی هویت کاربر را ثابت نمی‌کند؛ این روش تعداد افزایش‌ها را می‌سنجد، نه اینکه چه کسی واکنش داده است.
 - بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
-نیازمندی‌ها: flask pymongo requests gunicorn Pillow rapidocr-onnxruntime   (Pillow برای تشخیص عکس تکراریِ دوباره‌آپلودشده لازمه؛ mongomock اختیاری برای تست)
-اجرا: gunicorn app:app
+نیازمندی‌ها: flask pymongo requests gunicorn Pillow   (Pillow برای تشخیص عکس تکراریِ دوباره‌آپلودشده لازمه؛ mongomock اختیاری برای تست)
+اجرا: gunicorn taskbot:app
 """
 import os, re, io, json, time, hmac, hashlib, base64, random, logging, threading
 from concurrent.futures import ThreadPoolExecutor
@@ -62,8 +62,10 @@ STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از ا�
 MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
+REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # فرصت اضافه برای تأخیر آپدیت شمارش تلگرام
+REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v32-local"
+VERSION      = "v32-channel-count"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -98,6 +100,9 @@ db.completions.create_index([("uid", 1), ("cid", 1)], unique=True)     # هر ک
 db.completions.create_index([("status", 1), ("due", 1)])
 db.campaigns.create_index([("status", 1), ("remaining", 1)])
 db.campaigns.create_index("owner")
+db.reaction_watch.create_index([("chat_id", 1), ("mid", 1)])
+db.reaction_credits.create_index([("post_key", 1), ("event_at", 1)])
+db.completions.create_index([("status", 1), ("claim_expires", 1)])
 
 HOOK_SECRET = hashlib.sha256(("hook" + SECRET_KEY).encode()).hexdigest()[:32]
 _me = {}
@@ -225,6 +230,7 @@ HOME_KB = [[btn("🏠 منوی اصلی", "home")]]
 def main_kb():
     return [[btn("🎯 انجام تسک و کسب امتیاز", "earn")],
             [btn("➕ ثبت تسک جدید", "new"), btn("📋 تسک‌های من", "my")],
+            [btn("📡 پایش ری‌اکشن‌ها", "rwatch")],
             [btn("👤 حساب من", "acc"), btn("❓ راهنما", "help")]]
 
 
@@ -240,14 +246,15 @@ def help_text():
         "❓ راهنما\n\n"
         "🎯 انجام تسک: تسک رو انجام بده و «انجام دادم» رو بزن؛ امتیاز بعد از بازبینی نهایی قطعی می‌شه.\n"
         f"• {t['join']['title']}: {t['join']['reward']} امتیاز — اتوماتیک تأیید می‌شه\n"
-        f"• {t['react']['title']}: {t['react']['reward']} امتیاز — در گروه اتوماتیک، در کانال با اسکرین‌شات\n"
+        f"• {t['react']['title']}: {t['react']['reward']} امتیاز — گروه با رویداد فردی؛ کانال با افزایش شمارش تجمیعی\n"
         f"• {t['view']['title']}: {t['view']['reward']} امتیاز — با صبر کردن چند ثانیه\n\n"
-        f"⏳ پاداش {HOLD_HOURS:g} ساعت معلق می‌مونه. اگه در این مدت از کانال لفت بدی یا ری‌اکشن رو برداری، امتیاز برمی‌گرده و "
-        f"اخطار می‌گیری ({STRIKE_LIMIT} اخطار = بسته شدن انجام تسک).\n\n"
+        f"⏳ پاداش عضویت {HOLD_HOURS:g} ساعت معلق می‌ماند و در پایان دوباره بررسی می‌شود. در تسک ری‌اکشن کانال، در صورت دریافت افزایش معتبر شمارش، پاداش فوری است.\n"
+        f"اخطارهای مکرر ({STRIKE_LIMIT} اخطار) انجام تسک را می‌بندد.\n\n"
         "➕ ثبت تسک: هزینه‌ی هر واحد "
         f"عضویت {t['join']['cost']}، ری‌اکشن {t['react']['cost']}، بازدید {t['view']['cost']} امتیازه. "
         "ربات باید در کانال/گروه شما ادمین باشه (برای عضویت الزامیه). فقط کانال/گروه عمومی (با یوزرنیم) پشتیبانی می‌شه.\n\n"
-        "📸 ری‌اکشن در کانال: بعد از ری‌اکشن، اسکرین‌شات بگیر (اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ات دیده بشه) و برای ربات بفرست."
+        "📡 ری‌اکشن در کانال: ربات باید ادمین کانال باشد. تأیید با افزایش شمارش کل ری‌اکشن‌ها انجام می‌شود، نه شناسایی هویت فردی؛ آپدیت‌های تلگرام ممکن است چند دقیقه تأخیر داشته باشند.\n"
+        "در زمان ثبت کمپین، مهلت انجام هر تسک ۲ یا ۵ دقیقه انتخاب می‌شود و در صورت دریافت افزایش معتبر شمارش، پاداش فوری پرداخت می‌شود."
     )
 
 
@@ -273,6 +280,10 @@ def task_text(c):
     elif c.get("mode") == "auto":
         how = ("۱) «باز کردن» رو بزن و روی پست ری‌اکشن بزن\n۲) «انجام دادم» رو بزن\n\n"
                f"⚠️ ری‌اکشن رو تا {HOLD_HOURS:g} ساعت برندار؛ برداری امتیاز برمی‌گرده و اخطار می‌گیری.")
+    elif c.get("mode") == "count":
+        how = (f"۱) روی پست ری‌اکشن بزن\n۲) حداکثر تا {c.get('window_min', 5)} دقیقه «انجام دادم» رو بزن\n\n"
+               "🔎 بررسی با افزایش شمارش کل ری‌اکشن‌های پست انجام می‌شود؛ هویت فردی از شمارش قابل تشخیص نیست. "
+               "اگر افزایش معتبر در این بازه ثبت شود، پاداش فوری پرداخت می‌شود. دریافت آپدیت تلگرام ممکن است چند دقیقه دیرتر باشد.")
     else:
         how = ("۱) «باز کردن» رو بزن و روی پست ری‌اکشن بزن\n۲) از پست اسکرین‌شات بگیر (اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ات دیده بشه)\n"
                "۳) «انجام دادم» رو بزن و عکس رو بفرست")
@@ -280,11 +291,30 @@ def task_text(c):
 
 
 # ───────────────────────── تسک‌ها: انتخاب، ثبت انجام، تأیید نهایی ─────────────────────────
+def post_key(chat_id, message_id):
+    return f"{chat_id}:{message_id}"
+
+
+def fresh_reaction_snapshot(chat_id, message_id, max_age=REACTION_BASELINE_MAX_AGE):
+    w = db.reaction_watch.find_one({"_id": post_key(chat_id, message_id)})
+    if not w or w.get("total") is None or not w.get("updated_at"):
+        return None
+    if time.time() - float(w["updated_at"]) > max_age:
+        return None
+    return w
+
+
 def next_task(uid, skip):
     done = [x["cid"] for x in db.completions.find({"uid": uid}, {"cid": 1})]
     ids = done + [ObjectId(s) for s in skip if ObjectId.is_valid(s)]
-    return db.campaigns.find_one({"status": "active", "remaining": {"$gt": 0}, "owner": {"$ne": uid},
-                                  "_id": {"$nin": ids}}, sort=[("created", 1)])
+    candidates = db.campaigns.find({"status": "active", "remaining": {"$gt": 0}, "owner": {"$ne": uid},
+                                    "_id": {"$nin": ids}}, sort=[("created", 1)])
+    for c in candidates:
+        if c.get("type") == "react" and c.get("mode") == "count":
+            if not fresh_reaction_snapshot(c.get("chat_id"), c.get("mid")):
+                continue
+        return c
+    return None
 
 
 def show_task(uid, chat, mid=None):
@@ -300,13 +330,21 @@ def show_task(uid, chat, mid=None):
     if not c:
         return view(chat, mid, "فعلاً تسک جدیدی نیست 🙂 چند دقیقه‌ی دیگه دوباره سر بزن.",
                     [[btn("🔄 تلاش دوباره", "earn")], [btn("🏠 منوی اصلی", "home")]])
-    db.sessions.update_one({"_id": f"{uid}:{c['_id']}"}, {"$set": {"t": time.time()}}, upsert=True)
+    session = {"t": time.time()}
+    if c.get("type") == "react" and c.get("mode") == "count":
+        snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
+        if not snap:
+            return view(chat, mid, "📡 شمارش این پست فعلاً تازه نیست و تسک موقتاً نمایش داده نمی‌شود. صاحب کمپین باید از بخش «پایش ری‌اکشن‌ها» شمارش را تازه کند.",
+                        [[btn("🔄 تلاش دوباره", "earn")], [btn("🏠 منو", "home")]])
+        session.update(baseline_total=int(snap.get("total", 0)), baseline_at=float(snap["updated_at"]),
+                       post_key=post_key(c["chat_id"], c["mid"]))
+    db.sessions.update_one({"_id": f"{uid}:{c['_id']}"}, {"$set": session}, upsert=True)
     view(chat, mid, task_text(c), [[btn("🔗 باز کردن", url=link_of(c))],
                                    [btn("✅ انجام دادم", f"c:{c['_id']}")],
                                    [btn("⏭ بعدی", f"nx:{c['_id']}"), btn("🏠 منو", "home")]])
 
 
-def grant(uid, c, status):
+def grant(uid, c, status, extra=None):
     """گرفتن یک ظرفیت از کمپین + ثبت انجام. خروجی: (کد، comp)  کد: ok | full | dup | limit"""
     if not counter_take(f"d:{uid}:{day()}", DAILY_TASKS):
         return "limit", None
@@ -317,6 +355,8 @@ def grant(uid, c, status):
         return "full", None
     comp = {"uid": uid, "cid": c["_id"], "owner": c["owner"], "type": c["type"], "reward": c["reward"],
             "status": status, "t": time.time(), "due": time.time() + HOLD_HOURS * 3600}
+    if extra:
+        comp.update(extra)
     try:
         comp["_id"] = db.completions.insert_one(comp).inserted_id
     except DuplicateKeyError:
@@ -325,7 +365,7 @@ def grant(uid, c, status):
         return "dup", None
     if status == "pending":
         db.users.update_one({"_id": uid}, {"$inc": {"hold": c["reward"]}})
-    if r["remaining"] == 1:
+    if r["remaining"] == 1 and status != "count_pending":
         send(c["owner"], f"🎉 کمپین «{c.get('title') or c['uname']}» ({TYPES[c['type']]['title']}) تکمیل شد!\n"
                          f"تأیید نهایی طی {HOLD_HOURS:g} ساعت انجام می‌شه و اگه کسی تخلف کنه ظرفیتش دوباره باز می‌شه.")
     return "ok", comp
@@ -376,6 +416,31 @@ def on_claim(cq, uid, chat, mid, cid_s):
         d = db.reacts.find_one({"_id": f"{c['chat_id']}:{c['mid']}:{uid}"})
         if not (d and d.get("on")):
             return ans(cq, "ری‌اکشنی از تو ثبت نشده. روی پست ری‌اکشن بزن، چند ثانیه صبر کن و دوباره بزن.", True)
+    elif c["type"] == "react" and c.get("mode") == "count":
+        now = time.time()
+        window_min = int(c.get("window_min", 5))
+        started = float(ses.get("t", now))
+        deadline = started + window_min * 60
+        if now > deadline:
+            return ans(cq, f"مهلت {window_min} دقیقه‌ای این تسک تمام شده؛ دوباره تسک را باز کن.", True)
+        if ses.get("baseline_total") is None or not ses.get("post_key"):
+            return ans(cq, "شمارش پایه در دسترس نیست؛ تسک را دوباره باز کن.", True)
+        extra = {"post_key": ses["post_key"], "baseline_total": int(ses["baseline_total"]),
+                 "baseline_at": float(ses.get("baseline_at", 0)), "task_started": started,
+                 "task_deadline": deadline, "claim_expires": deadline + REACTION_UPDATE_GRACE,
+                 "day_key": f"d:{uid}:{day()}"}
+        code, comp = grant(uid, c, "count_pending", extra=extra)
+        if code != "ok":
+            ans(cq, claim_text(code, c), True)
+            return show_task(uid, chat, mid)
+        ans(cq, "در انتظار تأیید شمارش")
+        if consume_credit_for_claim(comp):
+            return view(chat, mid, "✅ افزایش شمارش تأیید شد؛ پاداش همین حالا پرداخت شد.",
+                        [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
+        return view(chat, mid, f"⏳ انجام تسک ثبت شد. منتظر آپدیت شمارش تلگرام هستیم.\n"
+                               f"مهلت انجام: {window_min} دقیقه؛ برای تأخیر احتمالی آپدیت تا {REACTION_UPDATE_GRACE // 60} دقیقه فرصت اضافه داریم.\n"
+                               "اگر افزایش شمارش در بازه ثبت شود، پاداش خودکار و فوری پرداخت می‌شود.",
+                    [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
     elif c["type"] == "react":
         db.states.replace_one({"_id": uid}, {"_id": uid, "step": "shot", "cid": str(cid), "t": time.time()}, upsert=True)
         ans(cq)
@@ -836,268 +901,6 @@ def ai_verdict(img, c, since=None):
     return "approve", "", ""
 
 
-# ───────────────────────── موتور محلی: بدون API و بدون مدل آنلاین ─────────────────────────
-# چک پیکسلی چیپ + OCR محلی (ONNX روی همین سرور) + تطبیق تصویر پست (ORB) + منطق موقعیت (فوتر پست).
-# هیچ تماس شبکه‌ای نداره، پس قطع و وصل و سقف رایگان و کند شدن سرویس‌دهنده معنی نداره.
-# VISION_MODE: auto (پیش‌فرض: اول محلی؛ فقط اگه «نامطمئن» بود و AI تنظیم شده باشه از مدل کمک می‌گیره) | local | ai (رفتار قبلی)
-VISION_MODE = os.environ.get("VISION_MODE", "auto").strip().lower()
-OCR_MAXW    = int(os.environ.get("OCR_MAXW", "1000"))           # عرض عکس برای OCR (کوچک‌تر = سریع‌تر و کم‌مصرف‌تر)
-try:
-    import importlib.util as _iu
-    LOCAL_ON = _iu.find_spec("rapidocr_onnxruntime") is not None and _iu.find_spec("cv2") is not None
-except Exception:
-    LOCAL_ON = False
-VISION_ON = AI_ON or LOCAL_ON
-
-_ocr = {"eng": None, "err": "", "lock": threading.Lock()}
-_FA_NORM = str.maketrans({"ي": "ی", "ك": "ک", "ۀ": "ه", "ة": "ه", "أ": "ا", "إ": "ا", "ؤ": "و"})
-
-
-def _ocr_engine():
-    with _ocr["lock"]:
-        if _ocr["eng"] is None and not _ocr["err"]:
-            try:
-                from rapidocr_onnxruntime import RapidOCR
-                _ocr["eng"] = RapidOCR()
-            except Exception as e:
-                _ocr["err"] = f"OCR محلی بالا نیومد: {e}"[:200]
-                log.warning(_ocr["err"])
-        return _ocr["eng"]
-
-
-def ocr_read(b, maxw=None):
-    """OCR محلی. خروجی: لیست (متن، اطمینان، (x0,y0,x1,y1) کسری از ابعاد عکس) یا None اگه موتور در دسترس نیست"""
-    eng = _ocr_engine()
-    if eng is None:
-        return None
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(b)).convert("RGB")
-        if maxw and im.width > maxw:
-            im = im.resize((maxw, int(im.height * maxw / im.width)), Image.LANCZOS)
-        w, h = im.size
-        buf = io.BytesIO()
-        im.save(buf, "JPEG", quality=92)
-        with _ocr["lock"]:                                   # یک موتور مشترک؛ درخواست‌ها پشت سر هم اجرا می‌شن
-            res, _ = eng(buf.getvalue())
-        out = []
-        for box, txt, conf in (res or []):
-            xs, ys = [p[0] for p in box], [p[1] for p in box]
-            out.append((str(txt), float(conf), (min(xs) / w, min(ys) / h, max(xs) / w, max(ys) / h)))
-        return out
-    except Exception as e:
-        log.warning("local ocr failed: %s", e)
-        return None
-
-
-def norm_txt(s):
-    s = re.sub(r"[\u064b-\u065f\u0670]", "", str(s or "")).translate(FA).translate(_FA_NORM).lower()
-    return re.sub(r"[^0-9a-z\u0600-\u06ff]+", "", s)       # ایموجی، فاصله، نیم‌فاصله و علامت‌ها حذف می‌شن
-
-
-def latin_len(s):
-    return len(re.findall(r"[a-z0-9]", norm_txt(s)))
-
-
-def fuzzy_in(needle, hay):
-    """شباهت (۰ تا ۱) نزدیک‌ترین تکه‌ی hay به needle؛ تحمل خطای OCR"""
-    from difflib import SequenceMatcher
-    n, hy = norm_txt(needle), norm_txt(hay)
-    if len(n) < 3 or not hy:
-        return 0.0
-    if n in hy:
-        return 1.0
-    best = 0.0
-    for L in {len(n), max(3, len(n) - 2), len(n) + 2}:
-        for i in range(0, max(1, len(hy) - L + 1)):
-            best = max(best, SequenceMatcher(None, n, hy[i:i + L]).ratio())
-    return best
-
-
-_CLK = re.compile(r"(?<!\d)(\d{1,2})\s*[:：]\s*(\d{2})(?!\d)")
-_FOOT = re.compile(r"^(?:\S{1,8}\s+)?(?:edited\s+)?\d{1,2}\s*:\s*\d{2}(?:\s?[ap]m)?$", re.I)      # فوتر حباب: «1.2K 14:20» یا «edited 14:20»
-
-
-def _clock_of(txt):
-    m = _CLK.search(str(txt).translate(FA))
-    return f"{int(m[1])}:{m[2]}" if m and int(m[1]) <= 23 and int(m[2]) <= 59 else None
-
-
-def local_clock_reads(img, items, since=None):
-    """ساعت نوار وضعیت: یک‌بار از OCR کل عکس (فقط نوار بالا)، یک‌بار از برش بزرگ‌شده‌ی نوار بالا"""
-    reads = [t for t in (_clock_of(x[0]) for x in items if x[2][3] <= 0.07 and x[1] >= 0.5) if t]
-    if any(time_ok(t, since) for t in reads):
-        return reads                                         # خوندنِ اول قبوله؛ OCR دوم لازم نیست (سریع‌تر)
-    try:
-        crop = ocr_read(status_crop(img, 2)) or []
-        reads += [t for t in (_clock_of(x[0]) for x in crop if x[1] >= 0.5) if t]
-    except Exception as e:
-        log.warning("clock crop failed: %s", e)
-    return reads
-
-
-def locate_ref(shot, ref):
-    """پیدا کردن عکس مرجع پست داخل اسکرین‌شات با ORB + هوموگرافی (مستقل از زبان، تم و اندازه). خروجی: (x0,y0,x1,y1) کسری یا None"""
-    try:
-        import cv2
-        import numpy as np
-        s = cv2.imdecode(np.frombuffer(shot, np.uint8), cv2.IMREAD_GRAYSCALE)
-        r = cv2.imdecode(np.frombuffer(ref, np.uint8), cv2.IMREAD_GRAYSCALE)
-        if s is None or r is None:
-            return None
-        if s.shape[1] > 900:
-            s = cv2.resize(s, (900, int(s.shape[0] * 900 / s.shape[1])))
-        if r.shape[1] > 600:
-            r = cv2.resize(r, (600, int(r.shape[0] * 600 / r.shape[1])))
-        orb = cv2.ORB_create(2000)
-        ks, ds = orb.detectAndCompute(s, None)
-        kr, dr = orb.detectAndCompute(r, None)
-        if ds is None or dr is None or len(kr) < 25 or len(ks) < 25:
-            return None
-        mt = cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(dr, ds, k=2)
-        good = [m[0] for m in mt if len(m) == 2 and m[0].distance < 0.75 * m[1].distance]
-        if len(good) < 14:
-            return None
-        src = np.float32([kr[g.queryIdx].pt for g in good]).reshape(-1, 1, 2)
-        dst = np.float32([ks[g.trainIdx].pt for g in good]).reshape(-1, 1, 2)
-        M, mask = cv2.findHomography(src, dst, cv2.RANSAC, 4.0)
-        if M is None or int(mask.sum()) < 12:
-            return None
-        h, w = r.shape
-        pts = cv2.perspectiveTransform(np.float32([[0, 0], [w, 0], [w, h], [0, h]]).reshape(-1, 1, 2), M).reshape(-1, 2)
-        Hs, Ws = s.shape
-        (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
-        box = (max(0.0, x0 / Ws), max(0.0, y0 / Hs), min(1.0, x1 / Ws), min(1.0, y1 / Hs))
-        return box if (box[2] - box[0]) >= 0.2 and (box[3] - box[1]) >= 0.04 else None
-    except Exception as e:
-        log.warning("locate_ref failed: %s", e)
-        return None
-
-
-def locate_hint(items, hint):
-    """پیدا کردن خط‌های متن پست (فقط لاتین/عدد؛ OCR پیش‌فرض فارسی رو مطمئن نمی‌خونه). خروجی: (x0,y0,x1,y1) یا None"""
-    from difflib import SequenceMatcher
-    h = norm_txt(hint)
-    if latin_len(hint) < 6:
-        return None
-    hit = []
-    for t, conf, bb in items:
-        n = norm_txt(t)
-        if len(n) < 6 or conf < 0.6:
-            continue
-        mm = SequenceMatcher(None, n, h).find_longest_match(0, len(n), 0, len(h))
-        if mm.size >= max(6, 0.7 * len(n)):
-            hit.append(bb)
-    if not hit:
-        return None
-    return (min(b[0] for b in hit), min(b[1] for b in hit), max(b[2] for b in hit), max(b[3] for b in hit))
-
-
-def own_chips(boxes, anchor, items, max_gap=0.35):
-    """چیپ‌هایی که توی حباب همون پست‌اند: زیر پست، بالای اولین فوروتر (ساعت/بازدید) بعد از پست، و نه خیلی دور"""
-    ax0, ay0, ax1, ay1 = anchor
-    foot = [x[2][1] for x in items if x[2][1] >= ay1 - 0.01 and len(str(x[0])) <= 16 and _FOOT.match(str(x[0]).translate(FA).strip()) and x[1] >= 0.5]
-    foot_y = min(foot) if foot else None
-    if foot_y is None:
-        max_gap = min(max_gap, 0.25)                         # فوتر دیده نشد → فقط چیپ‌های خیلی نزدیک
-    out = []
-    for b in boxes:
-        if b[1] < ay1 - 0.04 or b[1] - ay1 > max_gap:
-            continue
-        if foot_y is not None and b[3] > foot_y + 0.01:      # چیپ زیرِ فوتر پست = مال حباب بعدیه
-            continue
-        out.append(b)
-    return out
-
-
-def local_verdict(img, c, since=None):
-    """خروجی: (approve | reject | unsure | None، دلیل، خطا). reject فقط با شواهد منفی روشن؛ نداشتن شواهد کافی = unsure"""
-    if not PIL_OK:
-        return None, "", "Pillow نصب نیست"
-    boxes = find_chips(img)
-    if boxes is None:
-        return None, "", "چک پیکسلی خطا داد (لاگ سرور رو ببین)"
-    if not boxes:
-        return "reject", "ری‌اکشنی نزدی (یا تو عکس دیده نمی‌شه)؛ اول ری‌اکشن بزن بعد اسکرین‌شات بگیر", ""
-    items = ocr_read(img, OCR_MAXW)
-    if items is None:
-        return None, "", _ocr["err"] or "OCR محلی در دسترس نیست (rapidocr-onnxruntime نصب نیست؟)"
-    bad, unsure = [], []
-    # ۱) ساعت گوشی
-    reads = local_clock_reads(img, items, since)
-    why = clock_decide(reads, since)
-    if why:
-        (bad if reads and not any(time_ok(t, since) for t in reads) else unsure).append(why)
-    # ۲) اسم کانال (فقط وقتی عنوان لاتین/عدد داره؛ عنوان فارسی با تطبیق تصویر پست پوشش داده می‌شه)
-    title = c.get("title") or ""
-    if latin_len(title) >= 3:
-        hdr = " ".join(x[0] for x in items if 0.03 <= x[2][1] <= 0.22 and x[1] >= 0.4)
-        sc = fuzzy_in(norm_txt(title)[:24], hdr)
-        if sc < 0.5:
-            bad.append("اسم کانال بالای عکس دیده نمی‌شه")
-        elif sc < 0.72:
-            unsure.append("اسم کانال بالای عکس واضح نیست")
-    # ۳) پیدا کردن پست تسک + مالکیت ری‌اکشن
-    anchor = None
-    if c.get("ref_photo"):
-        ref = fetch_file(c["ref_photo"])
-        if ref:
-            anchor = locate_ref(img, ref)
-    if anchor is None and c.get("hint"):
-        anchor = locate_hint(items, c["hint"])
-    if anchor is None:
-        unsure.append("پستِ تسک توی عکس پیدا نشد؛ اسکرین‌شات رو طوری بگیر که خودِ پست و ری‌اکشنش کامل دیده بشه")
-    elif not own_chips(boxes, anchor, items):
-        bad.append("ری‌اکشنت مالِ پستِ تسک نیست؛ روی خودِ پست تسک ری‌اکشن بزن")
-    log.info("local: bad=%s unsure=%s clocks=%s anchor=%s boxes=%s", bad, unsure, reads, anchor, boxes)
-    if bad:
-        return "reject", "\n".join("• " + x for x in bad) if len(bad) > 1 else bad[0], ""
-    if unsure:
-        return "unsure", "\n".join("• " + x for x in unsure) if len(unsure) > 1 else unsure[0], ""
-    return "approve", "", ""
-
-
-def vision_verdict(img, c, since=None):
-    """مسیر یکپارچه: محلی اول؛ فقط در حالت auto و فقط وقتی محلی «نامطمئن» بود، مدل (اگه تنظیم شده) کمک می‌کنه.
-    خروجی مثل ai_verdict: (حکم، دلیل، خطا)؛ حکم None = مشکل سرویس/ابزار (نه عکس کاربر)"""
-    if VISION_MODE == "ai" or not LOCAL_ON:
-        return ai_verdict(img, c, since)
-    v, why, err = local_verdict(img, c, since)
-    if AI_DEBUG and v in ("reject", "unsure"):
-        for a_ in ADMINS:
-            send(a_, f"🔎 محلی: {v}\n{why}")
-    if v in ("approve", "reject"):
-        return v, why, ""
-    if VISION_MODE == "auto" and AI_ON:
-        v2 = ai_verdict(img, c, since)
-        if v2[0] is not None:
-            return v2
-    if v == "unsure":
-        return "reject", why, ""
-    return None, "", err
-
-
-def local_selftest():
-    if not LOCAL_ON:
-        return "❌ نصب نیست (rapidocr-onnxruntime رو به requirements.txt اضافه کن)"
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        im = Image.new("RGB", (900, 140), (20, 20, 20))
-        try:
-            f = ImageFont.load_default(size=70)
-        except TypeError:
-            f = ImageFont.load_default()
-        ImageDraw.Draw(im).text((30, 25), "12:34", fill=(255, 255, 255), font=f)
-        b = io.BytesIO()
-        im.save(b, "PNG")
-        t0 = time.time()
-        items = ocr_read(b.getvalue())
-        txt = " ".join(x[0] for x in items or [])
-        return f"{'✅' if '12:34' in txt else '⚠️'} OCR محلی ({time.time() - t0:.1f}s) خوند: {txt[:30]!r}"
-    except Exception as e:
-        return f"❌ {e}"[:150]
-
-
 def verify_shot(uid, chat, cid_s, ph, since=None):
     """در ترد جدا اجرا می‌شه (تماس با مدل ممکنه کند باشه)"""
     fid = ph["file_unique_id"]
@@ -1125,7 +928,7 @@ def verify_shot(uid, chat, cid_s, ph, since=None):
                     db.shots.delete_one({"_id": fid})
                     return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
             db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
-        verdict, why, err = vision_verdict(img, c, since)
+        verdict, why, err = ai_verdict(img, c, since)
         if verdict is None:                             # مشکل از سرویس مدله، نه از عکس کاربر
             db.shots.delete_one({"_id": fid})
             db.counters.update_one({"_id": f"ai:{uid}:{day()}"}, {"$inc": {"n": -1}})
@@ -1145,6 +948,144 @@ def verify_shot(uid, chat, cid_s, ph, since=None):
         log.exception("verify_shot")
         db.shots.delete_one({"_id": fid})
         send(chat, "⚠️ خطایی رخ داد؛ دوباره امتحان کن.", [[btn("🏠 منو", "home")]])
+
+
+# ───────────────────────── تأیید تجمیعی ری‌اکشن کانال ─────────────────────────
+def accept_count_claim(comp):
+    """یک واحد افزایش شمارش به یک تسک در بازه‌ی زمانی‌اش اختصاص می‌دهد و پاداش را فوری می‌پردازد."""
+    c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
+    if c.get("status") != "active":
+        fail_count_claim(comp, "کمپین پیش از تأیید متوقف شد؛ ظرفیت به صاحب کمپین برگشت داده شد.")
+        return False
+    r = db.completions.find_one_and_update({"_id": comp["_id"], "status": "count_pending"},
+                                           {"$set": {"status": "settling", "verified_at": time.time(), "due": time.time(), "lock": time.time()}})
+    if not r:
+        return False
+    db.users.update_one({"_id": r["uid"]}, {"$inc": {"hold": r["reward"]}})
+    pay(r)
+    c = db.campaigns.find_one({"_id": r["cid"]}) or {}
+    if c.get("status") == "active" and c.get("remaining", 1) == 0 and db.completions.count_documents({"cid": r["cid"], "status": "count_pending"}) == 0:
+        send(c["owner"], f"🎉 کمپین «{c.get('title') or c.get('uname')}» (❤️ ری‌اکشن) تکمیل شد؛ افزایش شمارش تأیید شد.")
+    return True
+
+
+def fail_count_claim(comp, reason):
+    """ادعای بدون افزایش شمارش را بی‌پاداش می‌بندد و ظرفیت را امن برمی‌گرداند."""
+    r = db.completions.find_one_and_update({"_id": comp["_id"], "status": "count_pending"},
+                                           {"$set": {"status": "failed", "failed_at": time.time()}})
+    if not r:
+        return False
+    c = db.campaigns.find_one({"_id": r["cid"]}) or {}
+    if c.get("status") == "active":
+        db.campaigns.update_one({"_id": r["cid"], "status": "active"}, {"$inc": {"remaining": 1}})
+    else:
+        if c.get("cost"):
+            add_points(r["owner"], c["cost"], "refund", r["cid"])
+    if r.get("day_key"):
+        db.counters.update_one({"_id": r["day_key"]}, {"$inc": {"n": -1}})
+    send(r["uid"], "⌛ " + reason + " پاداشی پرداخت نشد؛ می‌توانی دوباره تلاش کنی.")
+    # اجازه‌ی تلاش دوباره برای همان کمپین را می‌دهیم؛ رویداد شکست برای دیباگ در لاگ می‌ماند.
+    db.reaction_claim_logs.insert_one({"uid": r["uid"], "cid": r["cid"], "post_key": r.get("post_key"),
+                                       "status": "failed", "reason": reason, "t": time.time()})
+    db.completions.delete_one({"_id": r["_id"], "status": "failed"})
+    return True
+
+
+def consume_credit_for_claim(comp):
+    """یک credit از افزایش شمارش مصرف می‌کند؛ هر افزایش فقط به تعداد واحدهای واقعی‌اش تسک را تأیید می‌کند."""
+    c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
+    if c.get("status") != "active":
+        fail_count_claim(comp, "کمپین متوقف شده است.")
+        return False
+    query = {"post_key": comp.get("post_key"), "old_total": int(comp.get("baseline_total", -1)),
+             "event_at": {"$gte": float(comp.get("task_started", 0)), "$lte": float(comp.get("task_deadline", 0))},
+             "delta": {"$gt": 0}}
+    for credit in db.reaction_credits.find(query).sort([("event_at", 1)]):
+        while True:
+            current = db.reaction_credits.find_one({"_id": credit["_id"]})
+            if not current or int(current.get("used", 0)) >= int(current.get("delta", 0)):
+                break
+            used = int(current.get("used", 0))
+            updated = db.reaction_credits.update_one({"_id": current["_id"], "used": used,
+                                                      "delta": {"$gte": used + 1}}, {"$inc": {"used": 1}})
+            if updated.modified_count:
+                if accept_count_claim(comp):
+                    return True
+                db.reaction_credits.update_one({"_id": current["_id"], "used": used + 1}, {"$inc": {"used": -1}})
+                return False
+            # another webhook worker consumed this unit; reread the credit
+    return False
+
+
+def invalidate_count_credits(key, decrease):
+    """اگر شمارش پایین آمد، واحدهای افزایشِ هنوز مصرف‌نشده را با کاهش خنثی می‌کند."""
+    remaining = int(decrease)
+    if remaining <= 0:
+        return
+    for credit in db.reaction_credits.find({"post_key": key}).sort([("event_at", -1)]):
+        used, total_credit = int(credit.get("used", 0)), int(credit.get("delta", 0))
+        available = max(0, total_credit - used)
+        cut = min(available, remaining)
+        if cut:
+            db.reaction_credits.update_one({"_id": credit["_id"], "delta": total_credit, "used": used},
+                                           {"$set": {"delta": total_credit - cut}})
+            remaining -= cut
+        if remaining <= 0:
+            break
+
+
+def process_count_claims(key, event_at, old_total, new_total, delta):
+    if delta <= 0:
+        invalidate_count_credits(key, -delta)
+        return
+    claims = db.completions.find({"status": "count_pending", "post_key": key,
+                                  "baseline_total": int(old_total), "task_started": {"$lte": event_at},
+                                  "task_deadline": {"$gte": event_at}}, sort=[("task_started", 1)])
+    for comp in claims:
+        if not consume_credit_for_claim(comp):
+            # Credit may be consumed by another eligible claim; try next claim only while there are credits.
+            credit_query = {"post_key": key, "old_total": int(old_total),
+                            "event_at": {"$gte": float(comp.get("task_started", 0)), "$lte": float(comp.get("task_deadline", 0))}}
+            available = any(int(x.get("used", 0)) < int(x.get("delta", 0)) for x in db.reaction_credits.find(credit_query))
+            if not available:
+                break
+
+
+def expire_count_claims(now):
+    for comp in db.completions.find({"status": "count_pending", "claim_expires": {"$lte": now}}).limit(200):
+        fail_count_claim(comp, "در مهلت تعیین‌شده افزایش قابل‌تأییدی در شمارش دریافت نشد.")
+    # حفظ اندازه‌ی دیتابیس: creditها فقط تا یک روز برای بررسی و جلوگیری از دوباره‌مصرف‌شدن نگه داشته می‌شوند.
+    db.reaction_credits.delete_many({"received_at": {"$lt": now - 86400}})
+    db.reaction_events.delete_many({"received_at": {"$lt": now - 14 * 86400}})
+
+
+def reaction_watch_text(uid, all_admin=False):
+    query = {} if all_admin else {"$or": [{"owner": uid}, {"owners": uid}]}
+    watches = list(db.reaction_watch.find(query, sort=[("updated_at", -1)], limit=15))
+    if not watches:
+        return "📡 هنوز پستی برای پایش ثبت نشده. هنگام ثبت تسک ری‌اکشن، کانال به این فهرست اضافه می‌شود."
+    lines = ["📡 پایش شمارش ری‌اکشن‌ها", "آپدیت‌ها فقط هنگام تغییر شمارش می‌آیند و تلگرام ممکن است آن‌ها را چند دقیقه گروه‌بندی/با تأخیر ارسال کند.", ""]
+    for w in watches:
+        total = w.get("total")
+        age = max(0, int(time.time() - w.get("updated_at", time.time()))) if w.get("updated_at") else None
+        age_text = f"{age // 60}دقیقه {age % 60}ثانیه پیش" if age is not None else "هنوز آپدیتی نرسیده"
+        delay = max(0, int(w.get("updated_at", time.time()) - w.get("event_at", w.get("updated_at", time.time())))) if w.get("updated_at") else None
+        delay_text = f"تأخیر دریافت حدود {delay} ثانیه" if delay is not None else "تأخیر نامشخص"
+        title = w.get("title") or w.get("uname") or str(w.get("chat_id"))
+        lines.append(f"• {title} — پست {w.get('mid', '?')}")
+        lines.append(f"  شمارش فعلی: {total if total is not None else 'نامشخص'} | آخرین آپدیت: {age_text} | {delay_text}")
+        if w.get("reactions"):
+            lines.append("  " + "، ".join(f"{x['label']} {x['count']}" for x in w["reactions"][:5]))
+        camp_query = {"type": "react", "mode": "count", "chat_id": w.get("chat_id"), "mid": w.get("mid"), "status": "active"}
+        campaigns = list(db.campaigns.find(camp_query, {"target": 1, "remaining": 1, "base_count": 1, "window_min": 1}))
+        if campaigns:
+            c = campaigns[-1]
+            base = c.get("base_count")
+            delta = int(total) - int(base) if total is not None and base is not None else None
+            lines.append(f"  کمپین فعال: {c.get('target', 0)} سفارش | باقی‌مانده {c.get('remaining', 0)} | مهلت {c.get('window_min', 5)} دقیقه" +
+                         (f" | تغییر از شروع کمپین: {delta:+d}" if delta is not None else ""))
+        lines.append("")
+    return "\n".join(lines)[:3900]
 
 
 # ───────────────────────── برگشت / پرداخت / بازبینی ─────────────────────────
@@ -1196,6 +1137,7 @@ _last = {"clean": 0}
 
 def tick():
     t = time.time()
+    expire_count_claims(t)
     db.completions.update_many({"status": "settling", "lock": {"$lt": t - 600}}, {"$set": {"status": "pending"}})
     while True:
         comp = db.completions.find_one_and_update({"status": "pending", "due": {"$lte": t}},
@@ -1295,9 +1237,29 @@ def on_state_text(uid, chat, text, st):
         if typ == "react":
             if ch["type"] in ("group", "supergroup") and bot_is_admin(ch["id"]):
                 d["mode"] = "auto"
+            elif ch["type"] == "channel":
+                if not bot_is_admin(ch["id"]):
+                    return send(chat, f"❌ برای تأیید شمارشی، ربات باید ادمین کانال «{d['title']}» باشد. بعد از ادمین کردن، لینک پست را دوباره بفرست.")
+                d["mode"] = "count"
+                key = post_key(d["chat_id"], d["mid"])
+                db.reaction_watch.update_one({"_id": key}, {"$set": {"chat_id": d["chat_id"], "mid": d["mid"],
+                    "uname": d["uname"], "title": d["title"], "owner": uid, "registered_at": time.time()},
+                    "$addToSet": {"owners": uid}}, upsert=True)
+                snap = fresh_reaction_snapshot(d["chat_id"], d["mid"])
+                if not snap:
+                    db.reaction_watch.update_one({"_id": key}, {"$set": {"calibrating_owner": uid, "calibrating_at": time.time()}})
+                    set_state(uid, "count_baseline", d)
+                    return send(chat, "📡 برای شروع پایش باید یک آپدیت واقعی از شمارش این پست دریافت کنیم.\n\n"
+                                      "حالا در خود کانال یک ری‌اکشن به همین پست اضافه/حذف کن (یا از یک ادمین بخواه این کار را انجام دهد)، سپس ۱ تا چند دقیقه صبر کن. "
+                                      "وقتی تلگرام شمارش را بفرستد، خودکار به مرحله‌ی انتخاب مهلت می‌رویم.\n\n"
+                                      "توجه: تلگرام شمارش را از طریق API به‌صورت فوری قابل‌خواندن نمی‌کند؛ آپدیت‌ها ممکن است چند دقیقه تأخیر داشته باشند.",
+                                [[btn("❌ انصراف", "home")]])
+                set_state(uid, "window", d)
+                return send(chat, f"📡 شمارش فعلی پست دریافت شده: {snap.get('total', 0)} ری‌اکشن.\nمهلت انجام هر تسک را انتخاب کن:",
+                            [[btn("⏱ ۲ دقیقه", "rw:2"), btn("⏱ ۵ دقیقه", "rw:5")], [btn("❌ انصراف", "home")]])
             else:
-                if not VISION_ON:
-                    return send(chat, "❌ ری‌اکشن برای کانال‌ها فعلاً فعال نیست. ری‌اکشن فقط برای گروهی که ربات ادمینشه (تأیید خودکار) ممکنه.")
+                if not AI_ON:
+                    return send(chat, "❌ برای گروه، ربات باید ادمین باشد تا ری‌اکشن فردی را ببیند؛ برای کانال، ربات باید ادمین باشد تا شمارش تجمیعی را پایش کند.")
                 d["mode"] = "shot"
                 set_state(uid, "ref", d)
                 return send(chat, "🔎 برای اینکه ربات پست دقیق رو تشخیص بده (نه هر پست دیگه‌ی کانال)، همون پست رو از کانال برای من فوروارد کن.\n\n"
@@ -1305,6 +1267,10 @@ def on_state_text(uid, chat, text, st):
                             [[btn("❌ انصراف", "home")]])
         set_state(uid, "qty", d)
         return ask_qty(uid, d, cost)
+    if step == "count_baseline":
+        return send(chat, "⏳ هنوز آپدیت شمارش این پست نرسیده. یک ری‌اکشن روی همان پست اضافه/حذف کن و کمی صبر کن.", [[btn("❌ انصراف", "home")]])
+    if step == "window":
+        return send(chat, "مهلت را با دکمه‌های ۲ یا ۵ دقیقه انتخاب کن.", [[btn("⏱ ۲ دقیقه", "rw:2"), btn("⏱ ۵ دقیقه", "rw:5")], [btn("❌ انصراف", "home")]])
     if step == "qty":
         try:
             q = int(text.translate(FA).strip())
@@ -1318,7 +1284,9 @@ def on_state_text(uid, chat, text, st):
         set_state(uid, "confirm", d)
         how = {"join": "تأیید خودکار با عضویت‌سنجی + چک دوباره‌ی آخر دوره‌ی معلق",
                "view": "تأیید زمانی (بازدید قابل راستی‌آزمایی دقیق نیست)",
-               "react": "تأیید خودکار (گروه)" if d.get("mode") == "auto" else "اسکرین‌شات + بررسی خودکار (پیکسل + OCR) + ضدتکرار"}[typ]
+               "react": ("تأیید خودکار فردی (گروه)" if d.get("mode") == "auto" else
+                         f"تأیید شمارشی کانال؛ مهلت {d.get('window_min', 5)} دقیقه + پرداخت فوری" if d.get("mode") == "count" else
+                         "اسکرین‌شات + بررسی خودکار هوش مصنوعی + ضدتکرار")}[typ]
         return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} امتیاز\n"
                           f"🛡 تأیید: {how}\n\nثبت بشه؟",
                     [[btn(f"✅ ثبت و کسر {q * cost} امتیاز", "ok")], [btn("❌ انصراف", "home")]])
@@ -1359,15 +1327,25 @@ def confirm_new(cq, uid, chat, mid):
         return view(chat, mid, "از منو دوباره شروع کن.", main_kb())
     d, typ = st["d"], st["d"]["type"]
     t = TYPES[typ]
+    snap = None
+    if typ == "react" and d.get("mode") == "count":
+        snap = fresh_reaction_snapshot(d.get("chat_id"), d.get("mid"))
+        if not snap:
+            ans(cq, "شمارش پایه قدیمی یا ناموجود است؛ دوباره لینک پست را بفرست تا پایش تازه شود.", True)
+            db.states.delete_one({"_id": uid})
+            return view(chat, mid, "📡 شمارش تازه لازم است. از ثبت تسک ری‌اکشن دوباره شروع کن.", main_kb())
     if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
         return ans(cq, f"حداکثر {MAX_ACTIVE} تسک فعال می‌تونی داشته باشی.", True)
     if not spend(uid, d["qty"] * t["cost"], "campaign", d["uname"]):
         return ans(cq, "موجودی کافی نیست", True)
     db.states.delete_one({"_id": uid})
-    db.campaigns.insert_one({"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
-                             "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("ref_text", ""), "ref_photo": d.get("ref_photo"), "target": d["qty"],
-                             "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active",
-                             "created": time.time()})
+    campaign = {"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
+                "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("ref_text", ""), "ref_photo": d.get("ref_photo"), "target": d["qty"],
+                "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active", "created": time.time()}
+    if typ == "react" and d.get("mode") == "count":
+        campaign.update(window_min=int(d.get("window_min", 5)), base_count=int(snap.get("total", 0)),
+                        base_updated_at=float(snap.get("updated_at", time.time())), post_key=post_key(d["chat_id"], d["mid"]))
+    db.campaigns.insert_one(campaign)
     ans(cq, "✅ ثبت شد")
     view(chat, mid, f"✅ تسک ثبت شد و در لیست کاربران قرار گرفت!\nهر زمان تکمیل شد خبرت می‌کنم.",
          [[btn("📋 تسک‌های من", "my")], [btn("🏠 منو", "home")]])
@@ -1384,8 +1362,15 @@ def render_my(uid, chat, mid):
         return view(chat, mid, "هنوز تسکی ثبت نکردی.", [[btn("➕ ثبت تسک جدید", "new")], [btn("🏠 منو", "home")]])
     lines, kb = [], []
     for i, c in enumerate(cs, 1):
-        st = "⛔ لغو شده" if c["status"] != "active" else ("✅ تکمیل" if c["remaining"] == 0 else "🟢 فعال")
-        lines.append(f"{i}. {TYPES[c['type']]['title']} {c['title']} — {c['target'] - c['remaining']}/{c['target']} {st}")
+        if c.get("type") == "react" and c.get("mode") == "count":
+            paid_count = db.completions.count_documents({"cid": c["_id"], "status": "paid"})
+            pending_count = db.completions.count_documents({"cid": c["_id"], "status": "count_pending"})
+            st = "⛔ لغو شده" if c["status"] != "active" else ("🟡 در انتظار آپدیت" if pending_count else ("✅ تکمیل" if c["remaining"] == 0 else "🟢 فعال"))
+            progress = f"{paid_count}/{c['target']} تأیید | در انتظار {pending_count}"
+        else:
+            st = "⛔ لغو شده" if c["status"] != "active" else ("✅ تکمیل" if c["remaining"] == 0 else "🟢 فعال")
+            progress = f"{c['target'] - c['remaining']}/{c['target']}"
+        lines.append(f"{i}. {TYPES[c['type']]['title']} {c['title']} — {progress} {st}")
         if c["status"] == "active" and c["remaining"] > 0:
             kb.append([btn(f"❌ لغو شماره {i}", f"x:{c['_id']}")])
     view(chat, mid, "📋 تسک‌های من\n\n" + "\n".join(lines), kb + [[btn("🏠 منو", "home")]])
@@ -1413,6 +1398,8 @@ def cancel_campaign(cq, uid, chat, mid, cid_s, sure):
 
 # ───────────────────────── دستورات ادمین ─────────────────────────
 def admin_cmd(uid, chat, cmd, args):
+    if cmd == "reactwatch":
+        return send(chat, reaction_watch_text(uid, all_admin=True))
     if cmd == "stats":
         by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "paid", "reversed")}
         return send(chat, f"📊 کاربران: {db.users.count_documents({})}\nکمپین فعال: {db.campaigns.count_documents({'status': 'active'})}\n"
@@ -1430,7 +1417,6 @@ def admin_cmd(uid, chat, cmd, args):
         [t.join(AI_TIMEOUT + 10) for t in ths]
         lines = [(f"✅ {m} — {res[m][1]}s" if res[m][0] else f"❌ {m} — {res[m][1]}s\n    {res[m][2]}") for m in [e["label"] for e in AI_ENDPOINTS] if m in res]
         return send(chat, "تست تک‌تک مدل‌ها:\n" + ("\n".join(lines) or "هیچ مدلی تنظیم نشده")
-                    + f"\n\nموتور محلی (VISION_MODE={VISION_MODE}): {local_selftest()}"
                     + "\n\nترتیب فعلی اولویت:\n" + "\n".join(f"{i}. {m}" for i, m in enumerate(_model_list(), 1))
                     + f"\n\nنسخه: {VERSION}\nPillow: {'✅' if PIL_OK else '❌ نصب نیست'}\nPIXEL_CHECK: {PIXEL_CHECK}  CLOCK_REQUIRED: {CLOCK_REQUIRED}"
                     + f"\nTIME_TOL: {TIME_TOL}  TZ: {TZ_NAME}  ساعت سرور: {now_str()}  AI_TIMEOUT: {AI_TIMEOUT}  AI_BUDGET: {AI_BUDGET}")
@@ -1448,7 +1434,7 @@ def admin_cmd(uid, chat, cmd, args):
         if r:
             add_points(r["owner"], r["remaining"] * r["cost"], "refund", r["_id"])
         return send(chat, "کمپین متوقف شد و باقی‌مانده برگشت خورد." if r else "کمپین فعالی پیدا نشد.")
-    send(chat, "دستورها: /stats  /aitest  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
+    send(chat, "دستورها: /stats  /reactwatch  /aitest  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
 
 
 # ───────────────────────── مسیریابی آپدیت‌ها ─────────────────────────
@@ -1522,11 +1508,119 @@ def on_callback(cq):
         return confirm_new(cq, uid, chat, mid)
     if data == "my":
         return my_campaigns(cq, uid, chat, mid)
+    if data == "rwatch":
+        ans(cq)
+        return view(chat, mid, reaction_watch_text(uid), [[btn("🔄 بروزرسانی", "rwatch")], [btn("🏠 منو", "home")]])
+    if data.startswith("rw:"):
+        return choose_reaction_window(cq, uid, chat, mid, data[3:])
     if data.startswith("x:"):
         return cancel_campaign(cq, uid, chat, mid, data[2:], False)
     if data.startswith("xy:"):
         return cancel_campaign(cq, uid, chat, mid, data[3:], True)
     ans(cq)
+
+
+def choose_reaction_window(cq, uid, chat, mid, value):
+    st = db.states.find_one({"_id": uid})
+    if not st or st.get("step") != "window":
+        ans(cq, "این مرحله منقضی شده؛ ثبت تسک را دوباره شروع کن.", True)
+        return view(chat, mid, "از منو دوباره شروع کن.", main_kb())
+    try:
+        window_min = int(value)
+    except (TypeError, ValueError):
+        return ans(cq, "مهلت نامعتبر است.", True)
+    if window_min not in (2, 5):
+        return ans(cq, "فقط ۲ یا ۵ دقیقه قابل انتخاب است.", True)
+    d = st.get("d", {})
+    snap = fresh_reaction_snapshot(d.get("chat_id"), d.get("mid"))
+    if not snap:
+        ans(cq, "شمارش قدیمی شده؛ یک تغییر ری‌اکشن ایجاد کن تا دوباره به‌روز شود.", True)
+        return view(chat, mid, "📡 برای ادامه، یک ری‌اکشن به همان پست اضافه/حذف کن و منتظر آپدیت بمان.",
+                    [[btn("❌ انصراف", "home")]])
+    d["window_min"] = window_min
+    set_state(uid, "qty", d)
+    ans(cq, f"مهلت {window_min} دقیقه انتخاب شد")
+    return ask_qty(uid, d, TYPES[d["type"]]["cost"])
+
+
+def on_reaction_count(mr, update_id=None):
+    """Snapshot شمارش تجمیعی کانال را ذخیره و هر واحد افزایش را حداکثر به یک ادعای تسک اختصاص می‌دهد."""
+    chat = mr.get("chat") or {}
+    chat_id, mid = chat.get("id"), mr.get("message_id")
+    if chat_id is None or mid is None:
+        return
+    key = post_key(chat_id, mid)
+    received_at = time.time()
+    event_at = float(mr.get("date") or received_at)
+    old = db.reaction_watch.find_one({"_id": key})
+    if not old:
+        # فقط پست‌هایی را ذخیره می‌کنیم که کاربر برایشان پایش/کمپین ساخته؛ از ذخیره‌ی همه‌ی کانال‌ها جلوگیری می‌شود.
+        watched_campaign = db.campaigns.count_documents({"chat_id": chat_id, "mid": int(mid), "type": "react", "mode": "count"})
+        if not watched_campaign:
+            return
+    if update_id is not None:
+        try:
+            db.reaction_events.insert_one({"_id": int(update_id), "post_key": key, "received_at": received_at})
+        except DuplicateKeyError:
+            return
+    if old and update_id is not None and int(old.get("last_update_id", -1)) >= int(update_id):
+        return
+    if old and old.get("event_at") and event_at < float(old["event_at"]):
+        return
+
+    reactions, total = [], 0
+    for item in (mr.get("reactions") or []):
+        typ = item.get("type") or {}
+        kind = typ.get("type")
+        if kind == "emoji":
+            label = str(typ.get("emoji") or "🙂")
+        elif kind == "custom_emoji":
+            label = "ایموجی اختصاصی"
+        elif kind == "paid":
+            label = "⭐ ری‌اکشن پولی"
+        else:
+            label = str(kind or "ری‌اکشن")
+        count = max(0, int(item.get("total_count", 0)))
+        total += count
+        reactions.append({"label": label[:40], "count": count, "type": typ})
+    reactions.sort(key=lambda x: x["count"], reverse=True)
+    old_total = int(old["total"]) if old and old.get("total") is not None else None
+    set_fields = {"chat_id": chat_id, "mid": int(mid), "total": total, "reactions": reactions,
+                  "event_at": event_at, "updated_at": received_at}
+    if update_id is not None:
+        set_fields["last_update_id"] = int(update_id)
+    if chat.get("username"):
+        set_fields["uname"] = chat["username"]
+    if chat.get("title"):
+        set_fields["title"] = chat["title"][:100]
+    db.reaction_watch.update_one({"_id": key}, {"$set": set_fields,
+        "$setOnInsert": {"created_at": received_at}}, upsert=True)
+
+    if old_total is not None and total != old_total:
+        delta = total - old_total
+        if delta > 0:
+            credit_id = int(update_id) if update_id is not None else f"{key}:{int(event_at)}:{random.randint(1000,9999)}"
+            try:
+                db.reaction_credits.insert_one({"_id": credit_id, "post_key": key, "old_total": old_total,
+                    "new_total": total, "delta": delta, "used": 0, "event_at": event_at, "received_at": received_at})
+            except DuplicateKeyError:
+                pass
+            process_count_claims(key, event_at, old_total, total, delta)
+        else:
+            invalidate_count_credits(key, -delta)
+
+    # اگر صاحب کمپین منتظر اولین snapshot بود، خودکار به انتخاب مهلت هدایتش می‌کنیم.
+    latest = db.reaction_watch.find_one({"_id": key}) or {}
+    owner = latest.get("calibrating_owner")
+    if owner:
+        st = db.states.find_one({"_id": int(owner)})
+        if st and st.get("step") == "count_baseline":
+            d = st.get("d", {})
+            db.reaction_watch.update_one({"_id": key, "calibrating_owner": owner},
+                                         {"$unset": {"calibrating_owner": "", "calibrating_at": ""}})
+            set_state(int(owner), "window", d)
+            send(int(owner), f"✅ شمارش دریافت شد: {total} ری‌اکشن.\nآخرین آپدیت ثبت شد؛ مهلت انجام هر تسک را انتخاب کن:",
+                 [[btn("⏱ ۲ دقیقه", "rw:2"), btn("⏱ ۵ دقیقه", "rw:5")], [btn("❌ انصراف", "home")]])
 
 
 def on_reaction(mr):
@@ -1548,6 +1642,8 @@ def hook():
             on_callback(upd["callback_query"])
         elif "message_reaction" in upd:
             on_reaction(upd["message_reaction"])
+        elif "message_reaction_count" in upd:
+            on_reaction_count(upd["message_reaction_count"], upd.get("update_id"))
         elif "message" in upd:
             on_message(upd["message"])
     except Exception:
@@ -1562,11 +1658,11 @@ def index():
 
 def setup():
     bot_id()
-    if LOCAL_ON and VISION_MODE != "ai":
-        threading.Thread(target=_ocr_engine, daemon=True).start()      # گرم‌کردن موتور OCR تا اولین اسکرین‌شات کند نشه
     r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
-           allowed_updates=["message", "callback_query", "message_reaction"])
-    tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"}, {"command": "help", "description": "راهنما"}])
+           allowed_updates=["message", "callback_query", "message_reaction", "message_reaction_count"])
+    tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"},
+                                   {"command": "help", "description": "راهنما"},
+                                   {"command": "reactwatch", "description": "پایش شمارش ری‌اکشن‌ها (ادمین)"}])
     log.info("webhook: %s", r)
     threading.Thread(target=worker, daemon=True).start()
 
