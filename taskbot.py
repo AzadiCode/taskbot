@@ -12,7 +12,7 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
             (file_unique_id و هش تصویری). تصمیم کاملاً خودکاره: تأیید یا رد؛ نامطمئن = درخواست عکس واضح‌تر
 - بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
-نیازمندی‌ها: flask pymongo requests gunicorn   (اختیاری: Pillow برای هش تصویری، mongomock برای تست بدون دیتابیس)
+نیازمندی‌ها: flask pymongo requests gunicorn Pillow   (Pillow برای تشخیص عکس تکراریِ دوباره‌آپلودشده لازمه؛ mongomock اختیاری برای تست)
 اجرا: gunicorn app:app
 """
 import os, re, io, json, time, hmac, hashlib, base64, random, logging, threading
@@ -455,13 +455,17 @@ def ai_check(img, c):
         f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}). {hint}\n'
         "Answer ONLY with one JSON object, no markdown:\n"
         '{"is_telegram_screenshot": bool, "channel_match": true|false|null, "post_match": true|false|null, '
-        '"reaction_highlighted": true|false|null, "status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
+        '"reaction_highlighted": true|false|null, "highlighted_reaction": "<the emoji that is highlighted>"|null, '
+        '"status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
         "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
         "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
         "- post_match: the visible post matches the expected text; null if no hint or not readable.\n"
         "- reaction_highlighted: under the post one reaction chip is visibly highlighted/selected (the user's own reaction). "
         "false if reactions are visible but none is selected; null if no reactions are visible.\n"
-        "- status_bar_time: the phone clock in the status bar if readable, else null.")
+        "- highlighted_reaction: the exact emoji of the highlighted reaction chip, null if you cannot point to one.\n"
+        "- status_bar_time: the phone clock in the status bar if readable, else null.\n"
+        "Be strict: reactions on a post are normally all unhighlighted (grey) unless the user reacted. "
+        "If you are not clearly sure that one chip is highlighted, answer reaction_highlighted=false.")
     txt, err = ai_request(prompt, img)
     if not txt:
         return None, err
@@ -490,11 +494,25 @@ def judge(v, has_hint):
         return "reject", "پست مورد نظر داخل عکس دیده نمی‌شه"
     if v.get("post_match") is False:
         return "reject", "پست داخل عکس با تسک نمی‌خونه"
-    if v.get("reaction_highlighted") is not True:
+    if v.get("reaction_highlighted") is not True or not v.get("highlighted_reaction"):
         return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
     if not time_ok(v.get("status_bar_time")):
         return "reject", "ساعت داخل عکس با الان نمی‌خونه؛ اسکرین‌شات تازه بفرست"
     return "approve", ""
+
+
+def ai_verdict(img, c):
+    """دو بررسی مستقل؛ فقط اگه هر دو تأیید کنن تأیید می‌شه (جلوگیری از اشتباه تصادفی مدل). خروجی: (حکم، دلیل، خطا)"""
+    res = []
+    for _ in range(2):
+        v, err = ai_check(img, c)
+        if v is None:
+            return None, "", err
+        res.append(judge(v, bool(c.get("hint"))))
+    for verdict, why in res:
+        if verdict != "approve":
+            return "reject", why, ""
+    return "approve", "", ""
 
 
 def verify_shot(uid, chat, cid_s, ph):
@@ -504,33 +522,35 @@ def verify_shot(uid, chat, cid_s, ph):
         c = db.campaigns.find_one({"_id": ObjectId(cid_s)})
         if not c or c["status"] != "active" or c["remaining"] <= 0:
             return send(chat, "این تسک دیگه ظرفیت نداره.", [[btn("🎯 تسک بعدی", "earn")]])
+        RETRY = "❌ این عکس قبلاً رد شده. باید واقعاً ری‌اکشن بزنی و اسکرین‌شات تازه بگیری."
         try:
             db.shots.insert_one({"_id": fid, "uid": uid, "cid": cid_s, "t": time.time()})
         except DuplicateKeyError:
-            return send(chat, "❌ این عکس قبلاً ارسال شده. اسکرین‌شات تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
+            old = db.shots.find_one({"_id": fid}) or {}
+            return send(chat, RETRY if old.get("rej") and old.get("uid") == uid else
+                        "❌ این عکس قبلاً ارسال شده. اسکرین‌شات تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
         img = fetch_file(ph["file_id"])
         if not img:
             db.shots.delete_one({"_id": fid})
             return send(chat, "⚠️ نتونستم عکس رو بگیرم. دوباره «انجام دادم» رو بزن و عکس رو بفرست.", [[btn("🎯 ادامه", "earn")]])
         h = img_hash(img)
         if h:
-            for s in db.shots.find({"cid": cid_s, "ah": {"$exists": True}}):
-                if ham(h, s["ah"]) <= 6:
+            for o in db.shots.find({"cid": cid_s, "ah": {"$exists": True}}):
+                if ham(h, o["ah"]) <= 6:
                     db.shots.delete_one({"_id": fid})
-                    return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.",
-                                [[btn("🏠 منو", "home")]])
+                    return send(chat, RETRY if o.get("rej") and o.get("uid") == uid else
+                                "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
             db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
-        v, err = ai_check(img, c)
-        if v is None:                                   # مشکل از سرویس مدله، نه از عکس کاربر
+        verdict, why, err = ai_verdict(img, c)
+        if verdict is None:                             # مشکل از سرویس مدله، نه از عکس کاربر
             db.shots.delete_one({"_id": fid})
             db.counters.update_one({"_id": f"ai:{uid}:{day()}"}, {"$inc": {"n": -1}})
             ai_alert(err)
             return send(chat, "⚠️ سرویس بررسی عکس الان در دسترس نیست (مشکل از عکس تو نیست). "
                               "چند دقیقه دیگه دوباره «انجام دادم» رو بزن.", [[btn("🎯 تسک‌ها", "earn")]])
-        verdict, why = judge(v, bool(c.get("hint")))
-        if verdict == "reject":
-            db.shots.delete_one({"_id": fid})
-            return send(chat, f"❌ {why}.\nاگه تسک رو درست انجام دادی، از همین تسک دوباره «انجام دادم» رو بزن و عکس بهتری بفرست.",
+        if verdict == "reject":                         # عکس رد‌شده نگه داشته می‌شه تا دوباره ارسالش فایده نداشته باشه
+            db.shots.update_one({"_id": fid}, {"$set": {"rej": True}})
+            return send(chat, f"❌ {why}.\nباید ری‌اکشن بزنی و اسکرین‌شات تازه بگیری؛ همین عکس دوباره قبول نمی‌شه. بعد از آن از همین تسک دوباره «انجام دادم» رو بزن.",
                         [[btn("🎯 تسک‌ها", "earn")]])
         code, comp = grant(uid, c, "pending")
         if code != "ok":
