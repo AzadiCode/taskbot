@@ -8,8 +8,8 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
 - امتیاز بعد از انجام تسک HOLD_HOURS ساعت «معلق» می‌مونه، بعد دوباره چک می‌شه و قطعی می‌شه
 - عضویت  : getChatMember (ربات باید ادمین کانال/گروه باشه) + چک دوباره‌ی آخر دوره‌ی معلق (لفت = برگشت امتیاز + اخطار)
 - ری‌اکشن : گروه با ربات ادمین → تأیید خودکار با message_reaction (برداشتن ری‌اکشن هم دیده می‌شه)
-            کانال (ری‌اکشن‌ها ناشناس‌اند) → اسکرین‌شات + مدل ویژن ارزان (کانال/پست/هایلایت/ساعت)
-            + ضدتکرار (file_unique_id و هش تصویری) + نمونه‌گیری و بازبینی توسط صاحب کمپین
+            کانال (ری‌اکشن‌ها ناشناس‌اند) → اسکرین‌شات + مدل ویژن (کانال/پست/هایلایت/ساعت) + ضدتکرار
+            (file_unique_id و هش تصویری). تصمیم کاملاً خودکاره: تأیید یا رد؛ نامطمئن = درخواست عکس واضح‌تر
 - بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
 نیازمندی‌ها: flask pymongo requests gunicorn   (اختیاری: Pillow برای هش تصویری، mongomock برای تست بدون دیتابیس)
@@ -36,13 +36,12 @@ ADMINS      = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""
 AI_BASE_URL = re.sub(r"/chat/completions/?$", "", os.environ.get("AI_BASE_URL", "").strip().rstrip("/"))
 AI_API_KEY  = os.environ.get("AI_API_KEY", "")
 AI_MODEL    = os.environ.get("AI_MODEL", "")
+AI_ON       = bool(AI_BASE_URL and AI_API_KEY and AI_MODEL)
 
 START_POINTS = int(os.environ.get("START_POINTS", "5"))        # هدیه‌ی شروع
 HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
-REVIEW_HOURS = float(os.environ.get("REVIEW_HOURS", "48"))     # مهلت بازبینی صاحب کمپین (بعدش خودکار تأیید می‌شه)
 DAILY_TASKS  = int(os.environ.get("DAILY_TASKS", "60"))        # سقف تسک روزانه‌ی هر کاربر
 DAILY_AI     = int(os.environ.get("DAILY_AI", "12"))           # سقف بررسی اسکرین‌شات در روز برای هر کاربر
-SAMPLE_P     = float(os.environ.get("SAMPLE_P", "0.10"))       # احتمال نمونه‌گیری از تأییدهای خودکار
 STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از این تعداد اخطار، انجام تسک بسته می‌شه
 MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
@@ -152,7 +151,7 @@ def ensure_user(u):
     if not doc:
         try:
             db.users.insert_one({"_id": uid, "name": name, "username": u.get("username"), "points": START_POINTS,
-                                 "hold": 0, "earned": 0, "strikes": 0, "rv": 0, "rj": 0, "skip": [],
+                                 "hold": 0, "earned": 0, "strikes": 0, "skip": [],
                                  "joined": time.time()})
             if START_POINTS:
                 ledger(uid, START_POINTS, "bonus")
@@ -278,7 +277,7 @@ def show_task(uid, chat, mid=None):
                                    [btn("⏭ بعدی", f"nx:{c['_id']}"), btn("🏠 منو", "home")]])
 
 
-def grant(uid, c, status, shot=None):
+def grant(uid, c, status):
     """گرفتن یک ظرفیت از کمپین + ثبت انجام. خروجی: (کد، comp)  کد: ok | full | dup | limit"""
     if not counter_take(f"d:{uid}:{day()}", DAILY_TASKS):
         return "limit", None
@@ -288,8 +287,7 @@ def grant(uid, c, status, shot=None):
         db.counters.update_one({"_id": f"d:{uid}:{day()}"}, {"$inc": {"n": -1}})
         return "full", None
     comp = {"uid": uid, "cid": c["_id"], "owner": c["owner"], "type": c["type"], "reward": c["reward"],
-            "status": status, "t": time.time(), "shot": shot,
-            "due": time.time() + (REVIEW_HOURS if status == "review" else HOLD_HOURS) * 3600}
+            "status": status, "t": time.time(), "due": time.time() + HOLD_HOURS * 3600}
     try:
         comp["_id"] = db.completions.insert_one(comp).inserted_id
     except DuplicateKeyError:
@@ -405,7 +403,7 @@ def time_ok(s):
 
 
 def ai_check(img, c):
-    if not (AI_BASE_URL and AI_API_KEY and AI_MODEL):
+    if not AI_ON:
         return None
     hint = (f'Expected post text/keyword: "{c["hint"]}".' if c.get("hint") else "No post text hint was provided.")
     prompt = (
@@ -434,37 +432,28 @@ def ai_check(img, c):
 
 
 def judge(v, has_hint):
-    """approve = تأیید خودکار | review = بازبینی صاحب کمپین | reject = رد (کاربر می‌تونه دوباره بفرسته)"""
+    """تصمیم کاملاً خودکار: approve یا reject (نامطمئن = رد با درخواست عکس واضح‌تر؛ کاربر می‌تونه دوباره بفرسته)"""
     if not isinstance(v, dict):
-        return "review", ""
+        return "reject", "بررسی عکس الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن"
     try:
         conf = float(v.get("confidence") or 0)
     except (TypeError, ValueError):
         conf = 0
-    if conf >= 0.6:
-        if v.get("is_telegram_screenshot") is False:
-            return "reject", "این تصویر اسکرین‌شات معتبر تلگرام نیست"
-        if v.get("channel_match") is False or v.get("post_match") is False:
-            return "reject", "اسم کانال یا پست داخل عکس با تسک نمی‌خونه"
-        if v.get("reaction_highlighted") is False:
-            return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
-    strong = (conf >= 0.6 and v.get("is_telegram_screenshot") is True and v.get("channel_match") is True
-              and v.get("reaction_highlighted") is True and (v.get("post_match") is True or not has_hint)
-              and time_ok(v.get("status_bar_time")))
-    return ("approve", "") if strong else ("review", "")
-
-
-def owner_trusted(owner):
-    """صاحب کمپینی که بیش‌ازحد رد می‌کنه (سوءاستفاده برای بازکردن دوباره‌ی ظرفیت) دیگه بازبینی نمی‌کنه"""
-    o = db.users.find_one({"_id": owner}) or {}
-    return not (o.get("rv", 0) >= 10 and o.get("rj", 0) / max(o.get("rv", 1), 1) > 0.4)
-
-
-def send_review(c, comp, note):
-    kb = [[btn("✅ تأیید", f"rv:{comp['_id']}:1"), btn("❌ رد (تقلبی)", f"rv:{comp['_id']}:0")]]
-    tg("sendPhoto", chat_id=c["owner"], photo=comp["shot"], reply_markup={"inline_keyboard": kb},
-       caption=f"{note}\nکمپین: {c.get('title') or c['uname']} ({TYPES[c['type']]['title']})\n"
-               f"کاربر {comp['uid']}\nاگه تا {REVIEW_HOURS:g} ساعت جواب ندی، خودکار تأیید می‌شه.")
+    if conf < 0.6:
+        return "reject", "عکس واضح نیست؛ اسکرین‌شات کامل‌تر و واضح‌تر بفرست"
+    if v.get("is_telegram_screenshot") is not True:
+        return "reject", "این تصویر اسکرین‌شات معتبر تلگرام نیست"
+    if v.get("channel_match") is not True:
+        return "reject", "اسم کانال داخل عکس دیده نمی‌شه یا با تسک نمی‌خونه"
+    if has_hint and v.get("post_match") is not True:
+        return "reject", "پست مورد نظر داخل عکس دیده نمی‌شه"
+    if v.get("post_match") is False:
+        return "reject", "پست داخل عکس با تسک نمی‌خونه"
+    if v.get("reaction_highlighted") is not True:
+        return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
+    if not time_ok(v.get("status_bar_time")):
+        return "reject", "ساعت داخل عکس با الان نمی‌خونه؛ اسکرین‌شات تازه بفرست"
+    return "approve", ""
 
 
 def verify_shot(uid, chat, cid_s, ph):
@@ -495,20 +484,11 @@ def verify_shot(uid, chat, cid_s, ph):
             db.shots.delete_one({"_id": fid})
             return send(chat, f"❌ {why}.\nاگه تسک رو درست انجام دادی، از همین تسک دوباره «انجام دادم» رو بزن و عکس بهتری بفرست.",
                         [[btn("🎯 تسک‌ها", "earn")]])
-        if verdict == "review" and not owner_trusted(c["owner"]):
-            verdict = "approve"
-        code, comp = grant(uid, c, "pending" if verdict == "approve" else "review", shot=ph["file_id"])
+        code, comp = grant(uid, c, "pending")
         if code != "ok":
             return send(chat, claim_text(code, c), [[btn("🎯 تسک بعدی", "earn")]])
-        if verdict == "approve":
-            send(chat, f"✅ تأیید شد!\n{c['reward']} امتیاز {HOLD_HOURS:g} ساعت معلق می‌مونه و بعد قطعی می‌شه.",
-                 [[btn("🎯 تسک بعدی", "earn")]])
-            if random.random() < SAMPLE_P and owner_trusted(c["owner"]):
-                send_review(c, comp, "🔎 نمونه‌گیری تصادفی (تأیید خودکار شده؛ اگه تقلبی بود رد کن)")
-        else:
-            send(chat, f"📨 اسکرین‌شاتت برای بازبینی صاحب تسک رفت. اگه تا {REVIEW_HOURS:g} ساعت جواب نده، خودکار تأیید می‌شه.",
-                 [[btn("🎯 تسک بعدی", "earn")]])
-            send_review(c, comp, "📸 اسکرین‌شات نیازمند بازبینی شما")
+        send(chat, f"✅ تأیید شد!\n{c['reward']} امتیاز {HOLD_HOURS:g} ساعت معلق می‌مونه و بعد قطعی می‌شه.",
+             [[btn("🎯 تسک بعدی", "earn")]])
     except Exception:
         log.exception("verify_shot")
         db.shots.delete_one({"_id": fid})
@@ -559,43 +539,6 @@ def settle(comp):
         undo(comp, True, True, "از کانال خارج شدی یا ری‌اکشن رو برداشتی؛ امتیاز این تسک برگشت خورد.")
 
 
-def to_pending(comp_id):
-    r = db.completions.find_one_and_update({"_id": comp_id, "status": "review"},
-                                           {"$set": {"status": "pending", "due": time.time() + HOLD_HOURS * 3600}})
-    if r:
-        db.users.update_one({"_id": r["uid"]}, {"$inc": {"hold": r["reward"]}})
-    return r
-
-
-def on_review(cq, uid, comp_id_s, verdict):
-    try:
-        comp = db.completions.find_one({"_id": ObjectId(comp_id_s)})
-    except InvalidId:
-        comp = None
-    c = db.campaigns.find_one({"_id": comp["cid"]}) if comp else None
-    if not comp or not c or c["owner"] != uid:
-        return ans(cq, "نامعتبر", True)
-    done = False
-    if verdict == "1":
-        r = to_pending(comp["_id"])
-        done = bool(r) or comp["status"] == "pending"
-        if r:
-            send(comp["uid"], f"✅ اسکرین‌شاتت تأیید شد؛ {comp['reward']} امتیاز تا {HOLD_HOURS:g} ساعت دیگه قطعی می‌شه.")
-    else:
-        r = db.completions.find_one_and_update({"_id": comp["_id"], "status": {"$in": ["review", "pending"]}},
-                                               {"$set": {"status": "rejected"}})
-        if r:
-            done = True
-            undo(r, r["status"] == "pending", False, "صاحب تسک اسکرین‌شاتت رو تأیید نکرد؛ اگه واقعاً انجام دادی، تسک جدید بزن یا دوباره امتحان کن.")
-    if not done:
-        return ans(cq, "زمان بررسی این مورد گذشته", True)
-    db.users.update_one({"_id": uid}, {"$inc": {"rv": 1, "rj": 0 if verdict == "1" else 1}})
-    ans(cq, "ثبت شد ✅")
-    m = cq.get("message") or {}
-    tg("editMessageReplyMarkup", chat_id=m.get("chat", {}).get("id"), message_id=m.get("message_id"),
-       reply_markup={"inline_keyboard": []})
-
-
 _last = {"clean": 0}
 
 
@@ -613,11 +556,6 @@ def tick():
             log.exception("settle")
             db.completions.update_one({"_id": comp["_id"], "status": "settling"}, {"$set": {"status": "pending"}})
             break
-    while True:                                   # صاحب کمپین جواب نداد → تأیید خودکار
-        comp = db.completions.find_one({"status": "review", "due": {"$lte": t}})
-        if not comp:
-            break
-        to_pending(comp["_id"])
     if t - _last["clean"] > 3600:
         _last["clean"] = t
         db.reacts.delete_many({"t": {"$lt": t - 40 * 86400}})
@@ -706,6 +644,8 @@ def on_state_text(uid, chat, text, st):
             if ch["type"] in ("group", "supergroup") and bot_is_admin(ch["id"]):
                 d["mode"] = "auto"
             else:
+                if not AI_ON:
+                    return send(chat, "❌ ری‌اکشن برای کانال‌ها فعلاً فعال نیست. ری‌اکشن فقط برای گروهی که ربات ادمینشه (تأیید خودکار) ممکنه.")
                 d["mode"] = "shot"
                 set_state(uid, "hint", d)
                 return send(chat, "✍️ (اختیاری، برای دقت بیشتر) یه کلمه یا جمله‌ی کوتاه از متن پست بفرست تا هوش مصنوعی توی اسکرین‌شات‌ها "
@@ -729,7 +669,7 @@ def on_state_text(uid, chat, text, st):
         set_state(uid, "confirm", d)
         how = {"join": "تأیید خودکار با عضویت‌سنجی + چک دوباره‌ی آخر دوره‌ی معلق",
                "view": "تأیید زمانی (بازدید قابل راستی‌آزمایی دقیق نیست)",
-               "react": "تأیید خودکار (گروه)" if d.get("mode") == "auto" else "اسکرین‌شات + بررسی هوش مصنوعی + نمونه‌گیری"}[typ]
+               "react": "تأیید خودکار (گروه)" if d.get("mode") == "auto" else "اسکرین‌شات + بررسی خودکار هوش مصنوعی + ضدتکرار"}[typ]
         return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} امتیاز\n"
                           f"🛡 تأیید: {how}\n\nثبت بشه؟",
                     [[btn(f"✅ ثبت و کسر {q * cost} امتیاز", "ok")], [btn("❌ انصراف", "home")]])
@@ -798,7 +738,7 @@ def cancel_campaign(cq, uid, chat, mid, cid_s, sure):
 # ───────────────────────── دستورات ادمین ─────────────────────────
 def admin_cmd(uid, chat, cmd, args):
     if cmd == "stats":
-        by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "review", "paid", "reversed", "rejected")}
+        by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "paid", "reversed")}
         return send(chat, f"📊 کاربران: {db.users.count_documents({})}\nکمپین فعال: {db.campaigns.count_documents({'status': 'active'})}\n"
                           + "\n".join(f"{k}: {v}" for k, v in by.items()))
     if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
@@ -891,12 +831,6 @@ def on_callback(cq):
         return cancel_campaign(cq, uid, chat, mid, data[2:], False)
     if data.startswith("xy:"):
         return cancel_campaign(cq, uid, chat, mid, data[3:], True)
-    if data.startswith("rv:"):
-        try:
-            _, cid, v = data.split(":")
-        except ValueError:
-            return ans(cq)
-        return on_review(cq, uid, cid, v)
     ans(cq)
 
 
