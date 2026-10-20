@@ -62,10 +62,10 @@ MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v30-fast"
+VERSION      = "v31-clockstrict"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
-CLOCK_REQUIRED = os.environ.get("CLOCK_REQUIRED", "0") != "0"       # =0: اگه ساعت خونده نشد رد نکن
+CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
 try:
     import PIL.Image  # noqa
     PIL_OK = True
@@ -73,7 +73,7 @@ except Exception:
     PIL_OK = False
 PIXEL_CHECK  = os.environ.get("PIXEL_CHECK", "1") != "0"        # بررسی پیکسلی چیپ پررنگ ری‌اکشن (قبل از مدل)؛ =0 خاموش
 AI_DEBUG     = os.environ.get("AI_DEBUG", "") == "1"           # =1: جواب خام مدل برای هر رد شدن به ادمین‌ها فرستاده می‌شه
-TIME_TOL     = int(os.environ.get("TIME_TOL", "20"))            # حداکثر اختلاف مجاز ساعت اسکرین‌شات با الان (دقیقه)
+TIME_TOL     = int(os.environ.get("TIME_TOL", "5"))             # چند دقیقه قبل از زدن «انجام دادم» هنوز قبوله (دقیقه)
 TZ_NAME      = os.environ.get("TZ_NAME", "Asia/Tehran")        # برای مقایسه‌ی ساعت داخل اسکرین‌شات
 
 # نوع تسک: پاداش انجام‌دهنده / هزینه‌ی ثبت برای صاحب کمپین (هر واحد) / حداقل صبر (ثانیه)
@@ -416,18 +416,21 @@ def ham(a, b):
     return bin(int(a, 16) ^ int(b, 16)).count("1")
 
 
-def time_ok(s):
-    """ساعت نوار وضعیت گوشی با الان مقایسه می‌شه (خوانده نشده = مشکلی نیست). ساعت ۱۲ و ۲۴ ساعته هر دو پوشش داده می‌شن"""
+def time_ok(s, since=None):
+    """ساعت گوشی در عکس باید داخل پنجره‌ی «از ‹TIME_TOL› دقیقه قبل از زدن «انجام دادم» تا الان» باشه (آینده فقط ۲ دقیقه).
+    since = زمان زدن «انجام دادم» (epoch). ساعت ۱۲ و ۲۴ ساعته هر دو پوشش داده می‌شن. ناخونا = False"""
     m = re.match(r"^\s*(\d{1,2}):(\d{2})", str(s or ""))
     if not m:
-        return True
+        return False
     try:
         from zoneinfo import ZoneInfo
         ref = datetime.now(ZoneInfo(TZ_NAME))
     except Exception:
         ref = datetime.now(timezone(timedelta(hours=3, minutes=30)))
-    d = abs(int(m[1]) * 60 + int(m[2]) - (ref.hour * 60 + ref.minute)) % 720
-    return min(d, 720 - d) <= TIME_TOL
+    past = TIME_TOL + (max(0.0, (time.time() - since) / 60) if since else 0)
+    mod = 1440 if int(m[1]) >= 13 else 720
+    d = (ref.hour * 60 + ref.minute - int(m[1]) * 60 - int(m[2])) % mod
+    return d <= past or d >= mod - 2
 
 
 def now_str():
@@ -763,23 +766,19 @@ def _mins(t):
     return int(m[1]) * 60 + int(m[2])
 
 
-def clock_decide(img, reads):
-    """قبول: هر خوندنی که با ساعت الان بخونه کافیه. رد: فقط وقتی دو خوندن مستقل هر دو ساعتِ ناهمخوان بدن.
-    خوندن نشد = مشکل از ابزاره نه کاربر (مگه CLOCK_REQUIRED=1). خروجی: None (قبول) یا متن دلیل رد"""
+def clock_decide(reads, since=None):
+    """سه خوندن مستقل از ساعت. قبول فقط با شواهد مثبت: خوندن‌های همخوان با الان باید بیشتر از ناهمخوان‌ها باشن.
+    هیچ خوندنی/مساوی = رد (بسته). خروجی: None (قبول) یا متن دلیل رد"""
     reads = [x for x in reads if x]
-    if any(time_ok(t) for t in reads):
+    good = [t for t in reads if time_ok(t, since)]
+    bad = [t for t in reads if not time_ok(t, since)]
+    if len(good) > len(bad):
         return None
-    if len(reads) < 2:
-        t3, _ = ai_clock(img, 2)
-        if t3:
-            if time_ok(t3):
-                return None
-            reads.append(t3)
     if not reads:
-        return "ساعت بالای گوشی تو عکس پیدا نشد" if CLOCK_REQUIRED else None
-    if len(reads) >= 2:
-        return "ساعت عکس با الان نمی‌خونه؛ اسکرین‌شات تازه بگیر"
-    return None                                         # فقط یه خوندنِ ناهمخوان: اعتبار نداره، رد نمی‌کنیم
+        return "ساعت بالای گوشی تو عکس خونده نشد؛ اسکرین‌شات کامل با نوار بالای گوشی بگیر"
+    if good:
+        return "ساعت عکس واضح خونده نشد؛ اسکرین‌شات تازه و کامل بگیر"
+    return f"ساعت عکس ({bad[0]}) با الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بگیر"
 
 
 def _safe(fn, *a):
@@ -790,7 +789,7 @@ def _safe(fn, *a):
         return None, f"{getattr(fn, '__name__', 'fn')}: {e}"
 
 
-def ai_verdict(img, c):
+def ai_verdict(img, c, since=None):
     """۱) چک پیکسلی چیپ پررنگ  ۲) به‌موازات: مدل کلی، مالکیت چیپ، دو خوندن ساعت  ۳) تصمیم.
     همه‌ی چک‌ها بسته‌اند: اگه ابزاری کار نکنه (مثلاً Pillow) هیچ‌چیز تأیید نمی‌شه. خروجی: (حکم، دلیل، خطا)"""
     if PIXEL_CHECK and not PIL_OK:
@@ -801,13 +800,14 @@ def ai_verdict(img, c):
     if boxes is not None and not boxes:
         return "reject", "ری‌اکشنی نزدی (یا تو عکس دیده نمی‌شه)؛ اول ری‌اکشن بزن بعد اسکرین‌شات بگیر", ""
     small = small_jpeg(img)
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=5) as ex:
         f_gen = ex.submit(_safe, ai_retry, ai_check, small, c)
         f_own = (ex.submit(_safe, ai_retry, ai_owner_check, img, boxes, c) if boxes
                  else ex.submit(_safe, ai_retry, ai_reaction_check, img, c))
         f_c0 = ex.submit(_safe, ai_clock, img, 0)
         f_c1 = ex.submit(_safe, ai_clock, img, 1)
-        (v, e1), (r, e2), (t0, _), (t1, _) = f_gen.result(), f_own.result(), f_c0.result(), f_c1.result()
+        f_c2 = ex.submit(_safe, ai_clock, img, 2)
+        (v, e1), (r, e2), (t0, _), (t1, _), (t2, _) = f_gen.result(), f_own.result(), f_c0.result(), f_c1.result(), f_c2.result()
     if v is None or r is None:
         return None, "", e1 or e2 or "پاسخ مدل نیومد"
     problems = []                                       # همه‌ی مشکل‌ها با هم گزارش می‌شن، نه فقط اولینش
@@ -822,20 +822,20 @@ def ai_verdict(img, c):
                 problems.append("ری‌اکشنت مالِ پستِ تسک نیست؛ روی خودِ پست تسک ری‌اکشن بزن")
         elif not str(r.get("selected_emoji") or "").strip():
             problems.append("ری‌اکشنت زیر پستِ تسک دیده نمی‌شه")
-        why2 = clock_decide(img, [t0, t1])
+        why2 = clock_decide([t0, t1, t2], since)
         if why2:
             problems.append(why2)
     if problems:
         why = problems[0] if len(problems) == 1 else "\n".join("• " + x for x in problems)
-        log.info("ai reject: %s | %s | %s | clocks=%s | %s", problems, json.dumps(v, ensure_ascii=False)[:400], json.dumps(r, ensure_ascii=False)[:300], [t0, t1], boxes)
+        log.info("ai reject: %s | %s | %s | clocks=%s | %s", problems, json.dumps(v, ensure_ascii=False)[:400], json.dumps(r, ensure_ascii=False)[:300], [t0, t1, t2], boxes)
         if AI_DEBUG:
             for a_ in ADMINS:
-                send(a_, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:600] + "\n" + json.dumps(r, ensure_ascii=False)[:400] + f"\nclocks={[t0, t1]}")
+                send(a_, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:600] + "\n" + json.dumps(r, ensure_ascii=False)[:400] + f"\nclocks={[t0, t1, t2]}")
         return "reject", why, ""
     return "approve", "", ""
 
 
-def verify_shot(uid, chat, cid_s, ph):
+def verify_shot(uid, chat, cid_s, ph, since=None):
     """در ترد جدا اجرا می‌شه (تماس با مدل ممکنه کند باشه)"""
     fid = ph["file_unique_id"]
     try:
@@ -862,7 +862,7 @@ def verify_shot(uid, chat, cid_s, ph):
                     db.shots.delete_one({"_id": fid})
                     return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
             db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
-        verdict, why, err = ai_verdict(img, c)
+        verdict, why, err = ai_verdict(img, c, since)
         if verdict is None:                             # مشکل از سرویس مدله، نه از عکس کاربر
             db.shots.delete_one({"_id": fid})
             db.counters.update_one({"_id": f"ai:{uid}:{day()}"}, {"$inc": {"n": -1}})
@@ -1213,7 +1213,7 @@ def on_message(msg):
         if not counter_take(f"ai:{uid}:{day()}", DAILY_AI):
             return send(chat, f"✋ سقف {DAILY_AI} بررسی اسکرین‌شات امروز پر شده. فردا دوباره امتحان کن.", HOME_KB)
         send(chat, "⏳ در حال بررسی اسکرین‌شات…")
-        threading.Thread(target=verify_shot, args=(uid, chat, st["cid"], msg["photo"][-1]), daemon=True).start()
+        threading.Thread(target=verify_shot, args=(uid, chat, st["cid"], msg["photo"][-1], st.get("t")), daemon=True).start()
         return
     if st and st.get("step") == "ref":
         return on_ref(uid, chat, msg, st)
