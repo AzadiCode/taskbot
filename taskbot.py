@@ -477,7 +477,7 @@ def ai_check(img, c):
         "Answer ONLY with one JSON object, no markdown:\n"
         '{"is_telegram_screenshot": bool, "channel_match": true|false|null, "post_match": true|false|null, '
         '"reaction_highlighted": true|false|null, "highlighted_reaction": "<the emoji that is highlighted>"|null, '
-        '"theme": "light"|"dark", "chips": [{"emoji": "<emoji>", "style": "solid"|"tinted"}], '
+        '"target_chips_row_y_pct": 0..100|null, "theme": "light"|"dark", "chips": [{"emoji": "<emoji>", "style": "solid"|"tinted"}], '
         '"status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
         "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
         "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
@@ -487,6 +487,9 @@ def ai_check(img, c):
         "- reaction_highlighted: under THAT post one reaction chip is visibly highlighted/selected (the user's own reaction). "
         "false if reactions are visible but none is selected; null if no reactions are visible.\n"
         "- highlighted_reaction: the exact emoji of the highlighted reaction chip, null if you cannot point to one.\n"
+        "- target_chips_row_y_pct: vertical position (percent of the image height, 0=top edge, 100=bottom edge) of the CENTER of the "
+        "reaction-chip row that belongs to the target post's own bubble (the row just above that bubble's views/time footer). "
+        "Chips of a different, older or newer post must never be used here. null if the target post has no chips or is not visible.\n"
         "- theme: whether the Telegram UI is light (white/bright) or dark. Both themes are fully valid and must NOT lower confidence.\n"
         "- confidence: how well you could read the screenshot content; it must not depend on light/dark theme.\n"
         "- chips: list EVERY reaction chip under the target post. style=\"solid\" only if the chip has a strong, saturated, fully "
@@ -518,9 +521,10 @@ def ai_check(img, c):
         return None, f"پاسخ مدل JSON نبود: {txt[:300]}"
 
 
-def has_selected_chip(b):
+def has_selected_chip(b, yc=None, tol=0.045):
     """بررسی پیکسلی بدون وابستگی به مدل: ری‌اکشنِ زده‌شده‌ی کاربر در تلگرام یه چیپ قرصی‌شکلِ پر و پررنگ (رنگ اکسنت) می‌شه؛
     چیپ‌های نزده در همه‌ی تم‌ها کم‌رنگ/شفافن. اگه هیچ قرص پررنگی توی عکس نباشه یعنی ری‌اکشن نخورده.
+    yc = مرکز ردیف چیپ‌های «همون پست تسک» (کسری از ارتفاع عکس)؛ فقط قرص‌های پررنگِ همون ردیف حساب می‌شن، نه ری‌اکشن پست‌های دیگه.
     خروجی: True/False؛ None = بررسی ممکن نشد (Pillow نیست یا خطا) → رد نمی‌کنیم"""
     try:
         from PIL import Image
@@ -550,7 +554,8 @@ def has_selected_chip(b):
                         st.append(j)
             bw, bh = x1 - x0 + 1, y1 - y0 + 1
             if 0.045 * w <= bh <= 0.11 * w and 1.4 <= bw / bh <= 4.5 and n / (bw * bh) >= 0.55 and n >= 0.012 * w * w / 4:
-                return True
+                if yc is None or abs((y0 + y1) / 2 / h - yc) <= tol:
+                    return True
         return False
     except Exception as e:
         log.warning("pixel check failed: %s", e)
@@ -624,12 +629,21 @@ def judge(v, has_hint):
 
 def ai_verdict(img, c):
     """دو بررسی با پرامپت متفاوت (کلی + فقط ری‌اکشن)؛ فقط اگه هر دو تأیید کنن تأیید می‌شه. خروجی: (حکم، دلیل، خطا)"""
-    if PIXEL_CHECK and has_selected_chip(img) is False:      # بدون چیپ پررنگ = ری‌اکشن نخورده؛ مدل صدا زده نمی‌شه
-        return "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو (چیپ پررنگ) زیر پست دیده نمی‌شه", ""
     v, err = ai_check(img, c)
     if v is None:
         return None, "", err
     verdict, why = judge(v, True)
+    if verdict == "approve" and PIXEL_CHECK:                 # چک پیکسلی فقط روی ردیف چیپ‌های خودِ پست تسک
+        try:
+            yc = float(v.get("target_chips_row_y_pct")) / 100
+            if not 0 <= yc <= 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            yc = None
+        if yc is None:
+            verdict, why = "reject", "ری‌اکشن زیر پستِ تسک دیده نمی‌شه؛ کل پست رو با ری‌اکشن‌هاش داخل کادر بگیر"
+        elif has_selected_chip(img, yc) is False:
+            verdict, why = "reject", "ری‌اکشنِ انتخاب‌شده‌ی تو زیر پستِ تسک دیده نمی‌شه (ری‌اکشن پست دیگه حساب نمی‌شه)"
     r = None
     if verdict == "approve":
         r, err = ai_reaction_check(img, c)
