@@ -1,51 +1,59 @@
 # -*- coding: utf-8 -*-
 """
-TaskBot — ربات تبادل تسک (فالو / لایک / کامنت) با سیستم امتیاز
-Stack (مثل AI BotMaker): Flask + MongoDB(pymongo) + وب‌هوک تک‌فایلی
+TaskExchange — ربات تبادل تسک تلگرام (عضویت / ری‌اکشن / بازدید)
+Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌هوک، تک‌فایل و بدون مینی‌اپ
 
-Environment:
-  BOT_TOKEN    توکن ربات
-  BASE_URL     مثلا https://yourapp.onrender.com
-  MONGO_URI    خالی = حافظه‌ی موقت (با ری‌استارت پاک می‌شه)
-  ADMIN_IDS    آیدی عددی ادمین‌ها با کاما (اختیاری)
-  SECRET_KEY   اختیاری (پیش‌فرض: BOT_TOKEN)
-  START_POINTS امتیاز اولیه‌ی کاربر جدید (پیش‌فرض ۱۰)
+مدل کار:
+- کاربر با انجام تسک «امتیاز» می‌گیره و با امتیاز، تسک خودش رو ثبت می‌کنه (هزینه‌ی ثبت > پاداش؛ اقتصاد تورم نمی‌کنه)
+- امتیاز بعد از انجام تسک HOLD_HOURS ساعت «معلق» می‌مونه، بعد دوباره چک می‌شه و قطعی می‌شه
+- عضویت  : getChatMember (ربات باید ادمین کانال/گروه باشه) + چک دوباره‌ی آخر دوره‌ی معلق (لفت = برگشت امتیاز + اخطار)
+- ری‌اکشن : گروه با ربات ادمین → تأیید خودکار با message_reaction (برداشتن ری‌اکشن هم دیده می‌شه)
+            کانال (ری‌اکشن‌ها ناشناس‌اند) → اسکرین‌شات + مدل ویژن ارزان (کانال/پست/هایلایت/ساعت)
+            + ضدتکرار (file_unique_id و هش تصویری) + نمونه‌گیری و بازبینی توسط صاحب کمپین
+- بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
-نحوه‌ی سنجش:
-  فالو   → getChatMember (دقیق)            + بررسی ترک کانال تا ۳ روز با /cron
-  کامنت  → ثبت پیام‌های گروه گفتگوی کانال (دقیق)
-  لایک   → ری‌اکشن روی کپی پست داخل گروه گفتگو (دقیق)؛ اگه ممکن نبود: حالت نیمه‌مطمئن (پاداش نصف)
-  همه‌ی تسک‌ها: مینی‌اپ ردیاب کلیک (داخل تلگرام) + تأخیر رندوم، بعد دکمه‌ی «بررسی» ظاهر می‌شه
+نیازمندی‌ها: flask pymongo requests gunicorn   (اختیاری: Pillow برای هش تصویری، mongomock برای تست بدون دیتابیس)
+اجرا: gunicorn app:app
 """
-import os, re, json, time, hmac, hashlib, random, secrets, logging
-from urllib.parse import parse_qsl
+import os, re, io, json, time, hmac, hashlib, base64, random, logging, threading
 from datetime import datetime, timezone, timedelta
 
 import requests
-from flask import Flask, request, jsonify, abort, Response
-from pymongo import MongoClient, ReturnDocument
+from flask import Flask, request
+from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 from bson.errors import InvalidId
 
-# ───────────────────────── تنظیمات ─────────────────────────
-BOT_TOKEN    = os.environ["BOT_TOKEN"]
-BASE_URL     = os.environ["BASE_URL"].rstrip("/")
-MONGO_URI    = os.environ.get("MONGO_URI", "").strip()
-SECRET_KEY   = os.environ.get("SECRET_KEY", BOT_TOKEN)
-ADMIN_IDS    = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit()}
-START_POINTS = int(os.environ.get("START_POINTS", "100"))
+# ───────────────────────── تنظیمات (Environment) ─────────────────────────
+BOT_TOKEN   = os.environ["BOT_TOKEN"]
+BASE_URL    = os.environ["BASE_URL"].rstrip("/")                 # مثلا https://yourapp.onrender.com
+MONGO_URI   = os.environ.get("MONGO_URI", "").strip()           # خالی = حافظه‌ی موقت (ذخیره نمی‌شه)
+SECRET_KEY  = os.environ.get("SECRET_KEY", BOT_TOKEN)
+ADMINS      = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""))}   # مثلا 12345,67890
 
-MIN_WAIT, MAX_WAIT = 15, 45        # تأخیر رندوم قبل از فعال شدن دکمه‌ی بررسی (ثانیه)
-MIN_SLOTS, MAX_SLOTS = 5, 1000     # تعداد نفرات هر تسک
-MIN_COMMENT_LEN = 4                # حداقل طول کامنت معتبر
-LEAVE_DAYS = 3                     # تا چند روز بعد از فالو، ترک کانال جریمه داره
-SOFT_FACTOR = 0.5                  # ضریب پاداش لایکِ غیرقابل‌سنجش
+# مدل ویژن (اختیاری؛ هر API سازگار با OpenAI). اگه تنظیم نشه، اسکرین‌شات‌ها می‌رن برای بازبینی صاحب کمپین
+AI_BASE_URL = re.sub(r"/chat/completions/?$", "", os.environ.get("AI_BASE_URL", "").strip().rstrip("/"))
+AI_API_KEY  = os.environ.get("AI_API_KEY", "")
+AI_MODEL    = os.environ.get("AI_MODEL", "")
 
-TYPES = {  # reward = پاداش انجام‌دهنده | cost = هزینه‌ی هر نفر برای ثبت‌کننده
-    "follow":  {"emoji": "👥", "name": "فالو (عضویت)",   "reward": 3, "cost": 5},
-    "like":    {"emoji": "❤️", "name": "لایک (ری‌اکشن)", "reward": 2, "cost": 3},
-    "comment": {"emoji": "💬", "name": "کامنت",          "reward": 4, "cost": 6},
+START_POINTS = int(os.environ.get("START_POINTS", "5"))        # هدیه‌ی شروع
+HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
+REVIEW_HOURS = float(os.environ.get("REVIEW_HOURS", "48"))     # مهلت بازبینی صاحب کمپین (بعدش خودکار تأیید می‌شه)
+DAILY_TASKS  = int(os.environ.get("DAILY_TASKS", "60"))        # سقف تسک روزانه‌ی هر کاربر
+DAILY_AI     = int(os.environ.get("DAILY_AI", "12"))           # سقف بررسی اسکرین‌شات در روز برای هر کاربر
+SAMPLE_P     = float(os.environ.get("SAMPLE_P", "0.10"))       # احتمال نمونه‌گیری از تأییدهای خودکار
+STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از این تعداد اخطار، انجام تسک بسته می‌شه
+MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
+MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
+SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
+TZ_NAME      = os.environ.get("TZ_NAME", "Asia/Tehran")        # برای مقایسه‌ی ساعت داخل اسکرین‌شات
+
+# نوع تسک: پاداش انجام‌دهنده / هزینه‌ی ثبت برای صاحب کمپین (هر واحد) / حداقل صبر (ثانیه)
+TYPES = {
+    "join":  {"title": "👥 عضویت",   "reward": 3, "cost": 4, "wait": 0},
+    "react": {"title": "❤️ ری‌اکشن", "reward": 2, "cost": 3, "wait": 10},
+    "view":  {"title": "👁 بازدید",  "reward": 1, "cost": 2, "wait": 15},
 }
 
 logging.basicConfig(level=logging.INFO)
@@ -57,509 +65,853 @@ if MONGO_URI:
 else:
     import mongomock
     db = mongomock.MongoClient().get_database("taskbot")
-    log.warning("MONGO_URI تنظیم نشده؛ از حافظه‌ی موقت استفاده می‌شه")
+    log.warning("MONGO_URI تنظیم نشده؛ از حافظه‌ی موقت استفاده می‌شه و با هر ری‌استارت همه‌چی پاک می‌شه")
+db.completions.create_index([("uid", 1), ("cid", 1)], unique=True)     # هر کاربر فقط یک‌بار برای هر کمپین
+db.completions.create_index([("status", 1), ("due", 1)])
+db.campaigns.create_index([("status", 1), ("remaining", 1)])
+db.campaigns.create_index("owner")
 
-db.claims.create_index("tok", unique=True)
-db.tasks.create_index([("active", 1), ("remaining", 1)])
-db.tasks.create_index("owner")
-db.completions.create_index("user")
-
-BOT_ID = int(BOT_TOKEN.split(":")[0])
-SECRET = hashlib.sha256(("hook" + SECRET_KEY).encode()).hexdigest()[:32]
-CRON_SECRET = hashlib.sha256(("cron" + SECRET_KEY).encode()).hexdigest()[:24]
-
-RE_CH = re.compile(r"^(?:https?://)?(?:t\.me/|@)?([A-Za-z][A-Za-z0-9_]{3,31})/?$")
-RE_POST = re.compile(r"(?:https?://)?t\.me/([A-Za-z][A-Za-z0-9_]{3,31})/(\d+)")
-_DIG = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+HOOK_SECRET = hashlib.sha256(("hook" + SECRET_KEY).encode()).hexdigest()[:32]
+_me = {}
 
 
-# ───────────────────────── ابزارها ─────────────────────────
+# ───────────────────────── ابزارهای تلگرام ─────────────────────────
 def tg(method, **data):
     try:
-        r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=data, timeout=15)
+        r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=data, timeout=20)
         return r.json()
     except Exception as e:
         log.warning("tg %s failed: %s", method, e)
         return {"ok": False, "description": str(e)}
 
 
-def now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)   # UTC بدون tzinfo (مثل چیزی که pymongo برمی‌گردونه)
+def bot_id():
+    if not _me.get("id"):
+        r = tg("getMe")
+        if r.get("ok"):
+            _me.update(id=r["result"]["id"], username=r["result"].get("username", ""))
+    return _me.get("id")
 
 
-def get_task(tid):
+def btn(text, data=None, url=None):
+    return {"text": text, "url": url} if url else {"text": text, "callback_data": data}
+
+
+def send(chat, text, kb=None):
+    p = {"chat_id": chat, "text": text[:4000], "disable_web_page_preview": True}
+    if kb:
+        p["reply_markup"] = {"inline_keyboard": kb}
+    return tg("sendMessage", **p)
+
+
+def view(chat, mid, text, kb=None):
+    """اگه پیام قبلی هست ویرایشش می‌کنه (منوها تمیز بمونن)، وگرنه پیام جدید می‌فرسته"""
+    if mid:
+        r = tg("editMessageText", chat_id=chat, message_id=mid, text=text[:4000],
+               disable_web_page_preview=True, reply_markup={"inline_keyboard": kb or []})
+        if r.get("ok") or "not modified" in str(r.get("description", "")):
+            return
+    send(chat, text, kb)
+
+
+def ans(cq, text=None, alert=False):
+    p = {"callback_query_id": cq["id"]}
+    if text:
+        p.update(text=text[:200], show_alert=alert)
+    tg("answerCallbackQuery", **p)
+
+
+def member_ok(r):
+    return r.get("status") in ("creator", "administrator", "member") or (r.get("status") == "restricted" and r.get("is_member"))
+
+
+def bot_is_admin(chat_id):
+    r = tg("getChatMember", chat_id=chat_id, user_id=bot_id())
+    return bool(r.get("ok") and r["result"].get("status") in ("administrator", "creator"))
+
+
+def resolve_chat(uname):
+    r = tg("getChat", chat_id="@" + uname)
+    if r.get("ok") and r["result"].get("type") in ("channel", "group", "supergroup"):
+        return r["result"]
+    return None
+
+
+# ───────────────────────── دیتابیس: کاربر، امتیاز، شمارنده ─────────────────────────
+def day():
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+def ledger(uid, delta, kind, ref=""):
+    db.ledger.insert_one({"uid": uid, "d": delta, "k": kind, "ref": str(ref), "t": time.time()})
+
+
+def ensure_user(u):
+    uid, name = u["id"], (u.get("first_name") or "")[:40]
+    doc = db.users.find_one({"_id": uid})
+    if not doc:
+        try:
+            db.users.insert_one({"_id": uid, "name": name, "username": u.get("username"), "points": START_POINTS,
+                                 "hold": 0, "earned": 0, "strikes": 0, "rv": 0, "rj": 0, "skip": [],
+                                 "joined": time.time()})
+            if START_POINTS:
+                ledger(uid, START_POINTS, "bonus")
+        except DuplicateKeyError:
+            pass
+        doc = db.users.find_one({"_id": uid})
+    elif doc.get("name") != name or doc.get("username") != u.get("username"):
+        db.users.update_one({"_id": uid}, {"$set": {"name": name, "username": u.get("username")}})
+    return doc
+
+
+def add_points(uid, delta, kind, ref=""):
+    db.users.update_one({"_id": uid}, {"$inc": {"points": delta}})
+    ledger(uid, delta, kind, ref)
+
+
+def spend(uid, amount, kind, ref=""):
+    """کسر اتمی؛ فقط اگه موجودی کافی باشه"""
+    r = db.users.find_one_and_update({"_id": uid, "points": {"$gte": amount}}, {"$inc": {"points": -amount}})
+    if r:
+        ledger(uid, -amount, kind, ref)
+    return bool(r)
+
+
+def counter_take(key, limit):
     try:
-        return db.tasks.find_one({"_id": ObjectId(tid)})
-    except (InvalidId, TypeError):
-        return None
+        db.counters.find_one_and_update({"_id": key, "n": {"$lt": limit}}, {"$inc": {"n": 1}}, upsert=True)
+        return True
+    except DuplicateKeyError:
+        return False
 
 
-def get_user(u):
-    return db.users.find_one_and_update(
-        {"_id": u["id"]},
-        {"$setOnInsert": {"points": START_POINTS, "created": now()},
-         "$set": {"name": u.get("first_name", ""), "username": u.get("username")}},
-        upsert=True, return_document=ReturnDocument.AFTER)
+def counter_get(key):
+    d = db.counters.find_one({"_id": key})
+    return d["n"] if d else 0
 
 
-def reward_of(t):
-    if t["type"] == "like" and not t.get("verified"):
-        return max(1, int(t["reward"] * SOFT_FACTOR))
-    return t["reward"]
-
-
-MENU_ONLY = {"inline_keyboard": [[{"text": "🏠 منوی اصلی", "callback_data": "m"}]]}
+# ───────────────────────── متن‌ها و منوها ─────────────────────────
+HOME_KB = [[btn("🏠 منوی اصلی", "home")]]
 
 
 def main_kb():
-    return {"inline_keyboard": [
-        [{"text": "📋 انجام تسک و کسب امتیاز", "callback_data": "t"}],
-        [{"text": "➕ ثبت تسک جدید", "callback_data": "n"}, {"text": "📊 تسک‌های من", "callback_data": "my"}],
-        [{"text": "💰 امتیاز من", "callback_data": "me"}]]}
+    return [[btn("🎯 انجام تسک و کسب امتیاز", "earn")],
+            [btn("➕ ثبت تسک جدید", "new"), btn("📋 تسک‌های من", "my")],
+            [btn("👤 حساب من", "acc"), btn("❓ راهنما", "help")]]
 
 
-def menu_text(points):
-    return (f"🏠 منوی اصلی\n💰 امتیاز تو: {points}\n\n"
-            "با انجام تسک‌ها (فالو، لایک، کامنت) امتیاز بگیر و با امتیازت تسک خودت رو ثبت کن.")
+def menu_text(u):
+    return (f"سلام {u.get('name') or ''} 👋\n\n💰 موجودی: {u.get('points', 0)} امتیاز"
+            + (f"  (⏳ معلق: {u['hold']})" if u.get("hold") else "")
+            + "\n\nبا انجام تسک‌های بقیه امتیاز بگیر و با امتیاز، عضو/ری‌اکشن/بازدید برای کانال و پست خودت بگیر.")
 
 
-def show(chat_id, text, kb=None, edit=None):
-    kb = kb or MENU_ONLY
-    if edit:
-        r = tg("editMessageText", chat_id=chat_id, message_id=edit["message_id"], text=text,
-               reply_markup=kb, disable_web_page_preview=True)
-        if r.get("ok") or "not modified" in str(r.get("description", "")):
-            return
-    tg("sendMessage", chat_id=chat_id, text=text, reply_markup=kb, disable_web_page_preview=True)
+def help_text():
+    t = TYPES
+    return (
+        "❓ راهنما\n\n"
+        "🎯 انجام تسک: تسک رو انجام بده و «انجام دادم» رو بزن؛ امتیاز بعد از بازبینی نهایی قطعی می‌شه.\n"
+        f"• {t['join']['title']}: {t['join']['reward']} امتیاز — اتوماتیک تأیید می‌شه\n"
+        f"• {t['react']['title']}: {t['react']['reward']} امتیاز — در گروه اتوماتیک، در کانال با اسکرین‌شات\n"
+        f"• {t['view']['title']}: {t['view']['reward']} امتیاز — با صبر کردن چند ثانیه\n\n"
+        f"⏳ پاداش {HOLD_HOURS:g} ساعت معلق می‌مونه. اگه در این مدت از کانال لفت بدی یا ری‌اکشن رو برداری، امتیاز برمی‌گرده و "
+        f"اخطار می‌گیری ({STRIKE_LIMIT} اخطار = بسته شدن انجام تسک).\n\n"
+        "➕ ثبت تسک: هزینه‌ی هر واحد "
+        f"عضویت {t['join']['cost']}، ری‌اکشن {t['react']['cost']}، بازدید {t['view']['cost']} امتیازه. "
+        "ربات باید در کانال/گروه شما ادمین باشه (برای عضویت الزامیه). فقط کانال/گروه عمومی (با یوزرنیم) پشتیبانی می‌شه.\n\n"
+        "📸 ری‌اکشن در کانال: بعد از ری‌اکشن، اسکرین‌شات بگیر (اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ات دیده بشه) و برای ربات بفرست."
+    )
 
 
-def say(chat_id, text):
-    tg("sendMessage", chat_id=chat_id, text=text, disable_web_page_preview=True)
+def acc_text(u):
+    n = db.campaigns.count_documents({"owner": u["_id"], "status": "active"})
+    return (f"👤 حساب من\n\n💰 موجودی قابل خرج: {u.get('points', 0)}\n⏳ معلق: {u.get('hold', 0)}\n"
+            f"🏆 مجموع کسب‌شده: {u.get('earned', 0)}\n⚠️ اخطار: {u.get('strikes', 0)}/{STRIKE_LIMIT}\n"
+            f"📋 تسک فعال: {n}")
 
 
-# ───────────────────────── تسک‌ها: نمایش و لینک ─────────────────────────
-def target_url(t):
-    if t["type"] == "follow":
-        return f"https://t.me/{t['target']}"
-    if t["type"] == "comment":
-        return f"https://t.me/{t['target']}/{t['post']}?comment=1"
-    if t.get("verified"):   # لایک دقیق: کپی پست داخل گروه گفتگو
-        if t.get("g_user"):
-            return f"https://t.me/{t['g_user']}/{t['gmsg']}"
-        return f"https://t.me/c/{str(t['gchat'])[4:]}/{t['gmsg']}"
-    return f"https://t.me/{t['target']}/{t['post']}"
+def link_of(c):
+    return f"https://t.me/{c['uname']}" + (f"/{c['mid']}" if c.get("mid") else "")
 
 
-def task_text(t):
-    ty = TYPES[t["type"]]
-    if t["type"] == "follow":
-        how = ("۱) «🔗 باز کردن» رو بزن و توی کانال عضو شو.\n۲) برگرد و «بررسی» رو بزن.\n"
-               f"⚠️ اگه تا {LEAVE_DAYS} روز بعد کانال رو ترک کنی، امتیازت کم می‌شه.")
-    elif t["type"] == "comment":
-        how = (f"۱) «🔗 باز کردن» رو بزن و زیر پست کامنت بذار (حداقل {MIN_COMMENT_LEN} حرف).\n"
-               "۲) برگرد و «بررسی» رو بزن.")
-    elif t.get("verified"):
-        how = ("۱) «🔗 باز کردن» رو بزن؛ پست توی گروه گفتگو باز می‌شه.\n"
-               "۲) روی همون پست ری‌اکشن بزن.\n۳) برگرد و «بررسی» رو بزن.")
+def task_text(c):
+    t = TYPES[c["type"]]
+    head = f"{t['title']}  •  پاداش: {t['reward']} امتیاز\n📌 {c.get('title') or c['uname']}\n\n"
+    if c["type"] == "join":
+        how = (f"۱) «باز کردن» رو بزن و عضو شو\n۲) برگرد و «انجام دادم» رو بزن\n\n"
+               f"⚠️ پاداش {HOLD_HOURS:g} ساعت معلق می‌مونه؛ لفت بدی برمی‌گرده و اخطار می‌گیری.")
+    elif c["type"] == "view":
+        how = f"۱) «باز کردن» رو بزن و پست رو ببین\n۲) حداقل {t['wait']} ثانیه صبر کن و «انجام دادم» رو بزن"
+    elif c.get("mode") == "auto":
+        how = ("۱) «باز کردن» رو بزن و روی پست ری‌اکشن بزن\n۲) «انجام دادم» رو بزن\n\n"
+               f"⚠️ ری‌اکشن رو تا {HOLD_HOURS:g} ساعت برندار؛ برداری امتیاز برمی‌گرده و اخطار می‌گیری.")
     else:
-        how = "۱) «🔗 باز کردن» رو بزن، پست رو ببین و لایک کن.\n۲) برگرد و «بررسی» رو بزن."
-    return (f"{ty['emoji']} {ty['name']} — {t['title']}\n🎁 پاداش: {reward_of(t)} امتیاز\n\n{how}\n\n"
-            "⏳ بعد از باز کردن لینک، دکمه‌ی بررسی نشون داده می‌شه و چند ثانیه صبر لازمه.")
+        how = ("۱) «باز کردن» رو بزن و روی پست ری‌اکشن بزن\n۲) از پست اسکرین‌شات بگیر (اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ات دیده بشه)\n"
+               "۳) «انجام دادم» رو بزن و عکس رو بفرست")
+    return head + how
 
 
-def task_kb(t, claim):
-    # مینی‌اپ داخل خود تلگرام باز می‌شه (بدون سوال و بدون مرورگر)، کلیک رو ثبت می‌کنه و یه‌راست کانال/پست رو باز می‌کنه
-    rows = [[{"text": "🔗 باز کردن", "web_app": {"url": f"{BASE_URL}/go/{claim['tok']}"}}]]
-    if claim.get("clicked"):
-        rows.append([{"text": "✅ بررسی و دریافت پاداش", "callback_data": "c:" + str(t["_id"])}])
-    rows.append([{"text": "🔙 بازگشت", "callback_data": "t"}])
-    return {"inline_keyboard": rows}
+# ───────────────────────── تسک‌ها: انتخاب، ثبت انجام، تأیید نهایی ─────────────────────────
+def next_task(uid, skip):
+    done = [x["cid"] for x in db.completions.find({"uid": uid}, {"cid": 1})]
+    ids = done + [ObjectId(s) for s in skip if ObjectId.is_valid(s)]
+    return db.campaigns.find_one({"status": "active", "remaining": {"$gt": 0}, "owner": {"$ne": uid},
+                                  "_id": {"$nin": ids}}, sort=[("created", 1)])
 
 
-def available_tasks(uid, limit=8):
-    done = {c["task"] for c in db.completions.find({"user": uid}, {"task": 1})}
-    out = []
-    for t in db.tasks.find({"active": True, "remaining": {"$gt": 0}, "owner": {"$ne": uid}}).sort("created", 1).limit(300):
-        if str(t["_id"]) not in done:
-            out.append(t)
-            if len(out) >= limit:
-                break
-    return out
+def show_task(uid, chat, mid=None):
+    u = db.users.find_one({"_id": uid}) or {}
+    if u.get("strikes", 0) >= STRIKE_LIMIT:
+        return view(chat, mid, "⛔ به‌خاطر اخطارهای مکرر، انجام تسک برات بسته شده. می‌تونی همچنان تسک ثبت کنی.", HOME_KB)
+    if counter_get(f"d:{uid}:{day()}") >= DAILY_TASKS:
+        return view(chat, mid, f"✋ به سقف {DAILY_TASKS} تسک امروز رسیدی. فردا دوباره بیا!", HOME_KB)
+    c = next_task(uid, u.get("skip", []))
+    if not c and u.get("skip"):
+        db.users.update_one({"_id": uid}, {"$set": {"skip": []}})
+        c = next_task(uid, [])
+    if not c:
+        return view(chat, mid, "فعلاً تسک جدیدی نیست 🙂 چند دقیقه‌ی دیگه دوباره سر بزن.",
+                    [[btn("🔄 تلاش دوباره", "earn")], [btn("🏠 منوی اصلی", "home")]])
+    db.sessions.update_one({"_id": f"{uid}:{c['_id']}"}, {"$set": {"t": time.time()}}, upsert=True)
+    view(chat, mid, task_text(c), [[btn("🔗 باز کردن", url=link_of(c))],
+                                   [btn("✅ انجام دادم", f"c:{c['_id']}")],
+                                   [btn("⏭ بعدی", f"nx:{c['_id']}"), btn("🏠 منو", "home")]])
 
 
-def show_tasks(chat_id, uid, edit=None):
-    ts = available_tasks(uid)
-    if not ts:
-        return show(chat_id, "فعلاً تسک جدیدی نیست 🙂 بعداً دوباره سر بزن.", edit=edit)
-    rows = [[{"text": f"{TYPES[t['type']]['emoji']} {t['title'][:24]} · +{reward_of(t)}",
-              "callback_data": "k:" + str(t["_id"])}] for t in ts]
-    rows.append([{"text": "🏠 منوی اصلی", "callback_data": "m"}])
-    show(chat_id, "📋 یکی از تسک‌ها رو انتخاب کن:", {"inline_keyboard": rows}, edit)
-
-
-# ───────────────────────── کلیک ردیاب (مینی‌اپ) ─────────────────────────
-def verify_init_data(init_data):
+def grant(uid, c, status, shot=None):
+    """گرفتن یک ظرفیت از کمپین + ثبت انجام. خروجی: (کد، comp)  کد: ok | full | dup | limit"""
+    if not counter_take(f"d:{uid}:{day()}", DAILY_TASKS):
+        return "limit", None
+    r = db.campaigns.find_one_and_update({"_id": c["_id"], "status": "active", "remaining": {"$gt": 0}},
+                                         {"$inc": {"remaining": -1}})
+    if not r:
+        db.counters.update_one({"_id": f"d:{uid}:{day()}"}, {"$inc": {"n": -1}})
+        return "full", None
+    comp = {"uid": uid, "cid": c["_id"], "owner": c["owner"], "type": c["type"], "reward": c["reward"],
+            "status": status, "t": time.time(), "shot": shot,
+            "due": time.time() + (REVIEW_HOURS if status == "review" else HOLD_HOURS) * 3600}
     try:
-        pairs = dict(parse_qsl(init_data, keep_blank_values=True))
-        got = pairs.pop("hash", None)
-        if not got:
-            return None
-        check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
-        key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-        if not hmac.compare_digest(hmac.new(key, check.encode(), hashlib.sha256).hexdigest(), got):
-            return None
-        if time.time() - int(pairs.get("auth_date", 0)) > 86400:
-            return None
-        return json.loads(pairs["user"])
+        comp["_id"] = db.completions.insert_one(comp).inserted_id
+    except DuplicateKeyError:
+        db.campaigns.update_one({"_id": c["_id"]}, {"$inc": {"remaining": 1}})
+        db.counters.update_one({"_id": f"d:{uid}:{day()}"}, {"$inc": {"n": -1}})
+        return "dup", None
+    if status == "pending":
+        db.users.update_one({"_id": uid}, {"$inc": {"hold": c["reward"]}})
+    if r["remaining"] == 1:
+        send(c["owner"], f"🎉 کمپین «{c.get('title') or c['uname']}» ({TYPES[c['type']]['title']}) تکمیل شد!\n"
+                         f"تأیید نهایی طی {HOLD_HOURS:g} ساعت انجام می‌شه و اگه کسی تخلف کنه ظرفیتش دوباره باز می‌شه.")
+    return "ok", comp
+
+
+def claim_text(code, c):
+    return {"limit": f"✋ سقف {DAILY_TASKS} تسک امروز پر شده.",
+            "full": "این تسک همین الان تکمیل شد 😅 برو سراغ بعدی.",
+            "dup": "این تسک رو قبلاً انجام دادی."}[code]
+
+
+def after_ok(cq, chat, mid, c):
+    ans(cq, "✅ ثبت شد")
+    view(chat, mid, f"✅ ثبت شد!\n{c['reward']} امتیاز {HOLD_HOURS:g} ساعت معلق می‌مونه و بعد از بازبینی نهایی به موجودی‌ات اضافه می‌شه.",
+         [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
+
+
+def on_claim(cq, uid, chat, mid, cid_s):
+    try:
+        cid = ObjectId(cid_s)
+    except InvalidId:
+        return ans(cq, "نامعتبر", True)
+    c = db.campaigns.find_one({"_id": cid})
+    u = db.users.find_one({"_id": uid}) or {}
+    if not c or c["status"] != "active" or c["remaining"] <= 0:
+        ans(cq, "این تسک دیگه ظرفیت نداره", True)
+        return show_task(uid, chat, mid)
+    if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
+        return ans(cq, "امکان انجام این تسک نیست", True)
+    if db.completions.find_one({"uid": uid, "cid": cid}):
+        ans(cq, "این تسک رو قبلاً انجام دادی", True)
+        return show_task(uid, chat, mid)
+    ses = db.sessions.find_one({"_id": f"{uid}:{cid}"})
+    if not ses:
+        ans(cq, "اول تسک رو از منو باز کن", True)
+        return show_task(uid, chat, mid)
+    wait = TYPES[c["type"]]["wait"] - (time.time() - ses["t"])
+    if wait > 0:
+        return ans(cq, f"⏱ هنوز {int(wait) + 1} ثانیه صبر کن و دوباره بزن", True)
+
+    if c["type"] == "join":
+        r = tg("getChatMember", chat_id=c["chat_id"], user_id=uid)
+        if not r.get("ok"):
+            return ans(cq, "الان امکان بررسی نیست؛ یه تسک دیگه رو امتحان کن.", True)
+        if not member_ok(r["result"]):
+            return ans(cq, "هنوز عضو نشدی! اول عضو شو، بعد دکمه رو بزن.", True)
+    elif c["type"] == "react" and c.get("mode") == "auto":
+        d = db.reacts.find_one({"_id": f"{c['chat_id']}:{c['mid']}:{uid}"})
+        if not (d and d.get("on")):
+            return ans(cq, "ری‌اکشنی از تو ثبت نشده. روی پست ری‌اکشن بزن، چند ثانیه صبر کن و دوباره بزن.", True)
+    elif c["type"] == "react":
+        db.states.replace_one({"_id": uid}, {"_id": uid, "step": "shot", "cid": str(cid), "t": time.time()}, upsert=True)
+        ans(cq)
+        return view(chat, mid, "📸 حالا اسکرین‌شات پست رو همین‌جا بفرست.\n"
+                               "باید اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ی خودت توش دیده بشه.\n"
+                               f"مهلت: {SHOT_WINDOW // 60} دقیقه.", [[btn("❌ انصراف", "home")]])
+
+    code, comp = grant(uid, c, "pending")
+    if code != "ok":
+        ans(cq, claim_text(code, c), True)
+        return show_task(uid, chat, mid)
+    after_ok(cq, chat, mid, c)
+
+
+# ───────────────────────── اسکرین‌شات: ضدتکرار + مدل ویژن ─────────────────────────
+def fetch_file(file_id):
+    r = tg("getFile", file_id=file_id)
+    if not r.get("ok"):
+        return None
+    try:
+        x = requests.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{r['result']['file_path']}", timeout=25)
+        return x.content if x.status_code == 200 and len(x.content) < 8_000_000 else None
     except Exception:
         return None
 
 
-GO_PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-gap:16px;font-family:sans-serif;background:var(--tg-theme-bg-color,#fff);color:var(--tg-theme-text-color,#000)}
-button{display:none;padding:12px 22px;border:0;border-radius:10px;font-size:16px;
-background:var(--tg-theme-button-color,#2481cc);color:var(--tg-theme-button-text-color,#fff)}</style></head>
-<body><div id="m">⏳ در حال باز کردن...</div><button id="b">🔗 باز کردن</button><script>
-const w = Telegram.WebApp; w.ready(); w.expand();
-const m = document.getElementById("m"), b = document.getElementById("b");
-function openIt(url) { try { w.openTelegramLink(url); } catch (e) { location.href = url; } }
-fetch("/click/__TOK__", {method: "POST", headers: {"X-Init-Data": w.initData}})
-  .then(r => r.json())
-  .then(d => {
-    if (!d.ok) throw 0;
-    openIt(d.url);                       // بدون close فوری؛ بستنِ زودهنگام باعث می‌شد لینک باز نشه
-    m.textContent = "✅ ثبت شد";
-    setTimeout(() => { m.textContent = "اگه خودکار باز نشد، دکمه‌ی زیر رو بزن"; b.style.display = "block"; }, 1500);
-    b.onclick = () => { openIt(d.url); setTimeout(() => w.close(), 600); };
-  })
-  .catch(() => { m.textContent = "خطا؛ ببند و دوباره از ربات امتحان کن"; });
-</script></body></html>"""
-
-
-@app.get("/go/<tok>")
-def go(tok):
-    return Response(GO_PAGE.replace("__TOK__", re.sub(r"[^A-Za-z0-9_-]", "", tok)), mimetype="text/html")
-
-
-@app.post("/click/<tok>")
-def click(tok):
-    u = verify_init_data(request.headers.get("X-Init-Data", ""))
-    c = db.claims.find_one({"tok": tok})
-    t = get_task(c["task"]) if c else None
-    if not u or not t or u["id"] != c["user"]:     # فقط خود کاربر؛ لینک فوروارد‌شده کار نمی‌کنه
-        return jsonify(ok=False), 403
-    if not c.get("clicked"):
-        t0 = now()
-        c2 = db.claims.find_one_and_update(
-            {"_id": c["_id"], "clicked": {"$exists": False}},
-            {"$set": {"clicked": t0, "ready": t0 + timedelta(seconds=random.randint(MIN_WAIT, MAX_WAIT))}},
-            return_document=ReturnDocument.AFTER)
-        if c2:   # اولین کلیک: دکمه‌ی بررسی توی ربات ظاهر می‌شه
-            tg("editMessageReplyMarkup", chat_id=c2["chat"], message_id=c2["msg"], reply_markup=task_kb(t, c2))
-    return jsonify(ok=True, url=target_url(t))
-
-
-# ───────────────────────── سنجش و پاداش ─────────────────────────
-def verify(t, uid):
-    if t["type"] == "follow":
-        r = tg("getChatMember", chat_id="@" + t["target"], user_id=uid)
-        if not r.get("ok"):
-            return False, "الان نمی‌تونم بررسی کنم، چند لحظه بعد دوباره بزن"
-        m = r["result"]
-        if m["status"] in ("member", "administrator", "creator") or (m["status"] == "restricted" and m.get("is_member")):
-            return True, ""
-        return False, "هنوز عضو کانال نشدی 🙂"
-    key = f"{t.get('gchat')}:{t.get('gmsg')}:{uid}"
-    if t["type"] == "comment":
-        if db.comments.find_one({"_id": key}):
-            return True, ""
-        return False, f"کامنتی از تو زیر این پست پیدا نشد (حداقل {MIN_COMMENT_LEN} حرف بنویس) 💬"
-    if t.get("verified"):
-        if db.reacts.find_one({"_id": key}):
-            return True, ""
-        return False, "ری‌اکشنی از تو روی پست داخل گروه گفتگو پیدا نشد ❤️"
-    return True, ""   # لایک نیمه‌مطمئن: فقط کلیک + زمان
-
-
-def award(t, uid):
-    """(points, reward) یا (None, پیام خطا)"""
-    tid, reward = str(t["_id"]), reward_of(t)
+def img_hash(b):
+    """هش میانگین ۱۶×۱۶ (۲۵۶ بیتی)؛ برای تشخیص عکس تکراریِ ریسایز/فشرده‌شده. بدون Pillow غیرفعاله"""
     try:
-        db.completions.insert_one({"_id": f"{tid}:{uid}", "task": tid, "user": uid, "type": t["type"],
-                                   "target": t.get("target"), "reward": reward, "t": now()})
-    except DuplicateKeyError:
-        return None, "قبلاً پاداش این تسک رو گرفتی ✅"
-    r = db.tasks.find_one_and_update({"_id": t["_id"], "active": True, "remaining": {"$gt": 0}},
-                                     {"$inc": {"remaining": -1, "done": 1}}, return_document=ReturnDocument.AFTER)
-    if not r:
-        db.completions.delete_one({"_id": f"{tid}:{uid}"})
-        return None, "ظرفیت این تسک تکمیل شد"
-    if r["remaining"] == 0:
-        db.tasks.update_one({"_id": r["_id"]}, {"$set": {"active": False, "finished": now()}})
-        say(r["owner"], f"🎉 تسک «{r['title']}» کامل شد ({r['slots']} نفر).")
-    u = db.users.find_one_and_update({"_id": uid}, {"$inc": {"points": reward}}, return_document=ReturnDocument.AFTER)
-    return u["points"], reward
+        from PIL import Image
+        px = list(Image.open(io.BytesIO(b)).convert("L").resize((16, 16)).getdata())
+        avg = sum(px) / len(px)
+        return "%064x" % int("".join("1" if p > avg else "0" for p in px), 2)
+    except Exception:
+        return None
 
 
-def do_check(cq, ans, chat_id, m, uid, tid):
-    t = get_task(tid)
-    if not t or not t.get("active"):
-        return ans("این تسک دیگه فعال نیست", True)
-    if db.completions.find_one({"_id": f"{tid}:{uid}"}):
-        return ans("قبلاً پاداش این تسک رو گرفتی ✅", True)
-    c = db.claims.find_one({"_id": f"{tid}:{uid}"})
-    if not c or not c.get("clicked"):
-        return ans("اول روی «🔗 باز کردن» بزن 🙂", True)
-    left = (c["ready"] - now()).total_seconds()
-    if left > 0:
-        return ans(f"هنوز زوده ⏳ {int(left) + 1} ثانیه دیگه صبر کن", True)
-    ok, why = verify(t, uid)
-    if not ok:
-        return ans(why, True)
-    pts, info = award(t, uid)
-    if pts is None:
-        return ans(info, True)
-    ans(f"✅ {info} امتیاز اضافه شد\n💰 موجودی: {pts}", True)
-    show_tasks(chat_id, uid, edit=m)
+def ham(a, b):
+    return bin(int(a, 16) ^ int(b, 16)).count("1")
 
 
-# ───────────────────────── گروه گفتگو: کامنت و ری‌اکشن ─────────────────────────
-def on_group(msg):
-    gid = msg["chat"]["id"]
-    if msg.get("is_automatic_forward"):   # کپی خودکار پست کانال داخل گروه
-        fo = msg.get("forward_origin") or {}
-        ch = fo.get("chat") or msg.get("forward_from_chat") or {}
-        pid = fo.get("message_id") or msg.get("forward_from_message_id")
-        if ch.get("username") and pid:
-            db.threads.update_one({"_id": f"{gid}:{msg['message_id']}"}, {"$set": {
-                "gchat": gid, "gmsg": msg["message_id"], "g_user": (msg["chat"].get("username") or "").lower(),
-                "ch_user": ch["username"].lower(), "post": pid, "t": now()}}, upsert=True)
-        return
-    u = msg.get("from") or {}
-    if not u or u.get("is_bot") or msg.get("sender_chat"):
-        return
-    root = msg.get("message_thread_id") or (msg.get("reply_to_message") or {}).get("message_id")
-    text = (msg.get("text") or msg.get("caption") or "").strip()
-    if not root or len(text) < MIN_COMMENT_LEN:
-        return
-    if db.threads.find_one({"_id": f"{gid}:{root}"}):
-        db.comments.update_one({"_id": f"{gid}:{root}:{u['id']}"}, {"$setOnInsert": {"t": now()}}, upsert=True)
+def time_ok(s):
+    """ساعت نوار وضعیت گوشی با الان مقایسه می‌شه (خوانده نشده = مشکلی نیست). ساعت ۱۲ و ۲۴ ساعته هر دو پوشش داده می‌شن"""
+    m = re.match(r"^\s*(\d{1,2}):(\d{2})", str(s or ""))
+    if not m:
+        return True
+    try:
+        from zoneinfo import ZoneInfo
+        ref = datetime.now(ZoneInfo(TZ_NAME))
+    except Exception:
+        ref = datetime.now(timezone(timedelta(hours=3, minutes=30)))
+    d = abs(int(m[1]) * 60 + int(m[2]) - (ref.hour * 60 + ref.minute)) % 720
+    return min(d, 720 - d) <= 12
 
 
-def on_reaction(r):
-    user = r.get("user")
-    if not user or user.get("is_bot"):
-        return
-    cid, mid = r["chat"]["id"], r["message_id"]
-    if not db.threads.find_one({"_id": f"{cid}:{mid}"}):
-        return
-    key = f"{cid}:{mid}:{user['id']}"
-    if r.get("new_reaction"):
-        db.reacts.update_one({"_id": key}, {"$set": {"t": now()}}, upsert=True)
-    else:
-        db.reacts.delete_one({"_id": key})
+def ai_check(img, c):
+    if not (AI_BASE_URL and AI_API_KEY and AI_MODEL):
+        return None
+    hint = (f'Expected post text/keyword: "{c["hint"]}".' if c.get("hint") else "No post text hint was provided.")
+    prompt = (
+        'You verify a user-submitted Telegram screenshot for a "react to this post" task.\n'
+        f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}). {hint}\n'
+        "Answer ONLY with one JSON object, no markdown:\n"
+        '{"is_telegram_screenshot": bool, "channel_match": true|false|null, "post_match": true|false|null, '
+        '"reaction_highlighted": true|false|null, "status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
+        "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
+        "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
+        "- post_match: the visible post matches the expected text; null if no hint or not readable.\n"
+        "- reaction_highlighted: under the post one reaction chip is visibly highlighted/selected (the user's own reaction). "
+        "false if reactions are visible but none is selected; null if no reactions are visible.\n"
+        "- status_bar_time: the phone clock in the status bar if readable, else null.")
+    try:
+        r = requests.post(AI_BASE_URL + "/chat/completions", headers={"Authorization": "Bearer " + AI_API_KEY}, timeout=60, json={
+            "model": AI_MODEL, "temperature": 0, "max_tokens": 300,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}}]}]})
+        txt = r.json()["choices"][0]["message"]["content"]
+        return json.loads(re.search(r"\{.*\}", txt, re.S).group(0))
+    except Exception as e:
+        log.warning("ai_check failed: %s", e)
+        return None
 
 
-# ───────────────────────── ثبت تسک ─────────────────────────
-def check_channel(uid, username):
-    r = tg("getChat", chat_id="@" + username)
-    if not r.get("ok") or r["result"].get("type") != "channel":
-        return None, "کانال پیدا نشد. فقط کانال‌های عمومی پشتیبانی می‌شن."
-    ch = r["result"]
-    b = tg("getChatMember", chat_id=ch["id"], user_id=BOT_ID)
-    if not (b.get("ok") and b["result"]["status"] == "administrator"):
-        return None, "اول ربات رو توی کانال ادمین کن، بعد دوباره بفرست."
-    m = tg("getChatMember", chat_id=ch["id"], user_id=uid)
-    if not (m.get("ok") and m["result"]["status"] in ("creator", "administrator")):
-        return None, "فقط ادمین کانال می‌تونه براش تسک ثبت کنه."
-    return ch, None
+def judge(v, has_hint):
+    """approve = تأیید خودکار | review = بازبینی صاحب کمپین | reject = رد (کاربر می‌تونه دوباره بفرسته)"""
+    if not isinstance(v, dict):
+        return "review", ""
+    try:
+        conf = float(v.get("confidence") or 0)
+    except (TypeError, ValueError):
+        conf = 0
+    if conf >= 0.6:
+        if v.get("is_telegram_screenshot") is False:
+            return "reject", "این تصویر اسکرین‌شات معتبر تلگرام نیست"
+        if v.get("channel_match") is False or v.get("post_match") is False:
+            return "reject", "اسم کانال یا پست داخل عکس با تسک نمی‌خونه"
+        if v.get("reaction_highlighted") is False:
+            return "reject", "ری‌اکشن انتخاب‌شده‌ی تو داخل عکس دیده نمی‌شه"
+    strong = (conf >= 0.6 and v.get("is_telegram_screenshot") is True and v.get("channel_match") is True
+              and v.get("reaction_highlighted") is True and (v.get("post_match") is True or not has_hint)
+              and time_ok(v.get("status_bar_time")))
+    return ("approve", "") if strong else ("review", "")
 
 
-def handle_state(chat_id, user, st, text):
-    uid = user["_id"]
-    ty = st["type"]
-    if st["step"] == "target":
-        post = None
-        if ty == "follow":
-            mm = RE_CH.match(text)
-            if not mm:
-                return say(chat_id, "آیدی کانال معتبر نیست؛ مثل @mychannel بفرست (یا /cancel).")
-        else:
-            mm = RE_POST.search(text)
-            if not mm:
-                return say(chat_id, "لینک پست معتبر نیست؛ مثل https://t.me/mychannel/15 بفرست (یا /cancel).")
-            post = int(mm.group(2))
-        uname = mm.group(1).lower()
-        ch, err = check_channel(uid, uname)
-        if err:
-            return say(chat_id, err)
-        if db.tasks.find_one({"owner": uid, "type": ty, "target": uname, "post": post, "active": True}):
-            return say(chat_id, "همین تسک رو الان فعال داری.")
-        data = {"target": uname, "post": post, "title": ch.get("title") or uname, "verified": ty == "follow"}
-        warn = ""
-        if post:
-            th = db.threads.find_one({"ch_user": uname, "post": post})
-            if th:
-                data.update(verified=True, gchat=th["gchat"], gmsg=th["gmsg"], g_user=th.get("g_user"))
-            elif ty == "comment":
-                return say(chat_id, "برای تسک کامنت، کانال باید گروه گفتگو داشته باشه و ربات باید قبل از "
-                                    "انتشار پست داخل اون گروه ادمین بوده باشه (تا کپی پست رو ببینه). "
-                                    "یه پست جدید بذار و لینکش رو بفرست.")
-            else:
-                warn = ("\n\n⚠️ این پست داخل گروه گفتگو ثبت نشده، پس لایکش دقیق سنجیده نمی‌شه "
-                        f"و پاداش انجام‌دهنده نصفه. برای سنجش دقیق، ربات رو ادمین گروه گفتگو کن.")
-        db.states.update_one({"_id": uid}, {"$set": {"step": "slots", "data": data}})
-        cost = TYPES[ty]["cost"]
-        return say(chat_id, f"چند نفر؟ ({MIN_SLOTS} تا {MAX_SLOTS})\nهزینه‌ی هر نفر: {cost} امتیاز\n"
-                            f"💰 موجودی تو: {user['points']}{warn}")
-    if st["step"] == "slots":
+def owner_trusted(owner):
+    """صاحب کمپینی که بیش‌ازحد رد می‌کنه (سوءاستفاده برای بازکردن دوباره‌ی ظرفیت) دیگه بازبینی نمی‌کنه"""
+    o = db.users.find_one({"_id": owner}) or {}
+    return not (o.get("rv", 0) >= 10 and o.get("rj", 0) / max(o.get("rv", 1), 1) > 0.4)
+
+
+def send_review(c, comp, note):
+    kb = [[btn("✅ تأیید", f"rv:{comp['_id']}:1"), btn("❌ رد (تقلبی)", f"rv:{comp['_id']}:0")]]
+    tg("sendPhoto", chat_id=c["owner"], photo=comp["shot"], reply_markup={"inline_keyboard": kb},
+       caption=f"{note}\nکمپین: {c.get('title') or c['uname']} ({TYPES[c['type']]['title']})\n"
+               f"کاربر {comp['uid']}\nاگه تا {REVIEW_HOURS:g} ساعت جواب ندی، خودکار تأیید می‌شه.")
+
+
+def verify_shot(uid, chat, cid_s, ph):
+    """در ترد جدا اجرا می‌شه (تماس با مدل ممکنه کند باشه)"""
+    fid = ph["file_unique_id"]
+    try:
+        c = db.campaigns.find_one({"_id": ObjectId(cid_s)})
+        if not c or c["status"] != "active" or c["remaining"] <= 0:
+            return send(chat, "این تسک دیگه ظرفیت نداره.", [[btn("🎯 تسک بعدی", "earn")]])
         try:
-            n = int(text.translate(_DIG))
-        except ValueError:
-            return say(chat_id, "فقط یه عدد بفرست (یا /cancel).")
-        if not MIN_SLOTS <= n <= MAX_SLOTS:
-            return say(chat_id, f"تعداد باید بین {MIN_SLOTS} و {MAX_SLOTS} باشه.")
-        spec, d = TYPES[ty], st["data"]
-        cost = spec["cost"] * n
-        r = db.users.find_one_and_update({"_id": uid, "points": {"$gte": cost}}, {"$inc": {"points": -cost}},
-                                         return_document=ReturnDocument.AFTER)
-        if not r:
-            return say(chat_id, f"امتیازت کافی نیست. هزینه: {cost} | موجودی: {user['points']}\n"
-                                "یه عدد کمتر بفرست یا اول چند تا تسک انجام بده (/cancel).")
-        db.tasks.insert_one({"owner": uid, "type": ty, "target": d["target"], "post": d.get("post"),
-                             "title": d["title"], "slots": n, "remaining": n, "done": 0,
-                             "reward": spec["reward"], "cost": spec["cost"], "verified": d.get("verified", False),
-                             "gchat": d.get("gchat"), "gmsg": d.get("gmsg"), "g_user": d.get("g_user"),
-                             "active": True, "created": now()})
-        db.states.delete_one({"_id": uid})
-        show(chat_id, f"✅ تسک ثبت شد و {cost} امتیاز کم شد.\n💰 موجودی: {r['points']}", main_kb())
-
-
-def my_tasks(chat_id, uid, edit=None):
-    ts = list(db.tasks.find({"owner": uid}).sort("created", -1).limit(10))
-    if not ts:
-        return show(chat_id, "هنوز تسکی ثبت نکردی.", edit=edit)
-    lines, rows = [], []
-    for t in ts:
-        st = "🟢" if t["active"] else "⚪️"
-        lines.append(f"{st} {TYPES[t['type']]['emoji']} {t['title'][:20]} — {t['done']}/{t['slots']}")
-        if t["active"]:
-            rows.append([{"text": f"❌ لغو: {t['title'][:20]} (بازگشت {t['remaining'] * t['cost']})",
-                          "callback_data": "x:" + str(t["_id"])}])
-    rows.append([{"text": "🏠 منوی اصلی", "callback_data": "m"}])
-    show(chat_id, "📊 تسک‌های من:\n\n" + "\n".join(lines), {"inline_keyboard": rows}, edit)
-
-
-# ───────────────────────── هندلرها ─────────────────────────
-def on_callback(cq):
-    u, data, m = cq["from"], cq.get("data", ""), cq.get("message") or {}
-    uid, chat_id = u["id"], (m.get("chat") or {}).get("id")
-
-    def ans(text=None, alert=False):
-        p = {"callback_query_id": cq["id"]}
-        if text:
-            p.update(text=text[:200], show_alert=alert)
-        tg("answerCallbackQuery", **p)
-
-    if not chat_id:
-        return ans()
-    user = get_user(u)
-    if data == "m":
-        db.states.delete_one({"_id": uid})
-        ans()
-        show(chat_id, menu_text(user["points"]), main_kb(), m)
-    elif data == "me":
-        ans()
-        n = db.completions.count_documents({"user": uid})
-        show(chat_id, f"💰 امتیاز تو: {user['points']}\n✅ تسک‌های انجام‌شده: {n}", edit=m)
-    elif data == "t":
-        ans()
-        show_tasks(chat_id, uid, m)
-    elif data.startswith("k:"):
-        tid = data[2:]
-        t = get_task(tid)
-        if (not t or not t.get("active") or t["remaining"] <= 0 or t["owner"] == uid
-                or db.completions.find_one({"_id": f"{tid}:{uid}"})):
-            return ans("این تسک دیگه در دسترس نیست", True)
-        ans()
-        claim = db.claims.find_one_and_update(
-            {"_id": f"{tid}:{uid}"},
-            {"$set": {"chat": chat_id, "msg": m["message_id"]},
-             "$setOnInsert": {"tok": secrets.token_urlsafe(9), "task": tid, "user": uid, "t": now()}},
-            upsert=True, return_document=ReturnDocument.AFTER)
-        show(chat_id, task_text(t), task_kb(t, claim), m)
-    elif data.startswith("c:"):
-        do_check(cq, ans, chat_id, m, uid, data[2:])
-    elif data == "n":
-        ans()
-        rows = [[{"text": f"{v['emoji']} {v['name']} — {v['cost']} امتیاز/نفر", "callback_data": "nt:" + k}]
-                for k, v in TYPES.items()]
-        rows.append([{"text": "🏠 منوی اصلی", "callback_data": "m"}])
-        show(chat_id, "نوع تسک رو انتخاب کن:", {"inline_keyboard": rows}, m)
-    elif data.startswith("nt:") and data[3:] in TYPES:
-        ty = data[3:]
-        db.states.replace_one({"_id": uid}, {"_id": uid, "step": "target", "type": ty, "t": now()}, upsert=True)
-        ans()
-        if ty == "follow":
-            msg = "آیدی کانال رو بفرست (مثل @mychannel).\nربات باید توی کانال ادمین باشه و تو هم ادمین کانال باشی."
+            db.shots.insert_one({"_id": fid, "uid": uid, "cid": cid_s, "t": time.time()})
+        except DuplicateKeyError:
+            return send(chat, "❌ این عکس قبلاً ارسال شده. اسکرین‌شات تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
+        img = fetch_file(ph["file_id"])
+        if not img:
+            db.shots.delete_one({"_id": fid})
+            return send(chat, "⚠️ نتونستم عکس رو بگیرم. دوباره «انجام دادم» رو بزن و عکس رو بفرست.", [[btn("🎯 ادامه", "earn")]])
+        h = img_hash(img)
+        if h:
+            for s in db.shots.find({"cid": cid_s, "ah": {"$exists": True}}):
+                if ham(h, s["ah"]) <= 6:
+                    db.shots.delete_one({"_id": fid})
+                    return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.",
+                                [[btn("🏠 منو", "home")]])
+            db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
+        verdict, why = judge(ai_check(img, c), bool(c.get("hint")))
+        if verdict == "reject":
+            db.shots.delete_one({"_id": fid})
+            return send(chat, f"❌ {why}.\nاگه تسک رو درست انجام دادی، از همین تسک دوباره «انجام دادم» رو بزن و عکس بهتری بفرست.",
+                        [[btn("🎯 تسک‌ها", "earn")]])
+        if verdict == "review" and not owner_trusted(c["owner"]):
+            verdict = "approve"
+        code, comp = grant(uid, c, "pending" if verdict == "approve" else "review", shot=ph["file_id"])
+        if code != "ok":
+            return send(chat, claim_text(code, c), [[btn("🎯 تسک بعدی", "earn")]])
+        if verdict == "approve":
+            send(chat, f"✅ تأیید شد!\n{c['reward']} امتیاز {HOLD_HOURS:g} ساعت معلق می‌مونه و بعد قطعی می‌شه.",
+                 [[btn("🎯 تسک بعدی", "earn")]])
+            if random.random() < SAMPLE_P and owner_trusted(c["owner"]):
+                send_review(c, comp, "🔎 نمونه‌گیری تصادفی (تأیید خودکار شده؛ اگه تقلبی بود رد کن)")
         else:
-            msg = ("لینک پست کانال رو بفرست (مثل https://t.me/mychannel/15).\n"
-                   "ربات باید توی کانال ادمین باشه و تو هم ادمین کانال باشی.")
-        show(chat_id, msg, edit=m)
-    elif data == "my":
-        ans()
-        my_tasks(chat_id, uid, m)
-    elif data.startswith("x:"):
-        t = db.tasks.find_one_and_update({"_id": ObjectId(data[2:]), "owner": uid, "active": True},
-                                         {"$set": {"active": False, "finished": now()}},
-                                         return_document=ReturnDocument.BEFORE) if ObjectId.is_valid(data[2:]) else None
-        if not t:
-            return ans("این تسک فعال نیست", True)
-        refund = t["remaining"] * t["cost"]
-        db.users.update_one({"_id": uid}, {"$inc": {"points": refund}})
-        ans(f"لغو شد؛ {refund} امتیاز برگشت 💰", True)
-        my_tasks(chat_id, uid, m)
+            send(chat, f"📨 اسکرین‌شاتت برای بازبینی صاحب تسک رفت. اگه تا {REVIEW_HOURS:g} ساعت جواب نده، خودکار تأیید می‌شه.",
+                 [[btn("🎯 تسک بعدی", "earn")]])
+            send_review(c, comp, "📸 اسکرین‌شات نیازمند بازبینی شما")
+    except Exception:
+        log.exception("verify_shot")
+        db.shots.delete_one({"_id": fid})
+        send(chat, "⚠️ خطایی رخ داد؛ دوباره امتحان کن.", [[btn("🏠 منو", "home")]])
+
+
+# ───────────────────────── برگشت / پرداخت / بازبینی ─────────────────────────
+def undo(comp, had_hold, strike, why):
+    """لغو یک انجام: امتیاز معلق حذف، ظرفیت کمپین دوباره باز (یا اگه کمپین لغو شده، هزینه به صاحب برمی‌گرده)"""
+    inc = {"hold": -comp["reward"]} if had_hold else {}
+    if strike:
+        inc["strikes"] = 1
+    if inc:
+        db.users.update_one({"_id": comp["uid"]}, {"$inc": inc})
+    r = db.campaigns.update_one({"_id": comp["cid"], "status": "active"}, {"$inc": {"remaining": 1}})
+    if not r.matched_count:
+        c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
+        if c.get("cost"):
+            add_points(comp["owner"], c["cost"], "refund", comp["cid"])
+    send(comp["uid"], f"⚠️ {why}" + (f"\nیک اخطار ثبت شد ({STRIKE_LIMIT} اخطار = بسته شدن انجام تسک)." if strike else ""))
+
+
+def pay(comp):
+    r = db.completions.find_one_and_update({"_id": comp["_id"], "status": "settling"},
+                                           {"$set": {"status": "paid", "paid": time.time()}})
+    if not r:
+        return
+    db.users.update_one({"_id": comp["uid"]}, {"$inc": {"hold": -comp["reward"], "points": comp["reward"], "earned": comp["reward"]}})
+    ledger(comp["uid"], comp["reward"], "task", comp["cid"])
+    send(comp["uid"], f"💰 {comp['reward']} امتیاز قطعی شد و به موجودی‌ات اضافه شد.")
+
+
+def settle(comp):
+    """پایان دوره‌ی معلق: چک دوباره، بعد پرداخت یا برگشت"""
+    c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
+    ok = True
+    if comp["type"] == "join":
+        r = tg("getChatMember", chat_id=c.get("chat_id"), user_id=comp["uid"])
+        if r.get("ok") and not member_ok(r["result"]):                 # خطای API = نمی‌شه بررسی کرد → به نفع کاربر
+            ok = False
+    elif comp["type"] == "react" and c.get("mode") == "auto":
+        d = db.reacts.find_one({"_id": f"{c.get('chat_id')}:{c.get('mid')}:{comp['uid']}"})
+        ok = bool(d and d.get("on"))
+    if ok:
+        return pay(comp)
+    r = db.completions.find_one_and_update({"_id": comp["_id"], "status": "settling"}, {"$set": {"status": "reversed"}})
+    if r:
+        undo(comp, True, True, "از کانال خارج شدی یا ری‌اکشن رو برداشتی؛ امتیاز این تسک برگشت خورد.")
+
+
+def to_pending(comp_id):
+    r = db.completions.find_one_and_update({"_id": comp_id, "status": "review"},
+                                           {"$set": {"status": "pending", "due": time.time() + HOLD_HOURS * 3600}})
+    if r:
+        db.users.update_one({"_id": r["uid"]}, {"$inc": {"hold": r["reward"]}})
+    return r
+
+
+def on_review(cq, uid, comp_id_s, verdict):
+    try:
+        comp = db.completions.find_one({"_id": ObjectId(comp_id_s)})
+    except InvalidId:
+        comp = None
+    c = db.campaigns.find_one({"_id": comp["cid"]}) if comp else None
+    if not comp or not c or c["owner"] != uid:
+        return ans(cq, "نامعتبر", True)
+    done = False
+    if verdict == "1":
+        r = to_pending(comp["_id"])
+        done = bool(r) or comp["status"] == "pending"
+        if r:
+            send(comp["uid"], f"✅ اسکرین‌شاتت تأیید شد؛ {comp['reward']} امتیاز تا {HOLD_HOURS:g} ساعت دیگه قطعی می‌شه.")
     else:
-        ans()
+        r = db.completions.find_one_and_update({"_id": comp["_id"], "status": {"$in": ["review", "pending"]}},
+                                               {"$set": {"status": "rejected"}})
+        if r:
+            done = True
+            undo(r, r["status"] == "pending", False, "صاحب تسک اسکرین‌شاتت رو تأیید نکرد؛ اگه واقعاً انجام دادی، تسک جدید بزن یا دوباره امتحان کن.")
+    if not done:
+        return ans(cq, "زمان بررسی این مورد گذشته", True)
+    db.users.update_one({"_id": uid}, {"$inc": {"rv": 1, "rj": 0 if verdict == "1" else 1}})
+    ans(cq, "ثبت شد ✅")
+    m = cq.get("message") or {}
+    tg("editMessageReplyMarkup", chat_id=m.get("chat", {}).get("id"), message_id=m.get("message_id"),
+       reply_markup={"inline_keyboard": []})
 
 
-def on_private(msg):
-    u, chat_id = msg.get("from") or {}, msg["chat"]["id"]
+_last = {"clean": 0}
+
+
+def tick():
+    t = time.time()
+    db.completions.update_many({"status": "settling", "lock": {"$lt": t - 600}}, {"$set": {"status": "pending"}})
+    while True:
+        comp = db.completions.find_one_and_update({"status": "pending", "due": {"$lte": t}},
+                                                  {"$set": {"status": "settling", "lock": t}})
+        if not comp:
+            break
+        try:
+            settle(comp)
+        except Exception:
+            log.exception("settle")
+            db.completions.update_one({"_id": comp["_id"], "status": "settling"}, {"$set": {"status": "pending"}})
+            break
+    while True:                                   # صاحب کمپین جواب نداد → تأیید خودکار
+        comp = db.completions.find_one({"status": "review", "due": {"$lte": t}})
+        if not comp:
+            break
+        to_pending(comp["_id"])
+    if t - _last["clean"] > 3600:
+        _last["clean"] = t
+        db.reacts.delete_many({"t": {"$lt": t - 40 * 86400}})
+        db.sessions.delete_many({"t": {"$lt": t - 7 * 86400}})
+
+
+def worker():
+    while True:
+        try:
+            tick()
+        except Exception:
+            log.exception("tick")
+        time.sleep(30)
+
+
+# ───────────────────────── ثبت تسک جدید (چندمرحله‌ای) ─────────────────────────
+POST_RE = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z][A-Za-z0-9_]{3,31})/(\d+)", re.I)
+CHAN_RE = re.compile(r"^(?:https?://)?(?:(?:t\.me|telegram\.me)/)?@?([A-Za-z][A-Za-z0-9_]{3,31})/?$", re.I)
+FA = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+def set_state(uid, step, d):
+    db.states.replace_one({"_id": uid}, {"_id": uid, "step": step, "d": d, "t": time.time()}, upsert=True)
+
+
+def start_new(cq, uid, chat, mid):
+    ans(cq)
+    t = TYPES
+    view(chat, mid, "➕ ثبت تسک جدید — نوعش رو انتخاب کن:\n\n"
+         + "\n".join(f"{v['title']}: هزینه‌ی هر واحد {v['cost']} امتیاز" for v in t.values()),
+         [[btn(f"{v['title']} ({v['cost']})", f"nt:{k}") for k, v in t.items()], [btn("🏠 منوی اصلی", "home")]])
+
+
+def pick_type(cq, uid, chat, mid, typ):
+    if typ not in TYPES:
+        return ans(cq)
+    if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
+        return ans(cq, f"حداکثر {MAX_ACTIVE} تسک فعال می‌تونی داشته باشی.", True)
+    ans(cq)
+    set_state(uid, "link", {"type": typ})
+    if typ == "join":
+        txt = ("👥 یوزرنیم یا لینک کانال/گروه عمومیت رو بفرست (مثلاً @mychannel).\n\n"
+               f"⚠️ اول ربات @{_me.get('username', '')} رو ادمین اون کانال/گروه کن؛ بدون اون عضویت قابل تأیید نیست.")
+    else:
+        txt = ("🔗 لینک پست رو بفرست (مثلاً https://t.me/mychannel/123).\n"
+               "فقط پست‌های کانال/گروه عمومی (با یوزرنیم) پشتیبانی می‌شه.")
+    view(chat, mid, txt, [[btn("❌ انصراف", "home")]])
+
+
+def ask_qty(chat, d, c_cost):
+    u = db.users.find_one({"_id": chat}) or {}
+    mx = min(MAX_QTY, u.get("points", 0) // c_cost)
+    if mx < 1:
+        return send(chat, f"موجودی‌ات ({u.get('points', 0)}) برای ثبت حتی یک واحد ({c_cost} امتیاز) کافی نیست. اول چند تسک انجام بده.",
+                    [[btn("🎯 انجام تسک", "earn")]])
+    send(chat, f"🔢 چند واحد می‌خوای؟ (۱ تا {mx}) — فقط عدد بفرست.", [[btn("❌ انصراف", "home")]])
+    return True
+
+
+def on_state_text(uid, chat, text, st):
+    if time.time() - st.get("t", 0) > 3600:
+        db.states.delete_one({"_id": uid})
+        return send(chat, "⌛ این مرحله منقضی شد. از منو دوباره شروع کن.", main_kb())
+    step, d = st["step"], st.get("d", {})
+    if step == "shot":
+        return send(chat, "📸 لطفاً اسکرین‌شات رو به‌صورت «عکس» بفرست.", [[btn("❌ انصراف", "home")]])
+    typ = d.get("type")
+    cost = TYPES[typ]["cost"] if typ else 0
+    if step == "link":
+        if typ == "join":
+            m = CHAN_RE.match(text.strip())
+            uname, mid_ = (m[1], None) if m else (None, None)
+        else:
+            m = POST_RE.search(text)
+            uname, mid_ = (m[1], int(m[2])) if m else (None, None)
+        if not uname:
+            return send(chat, "❌ لینک معتبر نیست. " + ("فقط @یوزرنیم یا t.me/یوزرنیم." if typ == "join"
+                                                       else "فرمت درست: https://t.me/یوزرنیم/شماره‌ی‌پست"))
+        ch = resolve_chat(uname)
+        if not ch:
+            return send(chat, "❌ این کانال/گروه رو پیدا نکردم. باید عمومی (با یوزرنیم) باشه.")
+        d.update(uname=ch.get("username") or uname, chat_id=ch["id"], title=(ch.get("title") or uname)[:60], mid=mid_, mode=None, hint="")
+        if typ == "join" and not bot_is_admin(ch["id"]):
+            return send(chat, f"❌ ربات هنوز ادمین «{d['title']}» نیست. اول @{_me.get('username', '')} رو ادمین کن و دوباره لینک بفرست.")
+        if typ == "react":
+            if ch["type"] in ("group", "supergroup") and bot_is_admin(ch["id"]):
+                d["mode"] = "auto"
+            else:
+                d["mode"] = "shot"
+                set_state(uid, "hint", d)
+                return send(chat, "✍️ (اختیاری، برای دقت بیشتر) یه کلمه یا جمله‌ی کوتاه از متن پست بفرست تا هوش مصنوعی توی اسکرین‌شات‌ها "
+                                  "بتونه پست درست رو تشخیص بده. نمی‌خوای؟ بفرست: -", [[btn("❌ انصراف", "home")]])
+        set_state(uid, "qty", d)
+        return ask_qty(uid, d, cost)
+    if step == "hint":
+        d["hint"] = "" if text.strip() in ("-", "—") else text.strip()[:100]
+        set_state(uid, "qty", d)
+        return ask_qty(uid, d, cost)
+    if step == "qty":
+        try:
+            q = int(text.translate(FA).strip())
+        except ValueError:
+            return send(chat, "فقط یه عدد بفرست.")
+        u = db.users.find_one({"_id": uid}) or {}
+        mx = min(MAX_QTY, u.get("points", 0) // cost)
+        if not 1 <= q <= mx:
+            return send(chat, f"عدد باید بین ۱ تا {mx} باشه.")
+        d["qty"] = q
+        set_state(uid, "confirm", d)
+        how = {"join": "تأیید خودکار با عضویت‌سنجی + چک دوباره‌ی آخر دوره‌ی معلق",
+               "view": "تأیید زمانی (بازدید قابل راستی‌آزمایی دقیق نیست)",
+               "react": "تأیید خودکار (گروه)" if d.get("mode") == "auto" else "اسکرین‌شات + بررسی هوش مصنوعی + نمونه‌گیری"}[typ]
+        return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} امتیاز\n"
+                          f"🛡 تأیید: {how}\n\nثبت بشه؟",
+                    [[btn(f"✅ ثبت و کسر {q * cost} امتیاز", "ok")], [btn("❌ انصراف", "home")]])
+    send(chat, "از منو ادامه بده 👇", main_kb())
+
+
+def confirm_new(cq, uid, chat, mid):
+    st = db.states.find_one({"_id": uid})
+    if not st or st.get("step") != "confirm":
+        ans(cq, "این مرحله منقضی شده", True)
+        return view(chat, mid, "از منو دوباره شروع کن.", main_kb())
+    d, typ = st["d"], st["d"]["type"]
+    t = TYPES[typ]
+    if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
+        return ans(cq, f"حداکثر {MAX_ACTIVE} تسک فعال می‌تونی داشته باشی.", True)
+    if not spend(uid, d["qty"] * t["cost"], "campaign", d["uname"]):
+        return ans(cq, "موجودی کافی نیست", True)
+    db.states.delete_one({"_id": uid})
+    db.campaigns.insert_one({"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
+                             "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("hint", ""), "target": d["qty"],
+                             "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active",
+                             "created": time.time()})
+    ans(cq, "✅ ثبت شد")
+    view(chat, mid, f"✅ تسک ثبت شد و در لیست کاربران قرار گرفت!\nهر زمان تکمیل شد خبرت می‌کنم.",
+         [[btn("📋 تسک‌های من", "my")], [btn("🏠 منو", "home")]])
+
+
+def my_campaigns(cq, uid, chat, mid):
+    ans(cq)
+    render_my(uid, chat, mid)
+
+
+def render_my(uid, chat, mid):
+    cs = list(db.campaigns.find({"owner": uid}, sort=[("created", -1)], limit=10))
+    if not cs:
+        return view(chat, mid, "هنوز تسکی ثبت نکردی.", [[btn("➕ ثبت تسک جدید", "new")], [btn("🏠 منو", "home")]])
+    lines, kb = [], []
+    for i, c in enumerate(cs, 1):
+        st = "⛔ لغو شده" if c["status"] != "active" else ("✅ تکمیل" if c["remaining"] == 0 else "🟢 فعال")
+        lines.append(f"{i}. {TYPES[c['type']]['title']} {c['title']} — {c['target'] - c['remaining']}/{c['target']} {st}")
+        if c["status"] == "active" and c["remaining"] > 0:
+            kb.append([btn(f"❌ لغو شماره {i}", f"x:{c['_id']}")])
+    view(chat, mid, "📋 تسک‌های من\n\n" + "\n".join(lines), kb + [[btn("🏠 منو", "home")]])
+
+
+def cancel_campaign(cq, uid, chat, mid, cid_s, sure):
+    try:
+        cid = ObjectId(cid_s)
+    except InvalidId:
+        return ans(cq)
+    if not sure:
+        ans(cq)
+        return view(chat, mid, "مطمئنی؟ ظرفیت باقی‌مانده لغو و هزینه‌اش برمی‌گرده.",
+                    [[btn("✅ بله، لغو کن", f"xy:{cid_s}")], [btn("↩️ برگشت", "my")]])
+    r = db.campaigns.find_one_and_update({"_id": cid, "owner": uid, "status": "active"}, {"$set": {"status": "cancelled"}})
+    if not r:
+        ans(cq, "این تسک فعال نیست", True)
+    else:
+        refund = r["remaining"] * r["cost"]
+        if refund:
+            add_points(uid, refund, "refund", cid)
+        ans(cq, f"لغو شد؛ {refund} امتیاز برگشت", True)
+    render_my(uid, chat, mid)
+
+
+# ───────────────────────── دستورات ادمین ─────────────────────────
+def admin_cmd(uid, chat, cmd, args):
+    if cmd == "stats":
+        by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "review", "paid", "reversed", "rejected")}
+        return send(chat, f"📊 کاربران: {db.users.count_documents({})}\nکمپین فعال: {db.campaigns.count_documents({'status': 'active'})}\n"
+                          + "\n".join(f"{k}: {v}" for k, v in by.items()))
+    if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
+        add_points(int(args[0]), int(args[1]), "admin")
+        return send(chat, "انجام شد.")
+    if cmd == "unban" and args:
+        db.users.update_one({"_id": int(args[0])}, {"$set": {"strikes": 0}})
+        return send(chat, "اخطارها صفر شد.")
+    if cmd == "stop" and args:
+        try:
+            r = db.campaigns.find_one_and_update({"_id": ObjectId(args[0]), "status": "active"}, {"$set": {"status": "cancelled"}})
+        except InvalidId:
+            r = None
+        if r:
+            add_points(r["owner"], r["remaining"] * r["cost"], "refund", r["_id"])
+        return send(chat, "کمپین متوقف شد و باقی‌مانده برگشت خورد." if r else "کمپین فعالی پیدا نشد.")
+    send(chat, "دستورها: /stats  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
+
+
+# ───────────────────────── مسیریابی آپدیت‌ها ─────────────────────────
+def on_message(msg):
+    if msg["chat"]["type"] != "private" or "from" not in msg:
+        return
+    uid, chat = msg["from"]["id"], msg["chat"]["id"]
+    u = ensure_user(msg["from"])
+    text = (msg.get("text") or "").strip()
+    if text.startswith("/"):
+        parts = text[1:].split()
+        cmd, args = parts[0].split("@")[0].lower(), parts[1:]
+        if cmd in ("start", "menu"):
+            db.states.delete_one({"_id": uid})
+            return send(chat, menu_text(u), main_kb())
+        if cmd == "help":
+            return send(chat, help_text(), HOME_KB)
+        if uid in ADMINS:
+            return admin_cmd(uid, chat, cmd, args)
+        return send(chat, menu_text(u), main_kb())
+    st = db.states.find_one({"_id": uid})
+    if st and st.get("step") == "shot" and msg.get("photo"):
+        db.states.delete_one({"_id": uid})
+        if time.time() - st.get("t", 0) > SHOT_WINDOW:
+            return send(chat, "⌛ مهلت ارسال اسکرین‌شات تموم شده. دوباره «انجام دادم» رو بزن.", [[btn("🎯 تسک‌ها", "earn")]])
+        if not counter_take(f"ai:{uid}:{day()}", DAILY_AI):
+            return send(chat, f"✋ سقف {DAILY_AI} بررسی اسکرین‌شات امروز پر شده. فردا دوباره امتحان کن.", HOME_KB)
+        send(chat, "⏳ در حال بررسی اسکرین‌شات…")
+        threading.Thread(target=verify_shot, args=(uid, chat, st["cid"], msg["photo"][-1]), daemon=True).start()
+        return
+    if st and text:
+        return on_state_text(uid, chat, text, st)
+    if st:
+        return send(chat, "لطفاً طبق مرحله‌ی قبل جواب بده.", [[btn("❌ انصراف", "home")]])
+    send(chat, menu_text(u), main_kb())
+
+
+def on_callback(cq):
+    uid, data = cq["from"]["id"], cq.get("data", "")
+    m = cq.get("message") or {}
+    chat, mid = (m.get("chat") or {}).get("id"), m.get("message_id")
+    u = ensure_user(cq["from"])
+    if not chat:
+        return ans(cq)
+    if data == "home":
+        ans(cq)
+        db.states.delete_one({"_id": uid})
+        return view(chat, mid, menu_text(u), main_kb())
+    if data == "help":
+        ans(cq)
+        return view(chat, mid, help_text(), HOME_KB)
+    if data == "acc":
+        ans(cq)
+        return view(chat, mid, acc_text(u), HOME_KB)
+    if data == "earn":
+        ans(cq)
+        return show_task(uid, chat, mid)
+    if data.startswith("nx:"):
+        ans(cq)
+        db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
+        return show_task(uid, chat, mid)
+    if data.startswith("c:"):
+        return on_claim(cq, uid, chat, mid, data[2:])
+    if data == "new":
+        return start_new(cq, uid, chat, mid)
+    if data.startswith("nt:"):
+        return pick_type(cq, uid, chat, mid, data[3:])
+    if data == "ok":
+        return confirm_new(cq, uid, chat, mid)
+    if data == "my":
+        return my_campaigns(cq, uid, chat, mid)
+    if data.startswith("x:"):
+        return cancel_campaign(cq, uid, chat, mid, data[2:], False)
+    if data.startswith("xy:"):
+        return cancel_campaign(cq, uid, chat, mid, data[3:], True)
+    if data.startswith("rv:"):
+        try:
+            _, cid, v = data.split(":")
+        except ValueError:
+            return ans(cq)
+        return on_review(cq, uid, cid, v)
+    ans(cq)
+
+
+def on_reaction(mr):
+    """ری‌اکشن‌های گروه‌هایی که ربات ادمینشونه (کاربر ناشناس/کانال‌ها این آپدیت رو ندارن)"""
+    u = mr.get("user")
     if not u:
         return
-    uid, text = u["id"], (msg.get("text") or "").strip()
-    user = get_user(u)
-    if text.startswith("/"):
-        cmd, _, arg = text[1:].partition(" ")
-        cmd = cmd.split("@")[0].lower()
-        if cmd in ("start", "cancel"):
-            db.states.delete_one({"_id": uid})
-            show(chat_id, menu_text(user["points"]), main_kb())
-        elif uid in ADMIN_IDS and cmd == "add":
-            try:
-                target, n = arg.split()
-                r = db.users.update_one({"_id": int(target)}, {"$inc": {"points": int(n)}})
-                say(chat_id, "✅ انجام شد" if r.matched_count else "کاربر پیدا نشد")
-            except ValueError:
-                say(chat_id, "فرمت: /add USER_ID POINTS")
-        elif uid in ADMIN_IDS and cmd == "stats":
-            say(chat_id, f"👤 کاربران: {db.users.count_documents({})}\n"
-                         f"📋 تسک فعال: {db.tasks.count_documents({'active': True})}\n"
-                         f"✅ تسک انجام‌شده: {db.completions.count_documents({})}")
-        return
-    st = db.states.find_one({"_id": uid})
-    if st and text:
-        handle_state(chat_id, user, st, text)
-    else:
-        show(chat_id, menu_text(user["points"]), main_kb())
+    db.reacts.update_one({"_id": f"{mr['chat']['id']}:{mr['message_id']}:{u['id']}"},
+                         {"$set": {"on": bool(mr.get("new_reaction")), "t": time.time()}}, upsert=True)
 
 
 @app.post("/hook")
 def hook():
-    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET:
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != HOOK_SECRET:
         return "forbidden", 403
     upd = request.get_json(silent=True) or {}
     try:
@@ -568,39 +920,24 @@ def hook():
         elif "message_reaction" in upd:
             on_reaction(upd["message_reaction"])
         elif "message" in upd:
-            msg = upd["message"]
-            if msg["chat"]["type"] == "private":
-                on_private(msg)
-            elif msg["chat"]["type"] in ("group", "supergroup"):
-                on_group(msg)
+            on_message(upd["message"])
     except Exception:
-        log.exception("hook error")
+        log.exception("update error")
     return "ok"
 
 
-# ───────────────────────── کرون: جریمه‌ی ترک کانال ─────────────────────────
-@app.get("/cron/<s>")
-def cron(s):
-    if not hmac.compare_digest(s, CRON_SECRET):
-        abort(404)
-    since, n = now() - timedelta(days=LEAVE_DAYS), 0
-    for c in db.completions.find({"type": "follow", "left": {"$exists": False}, "t": {"$gte": since}}).limit(300):
-        r = tg("getChatMember", chat_id="@" + c["target"], user_id=c["user"])
-        if r.get("ok") and r["result"]["status"] in ("left", "kicked"):
-            db.completions.update_one({"_id": c["_id"]}, {"$set": {"left": True}})
-            db.users.update_one({"_id": c["user"]}, {"$inc": {"points": -c["reward"] * 2}})
-            say(c["user"], f"⚠️ کانال @{c['target']} رو ترک کردی و {c['reward'] * 2} امتیاز جریمه شدی.")
-            n += 1
-    return f"ok {n}"
+@app.get("/")
+def index():
+    return "ok"
 
 
 def setup():
-    r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=SECRET,
+    bot_id()
+    r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
            allowed_updates=["message", "callback_query", "message_reaction"])
-    tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"},
-                                  {"command": "cancel", "description": "لغو"}])
+    tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"}, {"command": "help", "description": "راهنما"}])
     log.info("webhook: %s", r)
-    log.info("cron url: %s/cron/%s", BASE_URL, CRON_SECRET)
+    threading.Thread(target=worker, daemon=True).start()
 
 
 setup()
