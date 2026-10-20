@@ -68,7 +68,7 @@ REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # �
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v40-coin-clean-copy-completed-button-view-5s"
+VERSION      = "v41-delayed-reward-button-after-destination-click"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -183,10 +183,12 @@ def view(chat, mid, text, kb=None):
     return tg("sendMessage", **p)
 
 
-def ans(cq, text=None, alert=False):
+def ans(cq, text=None, alert=False, url=None):
     p = {"callback_query_id": cq["id"]}
     if text:
         p.update(text=text[:200], show_alert=alert)
+    if url:
+        p["url"] = url
     tg("answerCallbackQuery", **p)
 
 
@@ -489,11 +491,14 @@ def campaign_listing_keyboard(c):
     if not available:
         return [[btn("🔴 تکمیل شده", "noop", style="danger")]]
     target_link = link_of(c)
+    # ابتدا فقط دکمهٔ رفتن به مقصد دیده می‌شود. پس از کلیک کاربر، callback
+    # زمان نمایش دکمهٔ پاداش را برای همین پست ثبت می‌کند.
     if target_link:
-        rows.append([btn("رفتن به پست مقصد", url=target_link, style="primary")])
-    deep = bot_deep_link(c.get("_id"))
-    if deep:
-        rows.append([btn("دریافت پاداش", url=deep, style="success")])
+        rows.append([btn("رفتن به پست مقصد", f"go:{c.get('_id')}", style="primary")])
+    if c.get("reward_reveal_at"):
+        deep = bot_deep_link(c.get("_id"))
+        if deep:
+            rows.append([btn("دریافت پاداش", url=deep, style="success")])
     return rows
 
 
@@ -1379,6 +1384,16 @@ _last = {"clean": 0}
 
 def tick():
     t = time.time()
+    # نمایش دکمهٔ پاداش ۵ ثانیه پس از اولین کلیک «رفتن به پست مقصد».
+    due_listings = db.campaigns.find({"reward_reveal_at": {"$lte": t}, "reward_button_shown": {"$ne": True}},
+                                     {"_id": 1, "listing_chat_id": 1, "listing_message_id": 1})
+    for item in due_listings:
+        try:
+            refresh_campaign_listing(item["_id"])
+            db.campaigns.update_one({"_id": item["_id"], "reward_button_shown": {"$ne": True}},
+                                    {"$set": {"reward_button_shown": True}})
+        except Exception:
+            log.exception("delayed reward button update")
     monitor_campaign_admins(t)
     expire_count_claims(t)
     db.completions.update_many({"status": "settling", "lock": {"$lt": t - 600}}, {"$set": {"status": "pending"}})
@@ -1841,6 +1856,21 @@ def on_callback(cq):
         ans(cq)
         db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
         return show_task(uid, chat, mid)
+    if data.startswith("go:"):
+        try:
+            cid = ObjectId(data[3:])
+        except InvalidId:
+            return ans(cq, "تسک نامعتبر است.", True)
+        c = db.campaigns.find_one({"_id": cid, "status": "active", "remaining": {"$gt": 0}})
+        if not c:
+            return ans(cq, "این تسک دیگر فعال نیست.", True)
+        destination = link_of(c)
+        if not destination:
+            return ans(cq, "لینک مقصد در دسترس نیست.", True)
+        # اولین کلیک، تایمر ۵ ثانیه‌ای را آغاز می‌کند؛ کلیک‌های بعدی تایمر را عقب نمی‌اندازند.
+        db.campaigns.update_one({"_id": cid, "reward_reveal_at": {"$exists": False}},
+                                {"$set": {"reward_reveal_at": time.time() + 5}})
+        return ans(cq, url=destination)
     if data.startswith("c:"):
         return on_claim(cq, uid, chat, mid, data[2:])
     if data == "new":
