@@ -38,7 +38,7 @@ AI_API_KEY  = os.environ.get("AI_API_KEY", "")
 AI_MODEL    = os.environ.get("AI_MODEL", "")
 AI_ON       = bool(AI_BASE_URL and AI_API_KEY and AI_MODEL)
 
-START_POINTS = int(os.environ.get("START_POINTS", "20"))        # هدیه‌ی شروع
+START_POINTS = int(os.environ.get("START_POINTS", "5"))        # هدیه‌ی شروع
 HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
 DAILY_TASKS  = int(os.environ.get("DAILY_TASKS", "60"))        # سقف تسک روزانه‌ی هر کاربر
 DAILY_AI     = int(os.environ.get("DAILY_AI", "12"))           # سقف بررسی اسکرین‌شات در روز برای هر کاربر
@@ -403,11 +403,11 @@ def time_ok(s):
 
 
 def ai_request(prompt, img, mime="image/jpeg"):
+    imgs = img if isinstance(img, list) else [img]
     """تماس با API سازگار با OpenAI. خروجی: (متن، خطا). خطا شامل کد HTTP و پاسخ سرور است تا علت واقعی معلوم بشه"""
     url = AI_BASE_URL + "/chat/completions"
-    msgs = [{"role": "user", "content": [
-        {"type": "text", "text": prompt},
-        {"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(img).decode()}}]}]
+    msgs = [{"role": "user", "content": [{"type": "text", "text": prompt}] + [
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(x).decode()}} for x in imgs]}]
     base = {"model": AI_MODEL, "messages": msgs}
     err = ""
     # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
@@ -449,24 +449,35 @@ def ai_check(img, c):
     """خروجی: (دیکشنری نتیجه یا None، متن خطا)"""
     if not AI_ON:
         return None, "AI_BASE_URL / AI_API_KEY / AI_MODEL تنظیم نشده"
-    hint = (f'Expected post text/keyword: "{c["hint"]}".' if c.get("hint") else "No post text hint was provided.")
+    imgs, ref_desc = [img], []
+    if c.get("hint"):
+        ref_desc.append(f'the post text starts with: "{c["hint"]}"')
+    if c.get("ref_photo"):
+        ref = fetch_file(c["ref_photo"])
+        if not ref:
+            return None, "نتونستم عکس مرجع پست رو بگیرم"
+        imgs.append(ref)
+        ref_desc.append("the SECOND image is the original post media (reference)")
     prompt = (
-        'You verify a user-submitted Telegram screenshot for a "react to this post" task.\n'
-        f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}). {hint}\n'
+        'You verify a user-submitted Telegram screenshot (the FIRST image) for a "react to this post" task.\n'
+        f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}).\n'
+        f'The exact target post: {"; ".join(ref_desc) or "unknown"}.\n'
         "Answer ONLY with one JSON object, no markdown:\n"
         '{"is_telegram_screenshot": bool, "channel_match": true|false|null, "post_match": true|false|null, '
         '"reaction_highlighted": true|false|null, "highlighted_reaction": "<the emoji that is highlighted>"|null, '
         '"status_bar_time": "HH:MM"|null, "confidence": 0..1}\n'
         "- is_telegram_screenshot: a genuine Telegram app screen, not edited/fake-looking, not a meme.\n"
         "- channel_match: the visible channel/group name or username matches the expected one; null if no name is visible.\n"
-        "- post_match: the visible post matches the expected text; null if no hint or not readable.\n"
-        "- reaction_highlighted: under the post one reaction chip is visibly highlighted/selected (the user's own reaction). "
+        "- post_match: true ONLY if the post that carries the highlighted reaction in the screenshot is exactly the target post "
+        "(same text and/or same media). A DIFFERENT post from the same channel must be false. If you cannot clearly read/see "
+        "the post content, answer false.\n"
+        "- reaction_highlighted: under THAT post one reaction chip is visibly highlighted/selected (the user's own reaction). "
         "false if reactions are visible but none is selected; null if no reactions are visible.\n"
         "- highlighted_reaction: the exact emoji of the highlighted reaction chip, null if you cannot point to one.\n"
         "- status_bar_time: the phone clock in the status bar if readable, else null.\n"
         "Be strict: reactions on a post are normally all unhighlighted (grey) unless the user reacted. "
-        "If you are not clearly sure that one chip is highlighted, answer reaction_highlighted=false.")
-    txt, err = ai_request(prompt, img)
+        "If you are not clearly sure, answer false.")
+    txt, err = ai_request(prompt, imgs)
     if not txt:
         return None, err
     m = re.search(r"\{.*\}", txt, re.S)
@@ -508,7 +519,7 @@ def ai_verdict(img, c):
         v, err = ai_check(img, c)
         if v is None:
             return None, "", err
-        res.append(judge(v, bool(c.get("hint"))))
+        res.append(judge(v, True))
     for verdict, why in res:
         if verdict != "approve":
             return "reject", why, ""
@@ -705,7 +716,7 @@ def on_state_text(uid, chat, text, st):
         ch = resolve_chat(uname)
         if not ch:
             return send(chat, "❌ این کانال/گروه رو پیدا نکردم. باید عمومی (با یوزرنیم) باشه.")
-        d.update(uname=ch.get("username") or uname, chat_id=ch["id"], title=(ch.get("title") or uname)[:60], mid=mid_, mode=None, hint="")
+        d.update(uname=ch.get("username") or uname, chat_id=ch["id"], title=(ch.get("title") or uname)[:60], mid=mid_, mode=None, ref_text="", ref_photo=None)
         if typ == "join" and not bot_is_admin(ch["id"]):
             return send(chat, f"❌ ربات هنوز ادمین «{d['title']}» نیست. اول @{_me.get('username', '')} رو ادمین کن و دوباره لینک بفرست.")
         if typ == "react":
@@ -715,13 +726,10 @@ def on_state_text(uid, chat, text, st):
                 if not AI_ON:
                     return send(chat, "❌ ری‌اکشن برای کانال‌ها فعلاً فعال نیست. ری‌اکشن فقط برای گروهی که ربات ادمینشه (تأیید خودکار) ممکنه.")
                 d["mode"] = "shot"
-                set_state(uid, "hint", d)
-                return send(chat, "✍️ (اختیاری، برای دقت بیشتر) یه کلمه یا جمله‌ی کوتاه از متن پست بفرست تا هوش مصنوعی توی اسکرین‌شات‌ها "
-                                  "بتونه پست درست رو تشخیص بده. نمی‌خوای؟ بفرست: -", [[btn("❌ انصراف", "home")]])
-        set_state(uid, "qty", d)
-        return ask_qty(uid, d, cost)
-    if step == "hint":
-        d["hint"] = "" if text.strip() in ("-", "—") else text.strip()[:100]
+                set_state(uid, "ref", d)
+                return send(chat, "🔎 برای اینکه ربات پست دقیق رو تشخیص بده (نه هر پست دیگه‌ی کانال)، همون پست رو از کانال برای من فوروارد کن.\n\n"
+                                  "اگه کانال فوروارد رو بسته، یه جمله‌ی مشخص و منحصربه‌فرد از متن پست رو تایپ کن.",
+                            [[btn("❌ انصراف", "home")]])
         set_state(uid, "qty", d)
         return ask_qty(uid, d, cost)
     if step == "qty":
@@ -744,6 +752,33 @@ def on_state_text(uid, chat, text, st):
     send(chat, "از منو ادامه بده 👇", main_kb())
 
 
+def on_ref(uid, chat, msg, st):
+    """مرجع پست: پیام فورواردشده (متن + عکس واقعی پست) یا متن تایپ‌شده. فوروارد حتماً باید همون پستِ لینک‌شده باشه"""
+    if time.time() - st.get("t", 0) > 3600:
+        db.states.delete_one({"_id": uid})
+        return send(chat, "⌛ این مرحله منقضی شد. از منو دوباره شروع کن.", main_kb())
+    d = st["d"]
+    text = (msg.get("text") or msg.get("caption") or "").strip()
+    fo = msg.get("forward_origin")
+    if fo:
+        if fo.get("type") != "channel" or (fo.get("chat") or {}).get("id") != d["chat_id"] or fo.get("message_id") != d.get("mid"):
+            return send(chat, "❌ این پیام همون پستی که لینکش رو دادی نیست. دقیقاً همون پست رو از کانال فوروارد کن.")
+        photo = (msg.get("photo") or [{}])[-1].get("file_id")
+        if not photo:
+            for k in ("video", "animation", "document"):
+                photo = ((msg.get(k) or {}).get("thumbnail") or {}).get("file_id")
+                if photo:
+                    break
+        if not text and not photo:
+            return send(chat, "❌ این پست متن یا تصویر قابل تشخیص نداره (مثلاً فقط استیکر/نظرسنجیه)؛ ری‌اکشن اون‌طور پست‌ها قابل تأیید نیست.")
+        d["ref_photo"] = photo
+    elif len(text) < 4:
+        return send(chat, "پست رو فوروارد کن یا یه جمله‌ی مشخص (حداقل ۴ حرف) از متن پست بفرست.")
+    d["ref_text"] = text[:300]
+    set_state(uid, "qty", d)
+    return ask_qty(uid, d, TYPES[d["type"]]["cost"])
+
+
 def confirm_new(cq, uid, chat, mid):
     st = db.states.find_one({"_id": uid})
     if not st or st.get("step") != "confirm":
@@ -757,7 +792,7 @@ def confirm_new(cq, uid, chat, mid):
         return ans(cq, "موجودی کافی نیست", True)
     db.states.delete_one({"_id": uid})
     db.campaigns.insert_one({"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
-                             "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("hint", ""), "target": d["qty"],
+                             "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("ref_text", ""), "ref_photo": d.get("ref_photo"), "target": d["qty"],
                              "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active",
                              "created": time.time()})
     ans(cq, "✅ ثبت شد")
@@ -859,6 +894,8 @@ def on_message(msg):
         send(chat, "⏳ در حال بررسی اسکرین‌شات…")
         threading.Thread(target=verify_shot, args=(uid, chat, st["cid"], msg["photo"][-1]), daemon=True).start()
         return
+    if st and st.get("step") == "ref":
+        return on_ref(uid, chat, msg, st)
     if st and text:
         return on_state_text(uid, chat, text, st)
     if st:
