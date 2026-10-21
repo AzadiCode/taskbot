@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 TaskExchange — ربات تبادل تسک تلگرام (عضویت / ری‌اکشن / بازدید)
-Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌هوک، تک‌فایل و بدون مینی‌اپ
+Stack: Flask + MongoDB(pymongo) + وب‌هوک، تک‌فایل و بدون مینی‌اپ
 
 مدل کار:
 - کاربر با انجام تسک «کوین» می‌گیره و با کوین، تسک خودش رو ثبت می‌کنه (هزینه‌ی ثبت > پاداش؛ اقتصاد تورم نمی‌کنه)
-- عضویتِ تأییدشده، بازدید پس از رعایت زمان، و ری‌اکشنِ قابل‌تأیید پاداش فوری می‌گیرند؛ موارد نیازمند بررسی/تأیید شمارش طبق مسیر مخصوص خودشان مدیریت می‌شوند
+- عضویتِ تأییدشده، بازدید پس از رعایت زمان، و ری‌اکشنِ قابل‌تأیید پاداش می‌گیرند؛ ری‌اکشن کانال از مسیر شمارش و ری‌اکشن گروه از مسیر رویداد فردی تأیید می‌شود
 - عضویت  : getChatMember (ربات باید ادمین کانال/گروه باشه) + چک دوباره‌ی آخر دوره‌ی معلق (لفت = برگشت کوین + اخطار)
 - ری‌اکشن : گروه/سوپرگروه با ربات ادمین → تأیید فردی با message_reaction
             کانال → تأیید تجمیعی با message_reaction_count؛ هر واحد افزایش شمارش حداکثر یک ادعا را تأیید می‌کند.
@@ -13,12 +13,10 @@ Stack (مثل نمونه‌ی AI BotMaker): Flask + MongoDB(pymongo) + وب‌ه
             شمارش تجمیعی هویت کاربر را ثابت نمی‌کند؛ این روش تعداد افزایش‌ها را می‌سنجد، نه اینکه چه کسی واکنش داده است.
 - بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
-نیازمندی‌ها: flask pymongo requests gunicorn Pillow   (Pillow برای تشخیص عکس تکراریِ دوباره‌آپلودشده لازمه؛ mongomock اختیاری برای تست)
+نیازمندی‌ها: flask pymongo requests gunicorn؛ mongomock فقط برای اجرای آزمایشی بدون MongoDB
 اجرا: gunicorn taskbot:app
 """
-import os, re, io, json, time, hmac, hashlib, base64, random, logging, threading
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone, timedelta
+import os, re, time, hmac, hashlib, random, logging, threading
 
 import requests
 from flask import Flask, request
@@ -36,51 +34,16 @@ ADMINS      = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""
 TASKS_CHANNEL = os.environ.get("TASKS_CHANNEL", "").strip()  # مثلا @MyTasksChannel؛ ربات باید ادمین کانال باشد
 TASKS_CHANNEL_URL = os.environ.get("TASKS_CHANNEL_URL", "").strip()  # اختیاری؛ لینک عمومی کانال فهرست تسک‌ها
 
-# مدل ویژن (اختیاری؛ هر API سازگار با OpenAI). اگه تنظیم نشه، اسکرین‌شات‌ها می‌رن برای بازبینی صاحب کمپین
-AI_BASE_URL = re.sub(r"/chat/completions/?$", "", os.environ.get("AI_BASE_URL", "").strip().rstrip("/"))
-AI_API_KEY  = os.environ.get("AI_API_KEY", "")
-# AI_MODEL می‌تونه چند مدل باشه (با ویرگول، ; یا خط جدید جدا کن). ترتیب = اولویت. هر آیتم یکی از این شکل‌هاست:
-#   model                       ← با AI_BASE_URL و AI_API_KEY بالا
-#   model|https://base/v1       ← همون کلید، سرویس دیگه
-#   model|https://base/v1|key   ← سرویس و کلید جدا
-AI_ENDPOINTS = []
-for _it in re.split(r"[,;\n]+", os.environ.get("AI_MODEL", "")):
-    _p = [x.strip() for x in _it.split("|")]
-    if _p[0]:
-        _b = re.sub(r"/chat/completions/?$", "", (_p[1] if len(_p) > 1 and _p[1] else AI_BASE_URL).rstrip("/"))
-        _k = _p[2] if len(_p) > 2 and _p[2] else AI_API_KEY
-        _lab = _p[0] if _b == AI_BASE_URL else f"{_p[0]}@{_b.split('//')[-1].split('/')[0]}"
-        if not any(x["label"] == _lab for x in AI_ENDPOINTS):          # مدل تکراری در AI_MODEL نادیده گرفته می‌شه
-            AI_ENDPOINTS.append({"label": _lab, "model": _p[0], "base": _b, "key": _k})
-AI_MODEL    = AI_ENDPOINTS[0]["model"] if AI_ENDPOINTS else ""
-AI_ON       = any(e["base"] and e["key"] for e in AI_ENDPOINTS)
-AI_BUDGET   = int(os.environ.get("AI_BUDGET", "60"))                # سقف کل ثانیه‌ی یک درخواست (همه‌ی مدل‌ها روی هم)
-
 START_POINTS = int(os.environ.get("START_POINTS", "20"))        # هدیه‌ی شروع
 HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
 DAILY_TASKS  = int(os.environ.get("DAILY_TASKS", "60"))        # سقف تسک روزانه‌ی هر کاربر
-DAILY_AI     = int(os.environ.get("DAILY_AI", "12"))           # سقف بررسی اسکرین‌شات در روز برای هر کاربر
 STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از این تعداد اخطار، انجام تسک بسته می‌شه
 MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
-SHOT_WINDOW  = 600                                              # مهلت ارسال اسکرین‌شات بعد از زدن «انجام دادم» (ثانیه)
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # فرصت اضافه برای تأخیر آپدیت شمارش تلگرام
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
-CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v44-direct-destination-legacy-reward-fix"
-AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
-CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
-CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
-try:
-    import PIL.Image  # noqa
-    PIL_OK = True
-except Exception:
-    PIL_OK = False
-PIXEL_CHECK  = os.environ.get("PIXEL_CHECK", "1") != "0"        # بررسی پیکسلی چیپ پررنگ ری‌اکشن (قبل از مدل)؛ =0 خاموش
-AI_DEBUG     = os.environ.get("AI_DEBUG", "") == "1"           # =1: جواب خام مدل برای هر رد شدن به ادمین‌ها فرستاده می‌شه
-TIME_TOL     = int(os.environ.get("TIME_TOL", "5"))             # چند دقیقه قبل از زدن «انجام دادم» هنوز قبوله (دقیقه)
-TZ_NAME      = os.environ.get("TZ_NAME", "Asia/Tehran")        # برای مقایسه‌ی ساعت داخل اسکرین‌شات
+VERSION      = "v47-fix-channel-view-callback-objectid"
 
 # نوع تسک: پاداش انجام‌دهنده / هزینه‌ی ثبت برای صاحب کمپین (هر واحد) / حداقل صبر (ثانیه)
 TYPES = {
@@ -408,9 +371,7 @@ def task_text(c):
                "📡 <b>نحوهٔ بررسی:</b> افزایش شمارش کل ری‌اکشن‌های پست بررسی می‌شه؛ این روش هویت فردی واکنش‌دهنده رو مشخص نمی‌کنه. اگر افزایش معتبر در بازهٔ تسک دریافت و به درخواستت اختصاص داده بشه، پاداش فوری واریز می‌شه.\n"
                "⏱ ممکنه خود تلگرام آپدیت شمارش رو با تأخیر ارسال کنه؛ تا پایان بررسی، پیام وضعیت رو نگه دار.")
     else:
-        how = ("<b>مراحل انجام</b>\n۱. پست مقصد رو باز کن و ری‌اکشن بزن.\n"
-               "۲. اسکرین‌شاتی بگیر که نام کانال، پست و ری‌اکشن انتخاب‌شده مشخص باشه.\n"
-               f"۳. به ربات برگرد، «انجام دادم» رو بزن و عکس رو ارسال کن.\n\n⏱ مهلت ارسال عکس: {SHOT_WINDOW // 60} دقیقه.")
+        how = "روش تأیید این تسک در دسترس نیست؛ لطفاً یک تسک فعال دیگر انتخاب کن."
     return head + how
 
 
@@ -460,6 +421,8 @@ def campaign_listing_text(c):
     target = c.get("title") or c.get("uname") or "تسک جدید"
     if c.get("status") == "cancelled":
         state = "🔴 لغو شده"
+    elif c.get("type") == "react" and c.get("mode") not in ("auto", "count"):
+        state = "⚪ روش تأیید قدیمی غیرفعال"
     elif c.get("admin_paused") and campaign_needs_admin(c):
         state = "⛔ توقف موقت: دسترسی ربات"
     elif c.get("status") == "active" and remaining:
@@ -484,6 +447,9 @@ def campaign_listing_text(c):
             "پس از انجام کار، از همین پست «🎁 دریافت پاداش» را بزن.")
 
 def campaign_listing_keyboard(c):
+    # کمپین‌های قدیمیِ وابسته به اسکرین‌شات/هوش مصنوعی دیگر قابل انجام نیستند.
+    if c.get("type") == "react" and c.get("mode") not in ("auto", "count"):
+        return [[btn("⚪ روش قدیمی غیرفعال", "noop")]]
     # تسک تمام‌شده فقط نشانگر قرمز دارد.
     available = (c.get("status") == "active" and int(c.get("remaining", 0)) > 0
                  and not (c.get("admin_paused") and campaign_needs_admin(c)))
@@ -591,6 +557,8 @@ def on_claim(cq, uid, chat, mid, cid_s):
     if not c or c["status"] != "active" or c["remaining"] <= 0:
         ans(cq, "این تسک دیگه ظرفیت نداره", True)
         return show_task(uid, chat, mid)
+    if c.get("type") == "react" and c.get("mode") not in ("auto", "count"):
+        return ans(cq, "روش تأیید قدیمی حذف شده؛ این کمپین قابل انجام نیست.", True)
     if campaign_needs_admin(c):
         if c.get("admin_paused"):
             return ans(cq, "این کمپین موقتاً متوقف شده؛ دسترسی ربات در حال بازیابی است.", True)
@@ -652,13 +620,6 @@ def on_claim(cq, uid, chat, mid, cid_s):
                                f"منتظر آپدیت شمارش تلگرام هستیم؛ ممکن است چند دقیقه طول بکشد (حداکثر فرصت اضافه: {REACTION_UPDATE_GRACE // 60} دقیقه). "
                                "اگر افزایش معتبر شمارش در بازهٔ تسک ثبت شود، پاداش به‌صورت خودکار و فوری واریز می‌شود و پیام تأیید می‌گیری.",
                     [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")], [btn("🏠 منوی اصلی", "home")]])
-    elif c["type"] == "react":
-        db.states.replace_one({"_id": uid}, {"_id": uid, "step": "shot", "cid": str(cid), "t": time.time()}, upsert=True)
-        ans(cq)
-        return view(chat, mid, "📸 حالا اسکرین‌شات پست رو همین‌جا بفرست.\n"
-                               "باید اسم کانال، پست و ری‌اکشن انتخاب‌شده‌ی خودت توش دیده بشه.\n"
-                               f"مهلت: {SHOT_WINDOW // 60} دقیقه.", [[btn("❌ انصراف", "home")]])
-
     # عضویت و ری‌اکشنِ قابل‌تأیید با Bot API همان لحظه بررسی شده‌اند؛
     # برای این دو نوع تسک پاداش را بی‌دلیل ۲۴ ساعت معلق نکن.
     instant = (c.get("type") in ("join", "view") or
@@ -680,501 +641,6 @@ def on_claim(cq, uid, chat, mid, cid_s):
                     [[btn("🎯 تسک بعدی", "earn", style="success")],
                      [btn("👤 حساب کاربری", "acc", style="primary")]])
     after_ok(cq, chat, mid, c, comp)
-
-
-# ───────────────────────── اسکرین‌شات: ضدتکرار + مدل ویژن ─────────────────────────
-def fetch_file(file_id):
-    r = tg("getFile", file_id=file_id)
-    if not r.get("ok"):
-        return None
-    try:
-        x = requests.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{r['result']['file_path']}", timeout=25)
-        return x.content if x.status_code == 200 and len(x.content) < 8_000_000 else None
-    except Exception:
-        return None
-
-
-def img_hash(b):
-    """هش میانگین ۱۶×۱۶ (۲۵۶ بیتی)؛ برای تشخیص عکس تکراریِ ریسایز/فشرده‌شده. بدون Pillow غیرفعاله"""
-    try:
-        from PIL import Image
-        px = list(Image.open(io.BytesIO(b)).convert("L").resize((16, 16)).getdata())
-        avg = sum(px) / len(px)
-        return "%064x" % int("".join("1" if p > avg else "0" for p in px), 2)
-    except Exception:
-        return None
-
-
-def ham(a, b):
-    return bin(int(a, 16) ^ int(b, 16)).count("1")
-
-
-def time_ok(s, since=None):
-    """ساعت گوشی در عکس باید داخل پنجره‌ی «از ‹TIME_TOL› دقیقه قبل از زدن «انجام دادم» تا الان» باشه (آینده فقط ۲ دقیقه).
-    since = زمان زدن «انجام دادم» (epoch). ساعت ۱۲ و ۲۴ ساعته هر دو پوشش داده می‌شن. ناخونا = False"""
-    m = re.match(r"^\s*(\d{1,2}):(\d{2})", str(s or ""))
-    if not m:
-        return False
-    try:
-        from zoneinfo import ZoneInfo
-        ref = datetime.now(ZoneInfo(TZ_NAME))
-    except Exception:
-        ref = datetime.now(timezone(timedelta(hours=3, minutes=30)))
-    past = TIME_TOL + (max(0.0, (time.time() - since) / 60) if since else 0)
-    mod = 1440 if int(m[1]) >= 13 else 720
-    d = (ref.hour * 60 + ref.minute - int(m[1]) * 60 - int(m[2])) % mod
-    return d <= past or d >= mod - 2
-
-
-def now_str():
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo(TZ_NAME)).strftime("%H:%M")
-    except Exception:
-        return datetime.now(timezone(timedelta(hours=3, minutes=30))).strftime("%H:%M")
-
-
-_mlock = threading.Lock()
-_morder = [e["label"] for e in AI_ENDPOINTS]
-_mstat = {e["label"]: {"fails": 0, "until": 0.0, "err": "", "ms": None} for e in AI_ENDPOINTS}
-_mby = {e["label"]: e for e in AI_ENDPOINTS}
-
-
-def _model_list():
-    """مدل‌های آماده به ترتیب اولویت؛ مدل‌هایی که تازه خراب شدن (در استراحت) آخر صف می‌رن و فقط اگه بقیه جواب ندادن امتحان می‌شن"""
-    now = time.time()
-    with _mlock:
-        ready = [m for m in _morder if _mstat[m]["until"] <= now]
-        cool = sorted((m for m in _morder if _mstat[m]["until"] > now), key=lambda m: _mstat[m]["until"])
-    return ready + cool
-
-
-def _mark_fail(m, err, hard=False):
-    with _mlock:
-        st = _mstat[m]
-        st["fails"] += 1
-        st["err"] = err[:160]
-        st["until"] = time.time() + (600 if hard else min(30 * 2 ** (st["fails"] - 1), 600))
-        if m in _morder:
-            _morder.remove(m)
-            _morder.append(m)                      # مدل خراب می‌ره آخر صف
-    log.warning("AI model %s failed (%s) -> moved to end of queue", m, err[:120])
-
-
-def _mark_ok(m, ms):
-    with _mlock:
-        _mstat[m].update(fails=0, until=0.0, err="", ms=ms)
-
-
-def _json_ok(txt):
-    m = re.search(r"\{.*\}", txt or "", re.S)
-    try:
-        json.loads(m.group(0))
-        return True
-    except Exception:
-        return False
-
-
-def _ai_call(e, msgs, timeout):
-    """یک تماس با یک مدل. خروجی: (متن، خطا، hard) ؛ hard = خطای دائمی (کلید/نام مدل غلط) → استراحت طولانی"""
-    url = e["base"] + "/chat/completions"
-    base = {"model": e["model"], "messages": msgs}
-    err, hard = "", False
-    # بعضی مدل‌ها temperature/max_tokens رو قبول نمی‌کنن؛ روی خطای ۴۰۰ با پارامترهای ساده‌تر دوباره امتحان می‌شه
-    for body in (dict(base, temperature=0, max_tokens=600), dict(base, max_completion_tokens=600), base):
-        try:
-            r = requests.post(url, headers={"Authorization": "Bearer " + e["key"]}, json=body, timeout=timeout)
-        except Exception as ex:
-            return None, f"اتصال/تایم‌اوت: {str(ex)[:120]}", False
-        try:
-            j = r.json()
-        except Exception:
-            return None, f"HTTP {r.status_code} پاسخ غیر JSON: {getattr(r, 'text', '')[:120]}", r.status_code in (401, 403, 404)
-        if r.status_code == 200 and j.get("choices"):
-            c = (j["choices"][0].get("message") or {}).get("content")
-            if isinstance(c, list):
-                c = " ".join(p.get("text", "") for p in c if isinstance(p, dict))
-            if c and str(c).strip():
-                if _json_ok(str(c)):
-                    return str(c), "", False
-                return None, f"پاسخ JSON نبود: {str(c)[:100]}", False
-            err = f"پاسخ خالی: {str(j)[:150]}"
-        else:
-            err = f"HTTP {r.status_code}: {str(j)[:200]}"
-            hard = r.status_code in (401, 403, 404)
-        if r.status_code != 400:
-            break
-    return None, err, hard
-
-
-def ai_request(prompt, img, mime="image/jpeg", only=None, budget=None):
-    """تماس با مدل‌ها به ترتیب اولویت؛ هر مدلی خطا/تایم‌اوت/پاسخ غیر JSON بده، می‌ره آخر صف و فوری مدل بعدی امتحان می‌شه.
-    خروجی: (متن، خطا). only = فقط همین مدل (برای /aitest)"""
-    imgs = img if isinstance(img, list) else [img]
-    msgs = [{"role": "user", "content": [{"type": "text", "text": prompt}] + [
-        {"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(x).decode()}} for x in imgs]}]
-    deadline, errs = time.time() + (budget or AI_BUDGET), []
-    for m in ([only] if only else _model_list()):
-        remain = deadline - time.time()
-        if remain < 3:
-            errs.append("سقف زمانی تموم شد")
-            break
-        t0 = time.time()
-        txt, err, hard = _ai_call(_mby[m], msgs, min(AI_TIMEOUT, remain))
-        if txt:
-            _mark_ok(m, int((time.time() - t0) * 1000))
-            return txt, ""
-        _mark_fail(m, err, hard)
-        errs.append(f"{m}: {err}")
-    return None, " | ".join(errs)[:900] or "هیچ مدلی تنظیم نشده"
-
-
-_ai_alert = {"t": 0}
-
-
-def ai_alert(err):
-    log.warning("ai error: %s", err)
-    if time.time() - _ai_alert["t"] > 600:
-        _ai_alert["t"] = time.time()
-        for a in ADMINS:
-            send(a, "⚠️ خطای مدل ویژن (دستور /aitest برای تست دستی):\n" + err[:800])
-
-
-def small_jpeg(b, maxw=900):
-    """کوچک‌کردن عکس قبل از ارسال به مدل (سریع‌تر و پایدارتر)؛ تشخیص پیکسلی روی عکس اصلی انجام می‌شه"""
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(b)).convert("RGB")
-        if im.width > maxw:
-            im = im.resize((maxw, int(im.height * maxw / im.width)), Image.LANCZOS)
-        out = io.BytesIO()
-        im.save(out, "JPEG", quality=88)
-        return out.getvalue()
-    except Exception:
-        return b
-
-
-def ai_retry(fn, *a):
-    """یک بار تکرار روی خطای موقت (قطعی شبکه، پاسخ خالی، JSON خراب)"""
-    r, err = fn(*a)
-    if r is None and "تنظیم نشده" not in (err or ""):
-        time.sleep(1.5)
-        r, err = fn(*a)
-    return r, err
-
-
-def parse_json(txt):
-    m = re.search(r"\{.*\}", txt or "", re.S)
-    try:
-        return json.loads(m.group(0)), ""
-    except Exception:
-        return None, f"پاسخ مدل JSON نبود: {(txt or '')[:300]}"
-
-
-def ref_info(c):
-    """توضیح پست هدف برای پرامپت + عکس مرجع. خروجی: (لیست توضیح، لیست عکس‌های اضافه، خطا)"""
-    desc, extra = [], []
-    if c.get("hint"):
-        desc.append(f'the post text starts with: "{c["hint"]}"')
-    if c.get("ref_photo"):
-        ref = fetch_file(c["ref_photo"])
-        if not ref:
-            return desc, extra, "نتونستم عکس مرجع پست رو بگیرم"
-        extra.append(small_jpeg(ref, 600))
-        desc.append("the reference image is the original post media")
-    return desc, extra, ""
-
-
-def ai_check(img, c):
-    """بررسی کلی و ساده: اسکرین‌شات تلگرامه و کانال درسته؟ (پست و ساعت اینجا نیست). خروجی: (دیکشنری یا None، خطا)"""
-    if not AI_ON:
-        return None, "AI_BASE_URL / AI_API_KEY / AI_MODEL تنظیم نشده"
-    prompt = (
-        "This is a user-submitted Telegram screenshot. Light and dark themes are both valid.\n"
-        f'Expected channel/group title: "{c.get("title") or ""}" (@{c["uname"]}).\n'
-        "Answer ONLY with one JSON object, no markdown:\n"
-        '{"is_telegram_screenshot": true|false, "channel_match": true|false|null, "confidence": 0.0-1.0}\n'
-        "- is_telegram_screenshot: a genuine Telegram app screen, not an obviously edited/fake image or a meme.\n"
-        "- channel_match: the channel/group name shown in the top header matches the expected title (same name, small "
-        "differences in emoji/decoration are fine); false if a clearly different name; null if no name is visible.\n"
-        "- confidence: how readable the screenshot is (never lowered by the theme).")
-    txt, err = ai_request(prompt, [img])
-    if not txt:
-        return None, err
-    return parse_json(txt)
-
-
-def status_crop(b, mode=0):
-    """برش نوار وضعیت بالای عکس و بزرگ‌کردنش تا مدل فقط ساعت رو بخونه. سه برش متفاوت برای خوندن مستقل"""
-    from PIL import Image
-    im = Image.open(io.BytesIO(b)).convert("RGB")
-    W, H = im.size
-    fw, fh, k = ((1.0, 0.055, 1.5), (0.5, 0.055, 2.0), (0.6, 0.07, 2.5))[mode]
-    im = im.crop((0, 0, int(W * fw), max(40, int(H * fh))))
-    im = im.resize((int(im.width * k), int(im.height * k)), Image.LANCZOS)
-    out = io.BytesIO()
-    im.save(out, "JPEG", quality=92)
-    return out.getvalue()
-
-
-def ai_clock(b, mode=0):
-    """خوندن ساعت نوار وضعیت گوشی از برش بالای عکس. خروجی: (رشته‌ی H:MM یا None، خطا)"""
-    prompt = (
-        "This is the top strip of a phone screenshot. Read the phone clock from the system status bar "
-        "(the digits next to the small status icons). Ignore any faded or blurred text behind it. "
-        'Answer ONLY with JSON: {"clock": "HH:MM"|null}. Use null unless you can read all the digits clearly; never guess.')
-    try:
-        txt, err = ai_request(prompt, [status_crop(b, mode)], budget=CLOCK_BUDGET)
-    except Exception as e:
-        return None, str(e)
-    if not txt:
-        return None, err
-    d, err = parse_json(txt)
-    if not isinstance(d, dict):
-        return None, err
-    m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*$", str(d.get("clock") or ""))
-    return (f"{int(m[1])}:{m[2]}" if m else None), ""
-
-
-def find_chips(b):
-    """بررسی پیکسلی بدون وابستگی به مدل: ری‌اکشنِ زده‌شده‌ی کاربر در تلگرام یه چیپ قرصی‌شکلِ پر و پررنگ (رنگ اکسنت) می‌شه؛
-    چیپ‌های نزده در همه‌ی تم‌ها کم‌رنگ/شفافن. خروجی: لیست جعبه‌ها (x0,y0,x1,y1 به‌صورت کسری از ابعاد عکس)،
-    لیست خالی = هیچ چیپ پررنگی نیست = ری‌اکشن نخورده؛ None = بررسی ممکن نشد (Pillow نیست یا خطا)"""
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(b)).convert("RGB")
-        W = 360
-        im = im.resize((W, max(1, int(im.height * W / im.width))), Image.BILINEAR)
-        hsv = im.convert("HSV")
-        S, V = hsv.getdata(band=1), hsv.getdata(band=2)
-        w, h = im.size
-        mask = bytearray(w * h)
-        for i in range(w * h):
-            if S[i] > 130 and V[i] > 130:
-                mask[i] = 1
-        out = []
-        for i0 in range(w * h):
-            if mask[i0] != 1:
-                continue
-            st, mask[i0] = [i0], 2
-            n, x0, x1, y0, y1 = 0, w, 0, h, 0
-            while st:
-                i = st.pop()
-                x, y = i % w, i // w
-                n += 1
-                x0, x1, y0, y1 = min(x0, x), max(x1, x), min(y0, y), max(y1, y)
-                for j in (i - 1 if x else -1, i + 1 if x < w - 1 else -1, i - w, i + w if y < h - 1 else -1):
-                    if 0 <= j < w * h and mask[j] == 1:
-                        mask[j] = 2
-                        st.append(j)
-            bw, bh = x1 - x0 + 1, y1 - y0 + 1
-            if 0.045 * w <= bh <= 0.11 * w and 1.4 <= bw / bh <= 4.5 and n / (bw * bh) >= 0.55 and n >= 0.012 * w * w / 4:
-                out.append((x0 / w, y0 / h, (x1 + 1) / w, (y1 + 1) / h))
-        out.sort(key=lambda t: t[1])
-        return out[:6]
-    except Exception as e:
-        log.warning("pixel check failed: %s", e)
-        return None
-
-
-def mark_chips(b, boxes):
-    """روی هر چیپ پررنگِ پیداشده یه کادر قرمز و شماره می‌کشه تا مدل فقط بگه هر شماره مال کدوم پسته (سؤال ساده‌تر از مختصات)"""
-    from PIL import Image, ImageDraw, ImageFont
-    im = Image.open(io.BytesIO(small_jpeg(b))).convert("RGB")
-    W, H = im.size
-    d = ImageDraw.Draw(im)
-    try:
-        font = ImageFont.load_default(size=max(18, W // 28))
-    except TypeError:
-        font = ImageFont.load_default()
-    r = max(14, W // 40)
-    for k, (x0, y0, x1, y1) in enumerate(boxes, 1):
-        X0, Y0, X1, Y1 = x0 * W, y0 * H, x1 * W, y1 * H
-        d.rectangle([X0 - 3, Y0 - 3, X1 + 3, Y1 + 3], outline=(255, 0, 0), width=4)
-        cx, cy = X0 - r, max(r, Y0 - r)
-        cx = max(r, cx)
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 0, 0))
-        d.text((cx, cy), str(k), fill=(255, 255, 255), font=font, anchor="mm")
-    out = io.BytesIO()
-    im.save(out, "JPEG", quality=88)
-    return out.getvalue()
-
-
-def ai_owner_check(img, boxes, c):
-    """هر چیپ پررنگِ شماره‌دار مال همون پست تسکه یا پست دیگه؟ خروجی: (دیکشنری یا None، خطا)"""
-    desc, extra, err = ref_info(c)
-    if err:
-        return None, err
-    prompt = (
-        "The FIRST image is a Telegram screenshot. Some reaction chips are marked with a red box and a red numbered tag. "
-        f'Target post: {"; ".join(desc) or "unknown"}. If a second image is attached it is that post\'s original media.\n'
-        "For EACH numbered chip decide whether it sits in the SAME message bubble as the target post (the target's own reaction "
-        "row, right above that bubble's eye/views counter and time) or belongs to a DIFFERENT post (an older/newer bubble above "
-        "or below, or a different message). A chip directly above the target's top edge or under the next bubble is a different post.\n"
-        'Answer ONLY one JSON object, no markdown: {"tags": [{"n": 1, "own_post": true|false}]}\n'
-        "If you are not sure about a tag, own_post=false.")
-    txt, err = ai_request(prompt, [mark_chips(img, boxes)] + extra)
-    if not txt:
-        return None, err
-    return parse_json(txt)
-
-
-def ai_reaction_check(img, c):
-    """جایگزین وقتی تشخیص پیکسلی ممکن نیست: فقط مدل (کم‌اعتمادتر). خروجی: (دیکشنری یا None، خطا)"""
-    desc, extra, err = ref_info(c)
-    if err:
-        return None, err
-    prompt = (
-        "The FIRST image is a Telegram screenshot (any theme). "
-        f'Target post: {"; ".join(desc) or "unknown"}.\n'
-        "Look ONLY at the reaction chips inside the SAME message bubble as the target post (right above its views/time footer); "
-        "ignore other posts. Compare those chips with each other: unselected ones share one calm tinted look, the user's own "
-        "selected chip is a strong solid saturated accent fill. If all look the same, nobody reacted.\n"
-        'Answer ONLY one JSON object: {"selected_emoji": "<emoji>"|null}. null if unsure, if all look alike or if no chips.')
-    txt, err = ai_request(prompt, [small_jpeg(img)] + extra)
-    if not txt:
-        return None, err
-    return parse_json(txt)
-
-
-def judge(v, has_hint=True):
-    """تصمیم روی بررسی کلی ساده: اسکرین‌شات تلگرام + کانال (نامطمئن = رد)"""
-    if not isinstance(v, dict):
-        return "reject", "بررسی عکس الان ممکن نشد؛ چند لحظه بعد دوباره امتحان کن"
-    try:
-        conf = float(v.get("confidence") or 0)
-    except (TypeError, ValueError):
-        conf = 0
-    if conf < CONF_MIN:
-        return "reject", "عکس واضح نیست"
-    if v.get("is_telegram_screenshot") is not True:
-        return "reject", "این اسکرین‌شات تلگرام نیست"
-    if v.get("channel_match") is not True:
-        return "reject", "اسم کانال بالای عکس دیده نمی‌شه"
-    return "approve", ""
-
-
-def _mins(t):
-    m = re.match(r"^(\d{1,2}):(\d{2})", t)
-    return int(m[1]) * 60 + int(m[2])
-
-
-def clock_decide(reads, since=None):
-    """سه خوندن مستقل از ساعت. قبول فقط با شواهد مثبت: خوندن‌های همخوان با الان باید بیشتر از ناهمخوان‌ها باشن.
-    هیچ خوندنی/مساوی = رد (بسته). خروجی: None (قبول) یا متن دلیل رد"""
-    reads = [x for x in reads if x]
-    good = [t for t in reads if time_ok(t, since)]
-    bad = [t for t in reads if not time_ok(t, since)]
-    if len(good) > len(bad):
-        return None
-    if not reads:
-        return "ساعت بالای گوشی تو عکس خونده نشد؛ اسکرین‌شات کامل با نوار بالای گوشی بگیر"
-    if good:
-        return "ساعت عکس واضح خونده نشد؛ اسکرین‌شات تازه و کامل بگیر"
-    return f"ساعت عکس ({bad[0]}) با الان ({now_str()}) نمی‌خونه؛ اسکرین‌شات تازه بگیر"
-
-
-def _safe(fn, *a):
-    try:
-        return fn(*a)
-    except Exception as e:
-        log.exception("%s", getattr(fn, "__name__", "fn"))
-        return None, f"{getattr(fn, '__name__', 'fn')}: {e}"
-
-
-def ai_verdict(img, c, since=None):
-    """۱) چک پیکسلی چیپ پررنگ  ۲) به‌موازات: مدل کلی، مالکیت چیپ، دو خوندن ساعت  ۳) تصمیم.
-    همه‌ی چک‌ها بسته‌اند: اگه ابزاری کار نکنه (مثلاً Pillow) هیچ‌چیز تأیید نمی‌شه. خروجی: (حکم، دلیل، خطا)"""
-    if PIXEL_CHECK and not PIL_OK:
-        return None, "", "Pillow نصب نیست ولی PIXEL_CHECK روشنه؛ Pillow رو به requirements.txt اضافه کن"
-    boxes = find_chips(img) if PIXEL_CHECK else None
-    if PIXEL_CHECK and boxes is None:
-        return None, "", "چک پیکسلی خطا داد (لاگ سرور رو ببین)"
-    if boxes is not None and not boxes:
-        return "reject", "ری‌اکشنی نزدی (یا تو عکس دیده نمی‌شه)؛ اول ری‌اکشن بزن بعد اسکرین‌شات بگیر", ""
-    small = small_jpeg(img)
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        f_gen = ex.submit(_safe, ai_retry, ai_check, small, c)
-        f_own = (ex.submit(_safe, ai_retry, ai_owner_check, img, boxes, c) if boxes
-                 else ex.submit(_safe, ai_retry, ai_reaction_check, img, c))
-        f_c0 = ex.submit(_safe, ai_clock, img, 0)
-        f_c1 = ex.submit(_safe, ai_clock, img, 1)
-        f_c2 = ex.submit(_safe, ai_clock, img, 2)
-        (v, e1), (r, e2), (t0, _), (t1, _), (t2, _) = f_gen.result(), f_own.result(), f_c0.result(), f_c1.result(), f_c2.result()
-    if v is None or r is None:
-        return None, "", e1 or e2 or "پاسخ مدل نیومد"
-    problems = []                                       # همه‌ی مشکل‌ها با هم گزارش می‌شن، نه فقط اولینش
-    verdict, why = judge(v, True)
-    low_conf = verdict != "approve" and "واضح نیست" in why
-    if verdict != "approve":
-        problems.append(why)
-    if not low_conf:
-        if boxes:
-            own = [t for t in (r.get("tags") or []) if isinstance(t, dict) and t.get("own_post") is True]
-            if not own:
-                problems.append("ری‌اکشنت مالِ پستِ تسک نیست؛ روی خودِ پست تسک ری‌اکشن بزن")
-        elif not str(r.get("selected_emoji") or "").strip():
-            problems.append("ری‌اکشنت زیر پستِ تسک دیده نمی‌شه")
-        why2 = clock_decide([t0, t1, t2], since)
-        if why2:
-            problems.append(why2)
-    if problems:
-        why = problems[0] if len(problems) == 1 else "\n".join("• " + x for x in problems)
-        log.info("ai reject: %s | %s | %s | clocks=%s | %s", problems, json.dumps(v, ensure_ascii=False)[:400], json.dumps(r, ensure_ascii=False)[:300], [t0, t1, t2], boxes)
-        if AI_DEBUG:
-            for a_ in ADMINS:
-                send(a_, "🔎 رد شد: " + why + "\n" + json.dumps(v, ensure_ascii=False)[:600] + "\n" + json.dumps(r, ensure_ascii=False)[:400] + f"\nclocks={[t0, t1, t2]}")
-        return "reject", why, ""
-    return "approve", "", ""
-
-
-def verify_shot(uid, chat, cid_s, ph, since=None):
-    """در ترد جدا اجرا می‌شه (تماس با مدل ممکنه کند باشه)"""
-    fid = ph["file_unique_id"]
-    try:
-        c = db.campaigns.find_one({"_id": ObjectId(cid_s)})
-        if not c or c["status"] != "active" or c["remaining"] <= 0:
-            return send(chat, "این تسک دیگه ظرفیت نداره.", [[btn("🎯 تسک بعدی", "earn")]])
-        RETRY = "❌ این عکس قبلاً رد شده. باید واقعاً ری‌اکشن بزنی و اسکرین‌شات تازه بگیری."
-        try:
-            db.shots.insert_one({"_id": fid, "uid": uid, "cid": cid_s, "t": time.time()})
-        except DuplicateKeyError:
-            old = db.shots.find_one({"_id": fid}) or {}
-            return send(chat, RETRY if old.get("rej") and old.get("uid") == uid else
-                        "❌ این عکس قبلاً ارسال شده. اسکرین‌شات تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
-        img = fetch_file(ph["file_id"])
-        if not img:
-            db.shots.delete_one({"_id": fid})
-            return send(chat, "⚠️ نتونستم عکس رو بگیرم. دوباره «انجام دادم» رو بزن و عکس رو بفرست.", [[btn("🎯 ادامه", "earn")]])
-        h = img_hash(img)
-        if h:
-            # فقط با عکس‌های «قبول‌شده/در حال بررسی» مقایسه می‌شه. عکس رد‌شده شبیه‌یابی نمی‌شه چون اسکرین‌شات تازه‌ی همون
-            # صفحه (با ری‌اکشن عوض‌شده) هش تقریباً یکسان داره و بی‌گناه رد می‌شد؛ عکس رد‌شده‌ی عین‌به‌عین با file_unique_id گرفته می‌شه
-            for o in db.shots.find({"cid": cid_s, "ah": {"$exists": True}, "rej": {"$ne": True}, "uid": {"$ne": uid}}):
-                if ham(h, o["ah"]) <= 6:
-                    db.shots.delete_one({"_id": fid})
-                    return send(chat, "❌ این اسکرین‌شات شبیه عکس قبلیِ یه کاربر دیگه‌ست. عکس تازه‌ی خودت رو بفرست.", [[btn("🏠 منو", "home")]])
-            db.shots.update_one({"_id": fid}, {"$set": {"ah": h}})
-        verdict, why, err = ai_verdict(img, c, since)
-        if verdict is None:                             # مشکل از سرویس مدله، نه از عکس کاربر
-            db.shots.delete_one({"_id": fid})
-            db.counters.update_one({"_id": f"ai:{uid}:{day()}"}, {"$inc": {"n": -1}})
-            ai_alert(err)
-            return send(chat, "⚠️ سرویس بررسی عکس الان در دسترس نیست (مشکل از عکس تو نیست). "
-                              "چند دقیقه دیگه دوباره «انجام دادم» رو بزن.", [[btn("🎯 تسک‌ها", "earn")]])
-        if verdict == "reject":                         # عکس رد‌شده نگه داشته می‌شه تا دوباره ارسالش فایده نداشته باشه
-            db.shots.update_one({"_id": fid}, {"$set": {"rej": True}})
-            return send(chat, f"❌ {why}\nاسکرین‌شات تازه بگیر و دوباره «انجام دادم» رو بزن.",
-                        [[btn("🎯 تسک‌ها", "earn")]])
-        code, comp = grant(uid, c, "pending")
-        if code != "ok":
-            return send(chat, claim_text(code, c), [[btn("🎯 تسک بعدی", "earn")]])
-        send(chat, f"✅ تأیید شد!\n{c['reward']} کوین {HOLD_HOURS:g} ساعت معلق می‌مونه و بعد قطعی می‌شه.",
-             [[btn("🎯 تسک بعدی", "earn")]])
-    except Exception:
-        log.exception("verify_shot")
-        db.shots.delete_one({"_id": fid})
-        send(chat, "⚠️ خطایی رخ داد؛ دوباره امتحان کن.", [[btn("🏠 منو", "home")]])
 
 
 # ───────────────────────── تأیید تجمیعی ری‌اکشن کانال ─────────────────────────
@@ -1487,8 +953,6 @@ def on_state_text(uid, chat, text, st):
         db.states.delete_one({"_id": uid})
         return send(chat, "⌛ این مرحله منقضی شد. از منو دوباره شروع کن.", main_kb())
     step, d = st["step"], st.get("d", {})
-    if step == "shot":
-        return send(chat, "📸 لطفاً اسکرین‌شات رو به‌صورت «عکس» بفرست.", [[btn("❌ انصراف", "home")]])
     typ = d.get("type")
     cost = TYPES[typ]["cost"] if typ else 0
     if step == "link":
@@ -1504,7 +968,7 @@ def on_state_text(uid, chat, text, st):
         ch = resolve_chat(uname)
         if not ch:
             return send(chat, "❌ این کانال/گروه رو پیدا نکردم. باید عمومی (با یوزرنیم) باشه.")
-        d.update(uname=ch.get("username") or uname, chat_id=ch["id"], title=(ch.get("title") or uname)[:60], mid=mid_, mode=None, ref_text="", ref_photo=None)
+        d.update(uname=ch.get("username") or uname, chat_id=ch["id"], title=(ch.get("title") or uname)[:60], mid=mid_, mode=None)
         if typ == "join" and not bot_is_admin(ch["id"]):
             return send(chat, f"❌ ربات هنوز ادمین «{d['title']}» نیست. اول @{_me.get('username', '')} رو ادمین کن و دوباره لینک بفرست.")
         if typ == "react":
@@ -1531,15 +995,7 @@ def on_state_text(uid, chat, text, st):
                 return send(chat, f"📡 <b>پایش پست آماده است</b>\n\nآخرین شمارش دریافت‌شده: <b>{snap.get('total', 0)} ری‌اکشن</b>.\n\nحالا مهلتی رو انتخاب کن که کاربر برای انجام هر تسک در اختیار داشته باشه. توجه کن که تلگرام ممکنه خودِ آپدیت شمارش رو دیرتر ارسال کنه.",
                             [[btn("⏱️ ۲ دقیقه", "rw:2"), btn("⏱️ ۵ دقیقه", "rw:5")], [btn("❌ لغو کمپین", "home")]])
             else:
-                if ch["type"] in ("group", "supergroup"):
-                    return send(chat, f"❌ برای اعتبارسنجی دقیق ری‌اکشن گروه، ربات باید در «{d['title']}» ادمین باشد. پس از ادمین‌کردن، لینک پست را دوباره بفرست.")
-                if not AI_ON:
-                    return send(chat, "❌ برای گروه، ربات باید ادمین باشد تا ری‌اکشن فردی را ببیند؛ برای کانال، ربات باید ادمین باشد تا شمارش تجمیعی را پایش کند.")
-                d["mode"] = "shot"
-                set_state(uid, "ref", d)
-                return send(chat, "🔎 برای اینکه ربات پست دقیق رو تشخیص بده (نه هر پست دیگه‌ی کانال)، همون پست رو از کانال برای من فوروارد کن.\n\n"
-                                  "اگه کانال فوروارد رو بسته، یه جمله‌ی مشخص و منحصربه‌فرد از متن پست رو تایپ کن.",
-                            [[btn("❌ انصراف", "home")]])
+                return send(chat, "❌ برای ساخت تسک ری‌اکشن، مقصد باید کانالی باشد که ربات در آن ادمین است، یا گروهی که ربات در آن ادمین است و تأیید فردی ری‌اکشن را پشتیبانی می‌کند.")
         set_state(uid, "qty", d)
         return ask_qty(uid, d, cost)
     if step == "count_baseline":
@@ -1560,41 +1016,13 @@ def on_state_text(uid, chat, text, st):
         how = {"join": "تأیید خودکار با عضویت‌سنجی + چک دوباره‌ی آخر دوره‌ی معلق",
                "view": "تأیید زمانی (بازدید قابل راستی‌آزمایی دقیق نیست)",
                "react": ("تأیید خودکار فردی (گروه)" if d.get("mode") == "auto" else
-                         f"تأیید شمارشی کانال؛ مهلت {d.get('window_min', 5)} دقیقه + پرداخت فوری" if d.get("mode") == "count" else
-                         "اسکرین‌شات + بررسی خودکار هوش مصنوعی + ضدتکرار")}[typ]
+                         f"تأیید شمارشی کانال؛ مهلت {d.get('window_min', 5)} دقیقه + پرداخت فوری")}[typ]
         admin_note = ("\n👑 ادمین اجباری ربات: فعال تا پایان کمپین؛ در صورت قطع دسترسی، کمپین موقتاً متوقف می‌شود."
                       if typ == "join" or (typ == "react" and d.get("mode") == "auto") else "")
         return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} کوین\n"
                           f"🛡 تأیید: {how}{admin_note}\n\nثبت بشه؟",
                     [[btn(f"✅ ثبت و کسر {q * cost} کوین", "ok")], [btn("❌ انصراف", "home")]])
     send(chat, "از منو ادامه بده 👇", main_kb())
-
-
-def on_ref(uid, chat, msg, st):
-    """مرجع پست: پیام فورواردشده (متن + عکس واقعی پست) یا متن تایپ‌شده. فوروارد حتماً باید همون پستِ لینک‌شده باشه"""
-    if time.time() - st.get("t", 0) > 3600:
-        db.states.delete_one({"_id": uid})
-        return send(chat, "⌛ این مرحله منقضی شد. از منو دوباره شروع کن.", main_kb())
-    d = st["d"]
-    text = (msg.get("text") or msg.get("caption") or "").strip()
-    fo = msg.get("forward_origin")
-    if fo:
-        if fo.get("type") != "channel" or (fo.get("chat") or {}).get("id") != d["chat_id"] or fo.get("message_id") != d.get("mid"):
-            return send(chat, "❌ این پیام همون پستی که لینکش رو دادی نیست. دقیقاً همون پست رو از کانال فوروارد کن.")
-        photo = (msg.get("photo") or [{}])[-1].get("file_id")
-        if not photo:
-            for k in ("video", "animation", "document"):
-                photo = ((msg.get(k) or {}).get("thumbnail") or {}).get("file_id")
-                if photo:
-                    break
-        if not text and not photo:
-            return send(chat, "❌ این پست متن یا تصویر قابل تشخیص نداره (مثلاً فقط استیکر/نظرسنجیه)؛ ری‌اکشن اون‌طور پست‌ها قابل تأیید نیست.")
-        d["ref_photo"] = photo
-    elif len(text) < 4:
-        return send(chat, "پست رو فوروارد کن یا یه جمله‌ی مشخص (حداقل ۴ حرف) از متن پست بفرست.")
-    d["ref_text"] = text[:300]
-    set_state(uid, "qty", d)
-    return ask_qty(uid, d, TYPES[d["type"]]["cost"])
 
 
 def confirm_new(cq, uid, chat, mid):
@@ -1626,7 +1054,7 @@ def confirm_new(cq, uid, chat, mid):
     db.states.delete_one({"_id": uid})
     admin_required = bool(typ == "join" or (typ == "react" and d.get("mode") == "auto"))
     campaign = {"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
-                "mid": d.get("mid"), "mode": d.get("mode"), "hint": d.get("ref_text", ""), "ref_photo": d.get("ref_photo"), "target": d["qty"],
+                "mid": d.get("mid"), "mode": d.get("mode"), "target": d["qty"],
                 "remaining": d["qty"], "cost": t["cost"], "reward": t["reward"], "status": "active", "created": time.time(),
                 "admin_required": admin_required, "admin_paused": False,
                 "admin_checked_at": time.time() if admin_required else None}
@@ -1706,22 +1134,6 @@ def admin_cmd(uid, chat, cmd, args):
         by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "paid", "reversed")}
         return send(chat, f"📊 کاربران: {db.users.count_documents({})}\nکمپین فعال: {db.campaigns.count_documents({'status': 'active'})}\n"
                           + "\n".join(f"{k}: {v}" for k, v in by.items()))
-    if cmd == "aitest":
-        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
-        res = {}
-
-        def _t(m):
-            t0 = time.time()
-            txt, err = ai_request('Reply with only this JSON: {"ok": true}', png, "image/png", only=m)
-            res[m] = (bool(txt), round(time.time() - t0, 1), (txt or err)[:90])
-        ths = [threading.Thread(target=_t, args=(e["label"],)) for e in AI_ENDPOINTS]
-        [t.start() for t in ths]
-        [t.join(AI_TIMEOUT + 10) for t in ths]
-        lines = [(f"✅ {m} — {res[m][1]}s" if res[m][0] else f"❌ {m} — {res[m][1]}s\n    {res[m][2]}") for m in [e["label"] for e in AI_ENDPOINTS] if m in res]
-        return send(chat, "تست تک‌تک مدل‌ها:\n" + ("\n".join(lines) or "هیچ مدلی تنظیم نشده")
-                    + "\n\nترتیب فعلی اولویت:\n" + "\n".join(f"{i}. {m}" for i, m in enumerate(_model_list(), 1))
-                    + f"\n\nنسخه: {VERSION}\nPillow: {'✅' if PIL_OK else '❌ نصب نیست'}\nPIXEL_CHECK: {PIXEL_CHECK}  CLOCK_REQUIRED: {CLOCK_REQUIRED}"
-                    + f"\nTIME_TOL: {TIME_TOL}  TZ: {TZ_NAME}  ساعت سرور: {now_str()}  AI_TIMEOUT: {AI_TIMEOUT}  AI_BUDGET: {AI_BUDGET}")
     if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
         add_points(int(args[0]), int(args[1]), "admin")
         return send(chat, "انجام شد.")
@@ -1736,7 +1148,7 @@ def admin_cmd(uid, chat, cmd, args):
         if r:
             add_points(r["owner"], r["remaining"] * r["cost"], "refund", r["_id"])
         return send(chat, "کمپین متوقف شد و باقی‌مانده برگشت خورد." if r else "کمپین فعالی پیدا نشد.")
-    send(chat, "دستورها: /stats  /reactwatch  /aitest  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
+    send(chat, "دستورها: /stats  /reactwatch  /give <uid> <n>  /unban <uid>  /stop <campaign_id>")
 
 
 # ───────────────────────── مسیریابی آپدیت‌ها ─────────────────────────
@@ -1748,6 +1160,8 @@ def open_linked_task(uid, chat, cid_s):
     c = db.campaigns.find_one({"_id": cid})
     if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
         return send(chat, "⏳ این تسک دیگه ظرفیت نداره. از ویترین یک تسک دیگه انتخاب کن.", main_kb())
+    if c.get("type") == "react" and c.get("mode") not in ("auto", "count"):
+        return send(chat, "⚪ این کمپین از روش تأیید قدیمی استفاده می‌کرد و دیگر قابل انجام نیست. لطفاً یک تسک دیگر انتخاب کن.", main_kb())
     if campaign_needs_admin(c):
         if c.get("admin_paused"):
             return send(chat, "⛔ این کمپین موقتاً متوقف شده؛ دسترسی ربات در حال بازیابی است.",
@@ -1811,17 +1225,6 @@ def on_message(msg):
             return admin_cmd(uid, chat, cmd, args)
         return send(chat, menu_text(u), main_kb())
     st = db.states.find_one({"_id": uid})
-    if st and st.get("step") == "shot" and msg.get("photo"):
-        db.states.delete_one({"_id": uid})
-        if time.time() - st.get("t", 0) > SHOT_WINDOW:
-            return send(chat, "⌛ مهلت ارسال اسکرین‌شات تموم شده. دوباره «انجام دادم» رو بزن.", [[btn("🎯 تسک‌ها", "earn")]])
-        if not counter_take(f"ai:{uid}:{day()}", DAILY_AI):
-            return send(chat, f"✋ سقف {DAILY_AI} بررسی اسکرین‌شات امروز پر شده. فردا دوباره امتحان کن.", HOME_KB)
-        send(chat, "⏳ در حال بررسی اسکرین‌شات…")
-        threading.Thread(target=verify_shot, args=(uid, chat, st["cid"], msg["photo"][-1], st.get("t")), daemon=True).start()
-        return
-    if st and st.get("step") == "ref":
-        return on_ref(uid, chat, msg, st)
     if st and st.get("step") == "link" and msg.get("forward_origin"):
         origin = msg.get("forward_origin") or {}
         if origin.get("type") == "channel":
@@ -1871,7 +1274,13 @@ def on_callback(cq):
         db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
         return show_task(uid, chat, mid)
     if data.startswith("go:"):
-        cid = data[3:]
+        cid_s = data[3:]
+        # شناسهٔ کمپین در MongoDB از نوع ObjectId است؛ callback آن را به شکل رشته می‌فرستد.
+        # تبدیل نکردن رشته به ObjectId باعث می‌شد حتی کمپین فعال هم «غیرفعال» دیده شود.
+        try:
+            cid = ObjectId(cid_s)
+        except (InvalidId, TypeError):
+            return ans(cq, "شناسهٔ این تسک معتبر نیست؛ لطفاً از پست تازهٔ کانال استفاده کن.", True)
         c = db.campaigns.find_one({"_id": cid})
         if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
             return ans(cq, "این تسک دیگر فعال نیست.", True)
