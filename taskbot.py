@@ -268,7 +268,7 @@ S = {
     "b_done": ("I have completed it", "انجام دادم"),
     "b_back_target": ("Back to destination", "بازگشت به مقصد"),
     "b_target": ("🎯 Target", "🎯 مقصد"),
-    "b_claim": ("🎁 Claim", "🎁 دریافت پاداش"),
+    "b_claim": ("🎁 Claim", "🎁 پاداش"),
     "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
     "b_yes_cancel": ("Yes, cancel campaign", "بله، کمپین لغو شود"),
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
@@ -437,10 +437,10 @@ S = {
         "<b>Task verified</b>\n\n<blockquote><b>Reward:</b> <code>+{reward}</code> Stars</blockquote>\nThe Stars were added to your balance.",
         "<b>تسک تأیید شد</b>\n\n<blockquote><b>پاداش:</b> <code>+{reward}</code> استارز</blockquote>\nاستارز به موجودی شما افزوده شد."),
     "count_pending": (
-        "<b>Request received</b>\n\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars\n<b>Time limit:</b> {window} minutes</blockquote>\n"
+        "<b>Request received</b>\n\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> ⭐ Stars\n<b>Time limit:</b> {window} minutes</blockquote>\n"
         "Waiting for Telegram's count update, which may arrive up to {grace} minutes late. "
         "If a valid increase is recorded, the reward is paid automatically and you will be notified.",
-        "<b>درخواست ثبت شد</b>\n\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز\n<b>مهلت:</b> {window} دقیقه</blockquote>\n"
+        "<b>درخواست ثبت شد</b>\n\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> ⭐ استارز\n<b>مهلت:</b> {window} دقیقه</blockquote>\n"
         "در انتظار به‌روزرسانی شمارش تلگرام هستیم؛ ممکن است تا {grace} دقیقه دیرتر برسد. "
         "در صورت ثبت افزایش معتبر، پاداش به‌صورت خودکار واریز می‌شود و به شما اطلاع داده خواهد شد."),
     "count_ok": (
@@ -680,10 +680,10 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars\n"
-        "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز\n"
-        "<b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n<b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
+        "<b>{type}</b> · {target}\n\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> ⭐ Stars\n"
+        "👥 <b>Remaining spots:</b> <code>{remaining}</code>\n📌 <b>Status:</b> {state}</blockquote>\n{instruction}",
+        "<b>{type}</b> · {target}\n\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> ⭐ استارز\n"
+        "👥 <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n📌 <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
                   "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
     "ins_react": ("React to the destination message, then tap <b>Claim reward</b>.",
