@@ -68,7 +68,7 @@ REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # �
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
 CONF_MIN     = float(os.environ.get("CONF_MIN", "0.3"))        # حداقل اطمینان مدل برای قبول عکس
-VERSION      = "v41-delayed-reward-button-after-destination-click"
+VERSION      = "v44-direct-destination-legacy-reward-fix"
 AI_TIMEOUT   = int(os.environ.get("AI_TIMEOUT", "25"))              # حداکثر ثانیه‌ی هر تماس با مدل
 CLOCK_BUDGET = int(os.environ.get("CLOCK_BUDGET", "15"))            # سقف ثانیه‌ی خوندن ساعت
 CLOCK_REQUIRED = True                                           # ساعت خونده نشد = رد (بدون ساعتِ تازه هیچ عکسی قبول نمی‌شه)
@@ -494,9 +494,11 @@ def campaign_listing_keyboard(c):
     # لینک مقصد مستقیم است تا تلگرام خودش پست را باز کند؛ لینک واسط مرورگر نداریم.
     if target_link:
         rows.append([btn("🔵 رفتن به پست مقصد", url=target_link, style="primary")])
-    # چون دکمهٔ URL مستقیم، callback به ربات نمی‌فرستد، کلیک آن قابل تشخیص نیست.
-    # دکمهٔ پاداش پس از گذشت ۵ ثانیه از انتشار پست نمایش داده می‌شود.
-    if c.get("reward_button_shown"):
+    # لینک مقصد مستقیم است و کلیک آن به ربات گزارش نمی‌شود؛ بنابراین دکمهٔ پاداش
+    # پس از گذشت ۵ ثانیه از انتشار نمایش داده می‌شود. timestamp هم برای پست‌های قدیمی پشتیبانی می‌شود.
+    reveal_at = c.get("reward_reveal_at")
+    reward_ready = bool(c.get("reward_button_shown")) or (reveal_at is not None and float(reveal_at) <= time.time())
+    if reward_ready:
         deep = bot_deep_link(c.get("_id"))
         if deep:
             rows.append([btn("🎁 دریافت پاداش", url=deep, style="success")])
@@ -527,9 +529,11 @@ def refresh_campaign_listing(cid):
     c = db.campaigns.find_one({"_id": cid})
     if not c or not c.get("listing_chat_id") or not c.get("listing_message_id"):
         return
-    tg("editMessageText", chat_id=c["listing_chat_id"], message_id=c["listing_message_id"],
-       text=telegram_html(campaign_listing_text(c)), parse_mode="HTML", disable_web_page_preview=True,
-       reply_markup={"inline_keyboard": campaign_listing_keyboard(c)})
+    r = tg("editMessageText", chat_id=c["listing_chat_id"], message_id=c["listing_message_id"],
+           text=telegram_html(campaign_listing_text(c)), parse_mode="HTML", disable_web_page_preview=True,
+           reply_markup={"inline_keyboard": campaign_listing_keyboard(c)})
+    if not r.get("ok") and "message is not modified" not in str(r.get("description", "")).lower():
+        log.warning("refresh_campaign_listing failed cid=%s: %s", cid, r.get("description"))
 
 
 def grant(uid, c, status, extra=None):
@@ -1388,8 +1392,17 @@ _last = {"clean": 0}
 
 def tick():
     t = time.time()
-    # نمایش دکمهٔ پاداش ۵ ثانیه پس از انتشار پست کانال.
-    # ابتدا وضعیت را ثبت می‌کنیم تا کیبوردِ ویرایش‌شده دکمهٔ پاداش را شامل شود.
+    # مهاجرت پست‌های قدیمی: نسخه‌های قبلی ممکن است اصلاً reward_reveal_at نداشته باشند.
+    # برای آگهی‌هایی که قبلاً در کانال منتشر شده‌اند، دکمه را همین حالا قابل نمایش می‌کنیم.
+    try:
+        db.campaigns.update_many(
+            {"listing_chat_id": {"$exists": True}, "listing_message_id": {"$exists": True},
+             "reward_button_shown": {"$ne": True}, "reward_reveal_at": {"$exists": False}},
+            {"$set": {"reward_reveal_at": t}}
+        )
+    except Exception:
+        log.exception("legacy listing reward migration")
+    # نمایش دکمهٔ پاداش ۵ ثانیه پس از انتشار؛ ابتدا وضعیت ثبت می‌شود تا کیبورد شامل دکمه باشد.
     due_listings = db.campaigns.find({"reward_reveal_at": {"$lte": t}, "reward_button_shown": {"$ne": True}},
                                      {"_id": 1, "listing_chat_id": 1, "listing_message_id": 1})
     for item in due_listings:
