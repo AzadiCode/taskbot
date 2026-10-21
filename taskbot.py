@@ -252,7 +252,7 @@ S = {
     # ───────── Buttons (plain text) ─────────
     "b_menu": ("🏠 Main menu", "🏠 منوی اصلی"),
     "b_back": ("↩️ Back", "↩️ بازگشت"),
-    "b_cancel": ("Cancel", "انصراف"),
+    "b_cancel": ("Cancel", "⭕️ انصراف"),
     "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
     "b_new": ("➕ Create campaign", "➕ ایجاد کمپین"),
     "b_my": ("📊 Campaigns", "📊 مدیریت کمپین‌ها"),
@@ -278,7 +278,7 @@ S = {
     "b_win2": ("2 minutes", "2 دقیقه"),
     "b_win5": ("5 minutes", "5 دقیقه"),
     "b_cancel_campaign": ("Cancel campaign", "لغو کمپین"),
-    "b_full": ("Capacity reached", "ظرفیت تکمیل شد"),
+    "b_full": ("Capacity reached", "ظرفیت تکمیل شد 🛑"),
     "b_legacy": ("Retired verification method", "روش تأیید قدیمی غیرفعال"),
     "type_btn": ("{name} — {cost} Stars", "{name} — {cost} استارز"),
 
@@ -290,7 +290,7 @@ S = {
     "st_done": ("Completed", "تکمیل‌شده"),
     "st_cancelled": ("Cancelled", "لغو شده"),
     "st_waiting": ("Awaiting update", "در انتظار به‌روزرسانی"),
-    "st_full": ("Capacity reached", "ظرفیت تکمیل شد"),
+    "st_full": ("Capacity reached", "ظرفیت تکمیل شد 🛑"),
     "st_legacy": ("Inactive (retired verification)", "غیرفعال (روش تأیید قدیمی)"),
     "st_admin_paused": ("Paused (bot access)", "متوقف موقت (دسترسی ربات)"),
     "friend": ("friend", "کاربر"),
@@ -320,7 +320,7 @@ S = {
         "Welcome, {name}. Complete tasks to earn Stars, then spend them on campaigns that grow your own channel.",
         "<b>Grameeting👁‍🗨</b>\nپلتفرم نوین عضوگیری، ریکشن پست و ویو سریع؛ حرفه‌ای و رایگان برای تمامی کانال‌ها و گروه‌های تلگرام\n"
         "<blockquote><b>موجودی:</b> <code>{points}</code> استارز⭐{hold}</blockquote>\n"
-        "{name} گرامی، خوش آمدید. با انجام تسک استارز کسب کنید و از آن برای رشد کانال خود استفاده نمایید."),
+        "{name} گرامی، خوش آمدید. با انجام تسک و روش های مختلف میتوانید استارز رایگان کسب کنید و از آن برای رشد کانال و یا گروه و ربات و.. خود استفاده نمایید."),
     "hold_line": ("\n<b>Pending:</b> <code>{hold}</code> Stars", "\n<b>در انتظار تأیید:</b> <code>{hold}</code> استارز"),
 
     "help": (
@@ -597,9 +597,9 @@ S = {
         "When Telegram delivers the count, you will be moved to the next step automatically.</blockquote>\n"
         "<i>Telegram does not expose reaction counts instantly through the API, so updates can be delayed by a few minutes.</i>",
         "<b>راه‌اندازی پایش</b>\n\nپیش از شروع پایش، دریافت یک به‌روزرسانی زنده از شمارش واکنش‌های این پست لازم است.\n"
-        "<blockquote>داخل کانال یک واکنش به همین پست اضافه یا حذف کنید (یا از یکی از ادمین‌ها بخواهید) و یک تا چند دقیقه صبر کنید. "
+        "<blockquote>داخل کانال یک واکنش به همین پست اضافه یا حذف کنید (یا از یکی از ادمین‌ها بخواهید) و یک تا چند دو صبر کنید. "
         "هنگامی که تلگرام شمارش را ارسال کند، به‌صورت خودکار به مرحله‌ی بعد منتقل می‌شوید.</blockquote>\n"
-        "<i>تلگرام شمارش واکنش‌ها را از طریق API فوراً در اختیار قرار نمی‌دهد؛ ممکن است به‌روزرسانی‌ها چند دقیقه تأخیر داشته باشند.</i>"),
+),
     "baseline_pending": ("The count update has not arrived yet. Add or remove a reaction on the same post and wait a moment.",
                          "به‌روزرسانی شمارش هنوز نرسیده است. یک واکنش روی همان پست اضافه یا حذف کنید و کمی صبر نمایید."),
     "baseline_need_action": ("<b>Fresh count required</b>\nAdd or remove a reaction on the same post and wait for the update.",
@@ -613,7 +613,7 @@ S = {
         "مهلتی را انتخاب کنید که هر کاربر برای انجام تسک در اختیار دارد. ممکن است تلگرام به‌روزرسانی شمارش را با تأخیر ارسال کند."),
     "window_received": (
         "<b>Count received</b>\n<blockquote><b>Reactions:</b> <code>{total}</code></blockquote>\nChoose the time limit for each task:",
-        "<b>شمارش دریافت شد</b>\n<blockquote><b>واکنش‌ها:</b> <code>{total}</code></blockquote>\nمهلت انجام هر تسک را انتخاب کنید:"),
+        "<b>آمار دریافت شد✅</b>\n<blockquote><b>واکنش‌ها:</b> <code>{total}</code></blockquote>\nمهلت انجام هر تسک را انتخاب کنید:"),
     "window_hint": ("Choose the time limit using the buttons: 2 or 5 minutes.",
                     "مهلت را با دکمه‌ها انتخاب کنید: 2 یا 5 دقیقه."),
     "qty_prompt": ("<b>Quantity</b>\n\nHow many units do you need? Send a number from <code>1</code> to <code>{max}</code>.",
@@ -682,10 +682,10 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> Stars⭐\n"
-        "👥 <b>Remaining spots:</b> <code>{remaining}</code>\n📌 <b>Status:</b> {state}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
-        "👥 <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n📌 <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
+        "<b>{type}</b> · {target}\n<blockquote> <b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        " <b>Remaining spots:</b> <code>{remaining}</code>\n <b>Status:</b> {state}</blockquote>\n{instruction}",
+        "<b>{type}</b> · {target}\n<blockquote> <b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
+        " <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
                   "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
     "ins_react": ("React to the destination message, then tap <b>Claim reward</b>.",
@@ -733,7 +733,7 @@ S = {
 }
 
 # Shown to every new user, before a language is chosen: English first, then Persian.
-LANG_PICK = ("<b>Choose your language</b>\n<i>Select the language the bot will use.</i>\n\n"
+LANG_PICK = ("<b>Choose your language⚙️</b>\n<i>Select the language the bot will use.</i>\n\n"
              + RLM + "<b>زبان خود را انتخاب کنید</b>\n" + RLM + "<i>زبان مورد استفاده‌ی ربات را انتخاب نمایید.</i>")
 
 
@@ -835,7 +835,7 @@ def cancel_kb(lang):
 
 
 def lang_kb():
-    return [[B("English", "lg:en"), B("فارسی", "lg:fa")]]
+    return [[B("English🇺🇸", "lg:en"), B("فارسی🇮🇷", "lg:fa")]]
 
 
 def bar(done, total, width=10):
