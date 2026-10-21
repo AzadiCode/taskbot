@@ -682,10 +682,10 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> Stars⭐\n"
-        "👥 <b>Remaining spots:</b> <code>{remaining}</code>\n📌 <b>Status:</b> {state}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
-        "👥 <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n📌 <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
+        "<b>{type}</b> · {target}\n<blockquote> <b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        "👥 <b>Remaining spots:</b> <code>{remaining}</code>\n <b>Status:</b> {state}</blockquote>\n{instruction}",
+        "<b>{type}</b> · {target}\n<blockquote> <b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
+        "👥 <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
                   "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
     "ins_react": ("React to the destination message, then tap <b>Claim reward</b>.",
@@ -733,7 +733,7 @@ S = {
 }
 
 # Shown to every new user, before a language is chosen: English first, then Persian.
-LANG_PICK = ("<b>Choose your language</b>\n<i>Select the language the bot will use.</i>\n\n"
+LANG_PICK = ("<b>Choose your language⚙️</b>\n<i>Select the language the bot will use.</i>\n\n"
              + RLM + "<b>زبان خود را انتخاب کنید</b>\n" + RLM + "<i>زبان مورد استفاده‌ی ربات را انتخاب نمایید.</i>")
 
 
@@ -835,7 +835,7 @@ def cancel_kb(lang):
 
 
 def lang_kb():
-    return [[B("English", "lg:en"), B("فارسی", "lg:fa")]]
+    return [[B("English🇺🇸", "lg:en"), B("فارسی🇮🇷", "lg:fa")]]
 
 
 def bar(done, total, width=10):
