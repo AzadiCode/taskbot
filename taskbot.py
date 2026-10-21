@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 import requests
-from flask import Flask, request, redirect
+from flask import Flask, request
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
@@ -491,11 +491,12 @@ def campaign_listing_keyboard(c):
     if not available:
         return [[btn("🔴 تکمیل شده", "noop", style="danger")]]
     target_link = link_of(c)
-    # ابتدا فقط دکمهٔ رفتن به مقصد دیده می‌شود. پس از کلیک کاربر، callback
-    # زمان نمایش دکمهٔ پاداش را برای همین پست ثبت می‌کند.
+    # لینک مقصد مستقیم است تا تلگرام خودش پست را باز کند؛ لینک واسط مرورگر نداریم.
     if target_link:
-        rows.append([btn("🔵 رفتن به پست مقصد", url=f"{BASE_URL}/go/{c.get('_id')}", style="primary")])
-    if c.get("reward_reveal_at"):
+        rows.append([btn("🔵 رفتن به پست مقصد", url=target_link, style="primary")])
+    # چون دکمهٔ URL مستقیم، callback به ربات نمی‌فرستد، کلیک آن قابل تشخیص نیست.
+    # دکمهٔ پاداش پس از گذشت ۵ ثانیه از انتشار پست نمایش داده می‌شود.
+    if c.get("reward_button_shown"):
         deep = bot_deep_link(c.get("_id"))
         if deep:
             rows.append([btn("🎁 دریافت پاداش", url=deep, style="success")])
@@ -513,9 +514,12 @@ def publish_campaign(c):
         log.error("publish_campaign failed for %s: %s", c.get("_id"), r.get("description"))
         return False
     result = r.get("result", {})
+    listed_at = time.time()
     db.campaigns.update_one({"_id": c["_id"]}, {"$set": {"listing_chat_id": result.get("chat", {}).get("id"),
                                                               "listing_message_id": result.get("message_id"),
-                                                              "listed_at": time.time()}})
+                                                              "listed_at": listed_at,
+                                                              "reward_reveal_at": listed_at + 5,
+                                                              "reward_button_shown": False}})
     return True
 
 
@@ -1384,14 +1388,16 @@ _last = {"clean": 0}
 
 def tick():
     t = time.time()
-    # نمایش دکمهٔ پاداش ۵ ثانیه پس از اولین کلیک «رفتن به پست مقصد».
+    # نمایش دکمهٔ پاداش ۵ ثانیه پس از انتشار پست کانال.
+    # ابتدا وضعیت را ثبت می‌کنیم تا کیبوردِ ویرایش‌شده دکمهٔ پاداش را شامل شود.
     due_listings = db.campaigns.find({"reward_reveal_at": {"$lte": t}, "reward_button_shown": {"$ne": True}},
                                      {"_id": 1, "listing_chat_id": 1, "listing_message_id": 1})
     for item in due_listings:
         try:
-            refresh_campaign_listing(item["_id"])
-            db.campaigns.update_one({"_id": item["_id"], "reward_button_shown": {"$ne": True}},
-                                    {"$set": {"reward_button_shown": True}})
+            changed = db.campaigns.update_one({"_id": item["_id"], "reward_button_shown": {"$ne": True}},
+                                              {"$set": {"reward_button_shown": True}})
+            if changed.modified_count:
+                refresh_campaign_listing(item["_id"])
         except Exception:
             log.exception("delayed reward button update")
     monitor_campaign_admins(t)
@@ -1991,25 +1997,6 @@ def on_reaction(mr):
         return
     db.reacts.update_one({"_id": f"{mr['chat']['id']}:{mr['message_id']}:{u['id']}"},
                          {"$set": {"on": bool(mr.get("new_reaction")), "t": time.time()}}, upsert=True)
-
-
-@app.get("/go/<cid>")
-def go_to_campaign_destination(cid):
-    """ثبت کلیک لینک مقصد، آغاز تایمر نمایش پاداش و هدایت به پست اصلی."""
-    try:
-        oid = ObjectId(cid)
-    except (InvalidId, TypeError):
-        return "لینک تسک نامعتبر است.", 404
-    c = db.campaigns.find_one({"_id": oid, "status": "active", "remaining": {"$gt": 0}})
-    if not c:
-        return "این تسک دیگر فعال نیست.", 410
-    destination = link_of(c)
-    if not destination or not destination.startswith(("https://t.me/", "http://t.me/", "https://telegram.me/", "http://telegram.me/")):
-        return "لینک مقصد معتبر نیست.", 400
-    # اولین کلیک زمان‌سنج را آغاز می‌کند؛ کلیک‌های بعدی آن را عقب نمی‌اندازند.
-    db.campaigns.update_one({"_id": oid, "reward_reveal_at": {"$exists": False}},
-                            {"$set": {"reward_reveal_at": time.time() + 5}})
-    return redirect(destination, code=302)
 
 
 @app.post("/hook")
