@@ -21,7 +21,7 @@ Deps  : flask pymongo requests gunicorn  (mongomock فقط برای اجرای �
 - اعداد در همه‌ی متن‌ها انگلیسی (0-9) هستند.
 
 متغیرهای محیطی / Environment
-BOT_TOKEN, BASE_URL, MONGO_URI, SECRET_KEY, ADMIN_IDS, TASKS_CHANNEL, TASKS_CHANNEL_URL
+BOT_TOKEN, BASE_URL, MONGO_URI, SECRET_KEY, ADMIN_IDS, TASKS_CHANNEL, TASKS_CHANNEL_URL (BotFather /setcustomurls may be needed for direct member redirect)
 START_POINTS, HOLD_HOURS, DAILY_TASKS, STRIKE_LIMIT, REF_JOIN_BONUS, REF_ACTIVE_BONUS,
 REF_ACTIVE_TASKS, REF_DAILY_CAP, MAX_QTY, MAX_ACTIVE, REACTION_UPDATE_GRACE,
 REACTION_BASELINE_MAX_AGE, ADMIN_MONITOR_INTERVAL
@@ -58,7 +58,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v49-bilingual-rewrite"
+VERSION = "v51-admin-panel-paged-activity"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -85,6 +85,8 @@ db.campaigns.create_index("owner")
 db.users.create_index("referred_by")
 db.reaction_watch.create_index([("chat_id", 1), ("mid", 1)])
 db.reaction_credits.create_index([("post_key", 1), ("event_at", 1)])
+db.user_events.create_index([("uid", 1), ("t", -1)])
+db.user_events.create_index([("t", -1)])
 
 HOOK_SECRET = hashlib.sha256(("hook" + SECRET_KEY).encode()).hexdigest()[:32]
 _me = {}
@@ -148,7 +150,7 @@ def ans(cq, text=None, alert=False, url=None):
         p.update(text=str(text)[:200], show_alert=alert)
     if url:
         p["url"] = url
-    tg("answerCallbackQuery", **p)
+    return tg("answerCallbackQuery", **p)
 
 
 def member_ok(r):
@@ -746,6 +748,263 @@ def ledger(uid, delta, kind, ref=""):
     db.ledger.insert_one({"uid": uid, "d": delta, "k": kind, "ref": str(ref), "t": time.time()})
 
 
+def track_user_event(uid, action, detail=""):
+    """Store a compact interaction audit trail without saving arbitrary message bodies."""
+    try:
+        now = time.time()
+        label = str(detail or "")[:120]
+        db.user_events.insert_one({"uid": int(uid), "action": str(action)[:40], "detail": label, "t": now})
+        db.users.update_one({"_id": int(uid)}, {"$set": {"last_seen": now, "last_action": str(action)[:40]}})
+    except Exception:
+        log.exception("failed to track user event uid=%s action=%s", uid, action)
+
+
+def user_is_banned(uid):
+    u = db.users.find_one({"_id": int(uid)}, {"banned": 1}) or {}
+    return bool(u.get("banned"))
+
+
+def admin_text(lang, en, fa):
+    return H(_rtl(fa) if lang == "fa" else en)
+
+
+def admin_home_keyboard(lang):
+    fa = lang == "fa"
+    return [
+        [B("📊 آمار کلی" if fa else "📊 Overview", "ad:stats", "primary")],
+        [B("👥 کاربران" if fa else "👥 Users", "ad:users:0"), B("🔎 جست‌وجو" if fa else "🔎 Search", "ad:search")],
+        [B("📣 کمپین‌ها" if fa else "📣 Campaigns", "ad:campaigns:0")],
+        [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0")],
+        [B("↩️ بازگشت به منو" if fa else "↩️ Main menu", "home")],
+    ]
+
+
+def admin_home(chat, lang, mid=None):
+    if lang == "fa":
+        msg = "<b>🛡 پنل مدیریت</b>\n\nاز این بخش می‌توانید آمار، کاربران، گردش امتیازها، تعاملات و کمپین‌ها را مدیریت کنید. این پنل فقط برای شناسه‌های تنظیم‌شده در <code>ADMIN_IDS</code> فعال است."
+    else:
+        msg = "<b>🛡 Admin panel</b>\n\nManage statistics, users, point history, interactions and campaigns here. Access is restricted to IDs configured in <code>ADMIN_IDS</code>."
+    return view(chat, mid, H(_rtl(msg) if lang == "fa" else msg), admin_home_keyboard(lang))
+
+
+def admin_stats_text(lang):
+    now = time.time()
+    users = db.users.count_documents({})
+    new_24h = db.users.count_documents({"joined": {"$gte": now - 86400}})
+    active_24h = db.users.count_documents({"last_seen": {"$gte": now - 86400}})
+    banned = db.users.count_documents({"banned": True})
+    active_c = db.campaigns.count_documents({"status": "active"})
+    all_c = db.campaigns.count_documents({})
+    pending = db.completions.count_documents({"status": "pending"})
+    paid = db.completions.count_documents({"status": "paid"})
+    reversed_n = db.completions.count_documents({"status": "reversed"})
+    interactions = db.user_events.count_documents({})
+    if lang == "fa":
+        msg = ("<b>📊 آمار کلی</b>\n<blockquote>"
+               f"کل کاربران: <code>{users}</code>\nکاربران جدید در ۲۴ ساعت: <code>{new_24h}</code>\n"
+               f"فعال در ۲۴ ساعت: <code>{active_24h}</code>\nمسدودشده‌ها: <code>{banned}</code>\n"
+               f"کمپین فعال / کل: <code>{active_c} / {all_c}</code>\n"
+               f"تسک‌های در انتظار: <code>{pending}</code>\nتسک‌های پرداخت‌شده: <code>{paid}</code>\n"
+               f"تسک‌های برگشتی: <code>{reversed_n}</code>\nرویدادهای ثبت‌شده: <code>{interactions}</code></blockquote>")
+    else:
+        msg = ("<b>📊 Overview</b>\n<blockquote>"
+               f"Total users: <code>{users}</code>\nNew users (24h): <code>{new_24h}</code>\n"
+               f"Active (24h): <code>{active_24h}</code>\nBanned: <code>{banned}</code>\n"
+               f"Active / total campaigns: <code>{active_c} / {all_c}</code>\n"
+               f"Pending tasks: <code>{pending}</code>\nPaid tasks: <code>{paid}</code>\n"
+               f"Reversed tasks: <code>{reversed_n}</code>\nRecorded events: <code>{interactions}</code></blockquote>")
+    return H(_rtl(msg) if lang == "fa" else msg)
+
+
+def admin_users_screen(chat, lang, offset=0, mid=None, search_results=None):
+    offset = max(0, int(offset))
+    rows = []
+    kb = []
+    if search_results is None:
+        docs = list(db.users.find({}).sort([("last_seen", -1), ("joined", -1)]).skip(offset).limit(8))
+        total = db.users.count_documents({})
+        title = ("<b>👥 کاربران</b>\n" if lang == "fa" else "<b>👥 Users</b>\n")
+        title += (f"صفحه از مجموع {total} کاربر\n\n" if lang == "fa" else f"Showing users · total {total}\n\n")
+    else:
+        docs = search_results[:10]
+        title = "<b>🔎 نتایج جست‌وجو</b>\n\n" if lang == "fa" else "<b>🔎 Search results</b>\n\n"
+        total = len(docs)
+    for u in docs:
+        uid = int(u.get("_id", 0))
+        name = html.escape(str(u.get("name") or "بدون نام"), quote=False)[:35]
+        uname = ("@" + html.escape(str(u.get("username")), quote=False)) if u.get("username") else "—"
+        status = ("⛔ " if u.get("banned") else "")
+        rows.append(f"{status}<b>{name}</b> · {uname} · <code>{uid}</code> · ⭐ {int(u.get('points', 0))}")
+        kb.append([B(f"{name[:24]} · {uid}", f"ad:user:{uid}")])
+    if not docs:
+        rows.append("کاربری پیدا نشد." if lang == "fa" else "No users found.")
+    if search_results is None:
+        nav = []
+        if offset > 0:
+            nav.append(B("⬅️ قبلی" if lang == "fa" else "⬅️ Prev", f"ad:users:{max(0, offset-8)}"))
+        if offset + 8 < total:
+            nav.append(B("بعدی ➡️" if lang == "fa" else "Next ➡️", f"ad:users:{offset+8}"))
+        if nav:
+            kb.append(nav)
+    kb.extend([[B("🔎 جست‌وجو" if lang == "fa" else "🔎 Search", "ad:search")],
+               [B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")]])
+    body = title + "\n".join(rows)
+    return view(chat, mid, H(_rtl(body) if lang == "fa" else body), kb)
+
+
+def admin_user_detail(chat, lang, target_uid, mid=None):
+    try:
+        target_uid = int(target_uid)
+    except (TypeError, ValueError):
+        return view(chat, mid, admin_text(lang, "Invalid user ID.", "شناسه کاربر نامعتبر است."),
+                    [[B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:users:0")]])
+    u = db.users.find_one({"_id": target_uid})
+    if not u:
+        return view(chat, mid, admin_text(lang, "User not found.", "کاربر پیدا نشد."),
+                    [[B("↩️ کاربران" if lang == "fa" else "↩️ Users", "ad:users:0")]])
+    comp_counts = {x: db.completions.count_documents({"uid": target_uid, "status": x})
+                   for x in ("pending", "paid", "reversed", "count_pending")}
+    campaigns = db.campaigns.count_documents({"owner": target_uid})
+    active_campaigns = db.campaigns.count_documents({"owner": target_uid, "status": "active"})
+    ledger_count = db.ledger.count_documents({"uid": target_uid})
+    event_count = db.user_events.count_documents({"uid": target_uid})
+    last_seen = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(u["last_seen"])) if u.get("last_seen") else "—"
+    joined = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(u["joined"])) if u.get("joined") else "—"
+    uname = "@" + str(u.get("username")) if u.get("username") else "—"
+    status = "⛔ BANNED" if u.get("banned") else "✅ Active"
+    name = html.escape(str(u.get("name") or "—"), quote=False)
+    if lang == "fa":
+        msg = (f"<b>👤 مشخصات کاربر</b>\n<blockquote>نام: <code>{name}</code>\nشناسه: <code>{target_uid}</code>\n"
+               f"نام کاربری: <code>{html.escape(uname)}</code>\nوضعیت: <code>{status}</code>\n"
+               f"امتیاز: <code>{u.get('points',0)}</code> · امتیاز معلق: <code>{u.get('hold',0)}</code>\n"
+               f"کل کسب‌شده: <code>{u.get('earned',0)}</code> · اخطار: <code>{u.get('strikes',0)}</code>\n"
+               f"عضویت: <code>{joined}</code>\nآخرین فعالیت: <code>{last_seen}</code>\n"
+               f"کمپین‌ها: <code>{active_campaigns}/{campaigns}</code> (فعال/کل)\n"
+               f"تسک‌ها — در انتظار: <code>{comp_counts['pending']+comp_counts['count_pending']}</code>، پرداخت‌شده: <code>{comp_counts['paid']}</code>، برگشتی: <code>{comp_counts['reversed']}</code>\n"
+               f"گردش امتیاز: <code>{ledger_count}</code> · تعاملات: <code>{event_count}</code></blockquote>")
+    else:
+        msg = (f"<b>👤 User profile</b>\n<blockquote>Name: <code>{name}</code>\nID: <code>{target_uid}</code>\n"
+               f"Username: <code>{html.escape(uname)}</code>\nStatus: <code>{status}</code>\n"
+               f"Balance: <code>{u.get('points',0)}</code> · On hold: <code>{u.get('hold',0)}</code>\n"
+               f"Total earned: <code>{u.get('earned',0)}</code> · Strikes: <code>{u.get('strikes',0)}</code>\n"
+               f"Joined: <code>{joined}</code>\nLast activity: <code>{last_seen}</code>\n"
+               f"Campaigns: <code>{active_campaigns}/{campaigns}</code> (active/total)\n"
+               f"Tasks — pending: <code>{comp_counts['pending']+comp_counts['count_pending']}</code>, paid: <code>{comp_counts['paid']}</code>, reversed: <code>{comp_counts['reversed']}</code>\n"
+               f"Point records: <code>{ledger_count}</code> · interactions: <code>{event_count}</code></blockquote>")
+    kb = [[B("➕➖ امتیاز" if lang == "fa" else "➕➖ Adjust points", f"ad:points:{target_uid}")],
+          [B(("🔓 رفع مسدودی" if lang == "fa" else "🔓 Unban") if u.get("banned") else ("⛔ مسدودکردن" if lang == "fa" else "⛔ Ban"), f"ad:toggle:{target_uid}")],
+          [B("🧹 صفرکردن اخطارها" if lang == "fa" else "🧹 Reset strikes", f"ad:strikes:{target_uid}")],
+          [B("🧾 گردش امتیاز" if lang == "fa" else "🧾 Point history", f"ad:ledger:{target_uid}"),
+           B("🕘 تعاملات" if lang == "fa" else "🕘 Activity", f"ad:events:{target_uid}")],
+          [B("↩️ فهرست کاربران" if lang == "fa" else "↩️ Users", "ad:users:0"),
+           B("پنل" if lang == "fa" else "Panel", "ad:home")]]
+    return view(chat, mid, H(_rtl(msg) if lang == "fa" else msg), kb)
+
+
+def admin_user_ledger(chat, lang, target_uid, mid=None):
+    items = list(db.ledger.find({"uid": int(target_uid)}).sort("t", -1).limit(10))
+    lines = ["<b>🧾 گردش امتیاز</b>\n" if lang == "fa" else "<b>🧾 Point history</b>\n"]
+    for x in items:
+        stamp = time.strftime("%m-%d %H:%M", time.gmtime(x.get("t", 0)))
+        lines.append(f"<code>{stamp}</code> · <code>{int(x.get('d',0)):+}</code> · <code>{html.escape(str(x.get('k','')))}</code> · <code>{html.escape(str(x.get('ref',''))[:24])}</code>")
+    if not items:
+        lines.append("رکوردی نیست." if lang == "fa" else "No records.")
+    return view(chat, mid, H(_rtl("\n".join(lines)) if lang == "fa" else "\n".join(lines)),
+                [[B("↩️ پروفایل" if lang == "fa" else "↩️ Profile", f"ad:user:{int(target_uid)}")]])
+
+
+def admin_events_screen(chat, lang, target_uid=None, offset=0, mid=None):
+    """Paginated interaction audit log; callers must pass through the admin callback guard."""
+    offset = max(0, int(offset))
+    query = {"uid": int(target_uid)} if target_uid is not None else {}
+    total = db.user_events.count_documents(query)
+    items = list(db.user_events.find(query).sort("t", -1).skip(offset).limit(12))
+    if target_uid is not None:
+        title = "<b>🕘 تعاملات کاربر</b>\n" if lang == "fa" else "<b>🕘 User activity</b>\n"
+    else:
+        title = "<b>🧾 تعاملات اخیر</b>\n" if lang == "fa" else "<b>🧾 Recent activity</b>\n"
+    page = (offset // 12) + 1
+    pages = max(1, (total + 11) // 12)
+    title += (f"صفحه {page}/{pages} · مجموع {total} رویداد\n\n" if lang == "fa" else
+              f"Page {page}/{pages} · {total} events total\n\n")
+    lines = [title]
+    for x in items:
+        u = db.users.find_one({"_id": x.get("uid")}, {"name": 1, "username": 1}) or {}
+        who = html.escape(str(("@" + u["username"]) if u.get("username") else (u.get("name") or x.get("uid"))))[:32]
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(x.get("t", 0)))
+        action = html.escape(str(x.get("action", "")))[:40]
+        detail = html.escape(str(x.get("detail", "")))[:70]
+        lines.append(f"<code>{stamp}</code> · <b>{who}</b> (<code>{x.get('uid')}</code>) · <code>{action}</code> {detail}")
+    if not items:
+        lines.append("تعامل ثبت‌شده‌ای وجود ندارد." if lang == "fa" else "No recorded interactions.")
+
+    kb = []
+    nav = []
+    if offset > 0:
+        nav.append(B("⬅️ قبلی" if lang == "fa" else "⬅️ Prev",
+                     f"ad:eventspage:{target_uid}:{max(0, offset-12)}" if target_uid is not None else f"ad:recent:{max(0, offset-12)}"))
+    if offset + 12 < total:
+        nav.append(B("بعدی ➡️" if lang == "fa" else "Next ➡️",
+                     f"ad:eventspage:{target_uid}:{offset+12}" if target_uid is not None else f"ad:recent:{offset+12}"))
+    if nav:
+        kb.append(nav)
+    if target_uid is not None:
+        kb.append([B("↩️ پروفایل" if lang == "fa" else "↩️ Profile", f"ad:user:{int(target_uid)}")])
+    else:
+        kb.append([B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")])
+    body = "\n".join(lines)
+    return view(chat, mid, H(_rtl(body) if lang == "fa" else body), kb)
+
+
+def admin_campaigns_screen(chat, lang, offset=0, mid=None):
+    offset = max(0, int(offset))
+    docs = list(db.campaigns.find({}).sort("created", -1).skip(offset).limit(8))
+    total = db.campaigns.count_documents({})
+    lines = ["<b>📣 کمپین‌ها</b>\n\n" if lang == "fa" else "<b>📣 Campaigns</b>\n\n"]
+    kb = []
+    for c in docs:
+        owner = db.users.find_one({"_id": c.get("owner")}, {"name": 1}) or {}
+        title = html.escape(str(c.get("title") or c.get("uname") or c.get("type") or "campaign"))[:35]
+        cid = str(c.get("_id"))
+        status = str(c.get("status", "?"))
+        lines.append(f"• <b>{title}</b> · <code>{status}</code> · owner <code>{c.get('owner')}</code> · left <code>{c.get('remaining',0)}</code> · <code>{cid}</code>")
+        if status == "active":
+            kb.append([B(f"⛔ توقف {title[:22]}" if lang == "fa" else f"⛔ Stop {title[:22]}", f"ad:stop:{cid}")])
+    nav = []
+    if offset > 0:
+        nav.append(B("⬅️ قبلی" if lang == "fa" else "⬅️ Prev", f"ad:campaigns:{max(0,offset-8)}"))
+    if offset + 8 < total:
+        nav.append(B("بعدی ➡️" if lang == "fa" else "Next ➡️", f"ad:campaigns:{offset+8}"))
+    if nav:
+        kb.append(nav)
+    kb.append([B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")])
+    return view(chat, mid, H(_rtl("\n".join(lines)) if lang == "fa" else "\n".join(lines)), kb)
+
+
+def admin_search_results(query):
+    query = str(query or "").strip()
+    if not query:
+        return []
+    if query.isdigit():
+        u = db.users.find_one({"_id": int(query)})
+        return [u] if u else []
+    uname = query.lstrip("@")
+    found = list(db.users.find({"username": {"$regex": "^" + re.escape(uname) + "$", "$options": "i"}}).limit(10))
+    if found:
+        return found
+    return list(db.users.find({"name": {"$regex": re.escape(query), "$options": "i"}}).limit(10))
+
+
+def admin_apply_point_delta(admin_uid, target_uid, delta):
+    delta = int(delta)
+    if delta == 0 or abs(delta) > 1000000:
+        return False
+    if delta > 0:
+        add_points(int(target_uid), delta, "admin_adjust", f"admin:{admin_uid}")
+        return True
+    return spend(int(target_uid), abs(delta), "admin_adjust", f"admin:{admin_uid}")
+
+
 def ensure_user(u):
     uid, name = u["id"], (u.get("first_name") or "")[:40]
     hint = "fa" if str(u.get("language_code") or "").lower().startswith("fa") else "en"
@@ -803,11 +1062,14 @@ def set_state(uid, step, d):
 
 
 # ═════════════════════════════ UI builders ═════════════════════════════
-def main_kb(lang):
-    # Earn Stars must use a callback so required membership can be checked first.
-    return [[B(tb(lang, "b_earn"), "earn", "primary")],
+def main_kb(lang, uid=None):
+    # Earn Stars uses a callback so membership is checked at click time.
+    rows = [[B(tb(lang, "b_earn"), "earn", "primary")],
             [B(tb(lang, "b_my"), "campaigns", "success")],
             [B(tb(lang, "b_acc"), "acc")]]
+    if uid is not None and int(uid) in ADMINS:
+        rows.append([B("🛡 پنل مدیریت" if lang == "fa" else "🛡 Admin panel", "ad:home", "danger")])
+    return rows
 
 
 def account_kb(lang):
@@ -1269,32 +1531,32 @@ def open_linked_task(uid, chat, cid_s):
     try:
         cid = ObjectId(cid_s)
     except (InvalidId, TypeError):
-        return send(chat, t(lang, "e_link_invalid"), main_kb(lang))
+        return send(chat, t(lang, "e_link_invalid"), main_kb(lang, uid))
     c = db.campaigns.find_one({"_id": cid})
     if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
-        return send(chat, t(lang, "e_no_capacity"), main_kb(lang))
+        return send(chat, t(lang, "e_no_capacity"), main_kb(lang, uid))
     if is_legacy(c):
-        return send(chat, t(lang, "e_legacy"), main_kb(lang))
-    showcase = [[U(tb(lang, "b_back_showcase"), tasks_channel_url(), "primary")]] if tasks_channel_url() else main_kb(lang)
+        return send(chat, t(lang, "e_legacy"), main_kb(lang, uid))
+    showcase = [[U(tb(lang, "b_back_showcase"), tasks_channel_url(), "primary")]] if tasks_channel_url() else main_kb(lang, uid)
     if campaign_needs_admin(c):
         if c.get("admin_paused"):
             return send(chat, t(lang, "e_paused"), showcase)
         status = bot_admin_status(c.get("chat_id"))
         if status is None:
-            return send(chat, t(lang, "e_admin_unavail"), main_kb(lang))
+            return send(chat, t(lang, "e_admin_unavail"), main_kb(lang, uid))
         if not status:
             pause_for_admin_loss(c)
-            return send(chat, t(lang, "e_paused_now"), main_kb(lang))
+            return send(chat, t(lang, "e_paused_now"), main_kb(lang, uid))
     if c.get("owner") == uid:
-        return send(chat, t(lang, "e_own"), main_kb(lang))
+        return send(chat, t(lang, "e_own"), main_kb(lang, uid))
     if db.completions.find_one({"uid": uid, "cid": cid}):
         return send(chat, t(lang, "e_done_before"), showcase)
     if u.get("strikes", 0) >= STRIKE_LIMIT:
-        return send(chat, t(lang, "e_strikes"), main_kb(lang))
+        return send(chat, t(lang, "e_strikes"), main_kb(lang, uid))
     if c.get("type") == "react" and c.get("mode") == "count":
         snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
         if not snap:
-            return send(chat, t(lang, "e_count_stale"), main_kb(lang))
+            return send(chat, t(lang, "e_count_stale"), main_kb(lang, uid))
         now = time.time()
         window_min = int(c.get("window_min", 5))
         ses = {"t": now, "task_started": now - window_min * 60, "task_deadline": now + REACTION_UPDATE_GRACE,
@@ -1737,7 +1999,7 @@ def ask_qty(chat, lang, d, cost):
 def on_state_text(uid, chat, text, st, lang):
     if time.time() - st.get("t", 0) > 3600:
         db.states.delete_one({"_id": uid})
-        return send(chat, t(lang, "e_expired"), main_kb(lang))
+        return send(chat, t(lang, "e_expired"), main_kb(lang, uid))
     step, d = st["step"], st.get("d", {})
     typ = d.get("type")
     cost = TYPES[typ]["cost"] if typ else 0
@@ -1813,14 +2075,14 @@ def on_state_text(uid, chat, text, st, lang):
                             how=how, admin_note=admin_note),
                     [[B(tb(lang, "b_confirm", cost=q * cost), "ok", "success")],
                      [B(tb(lang, "b_cancel"), "home", "danger")]])
-    send(chat, t(lang, "e_continue_menu"), main_kb(lang))
+    send(chat, t(lang, "e_continue_menu"), main_kb(lang, uid))
 
 
 def choose_reaction_window(cq, uid, lang, chat, mid, value):
     st = db.states.find_one({"_id": uid})
     if not st or st.get("step") != "window":
         ans(cq, tb(lang, "a_step_expired"), True)
-        return view(chat, mid, t(lang, "e_restart"), main_kb(lang))
+        return view(chat, mid, t(lang, "e_restart"), main_kb(lang, uid))
     try:
         window_min = int(value)
     except (TypeError, ValueError):
@@ -1841,7 +2103,7 @@ def confirm_new(cq, uid, lang, chat, mid):
     st = db.states.find_one({"_id": uid})
     if not st or st.get("step") != "confirm":
         ans(cq, tb(lang, "a_step_expired"), True)
-        return view(chat, mid, t(lang, "e_restart"), main_kb(lang))
+        return view(chat, mid, t(lang, "e_restart"), main_kb(lang, uid))
     d, typ = st["d"], st["d"]["type"]
     cfg = TYPES[typ]
     snap = None
@@ -1850,7 +2112,7 @@ def confirm_new(cq, uid, lang, chat, mid):
         if not snap:
             ans(cq, tb(lang, "a_baseline_stale"), True)
             db.states.delete_one({"_id": uid})
-            return view(chat, mid, t(lang, "baseline_restart"), main_kb(lang))
+            return view(chat, mid, t(lang, "baseline_restart"), main_kb(lang, uid))
     if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
         return ans(cq, tb(lang, "a_max_active", n=MAX_ACTIVE), True)
     # Final access check right before charging; an API error is never treated as approval.
@@ -1944,6 +2206,10 @@ def cancel_campaign(cq, uid, lang, chat, mid, cid_s, sure):
 
 # ═════════════════════════════ Admin commands ═════════════════════════════
 def admin_cmd(uid, chat, cmd, args, lang):
+    if uid not in ADMINS:
+        return send(chat, admin_text(lang, "Access denied.", "دسترسی مجاز نیست."))
+    if cmd in ("admin", "panel"):
+        return admin_home(chat, lang)
     if cmd == "reactwatch":
         return send(chat, reaction_watch_text(uid, lang, all_admin=True))
     if cmd == "stats":
@@ -1953,12 +2219,27 @@ def admin_cmd(uid, chat, cmd, args, lang):
                             pending=by["pending"], paid=by["paid"], rev=by["reversed"],
                             refs=db.users.count_documents({"referred_by": {"$exists": True}}),
                             refs_active=db.users.count_documents({"ref_active": True})))
-    if cmd == "give" and len(args) == 2 and args[0].isdigit() and args[1].lstrip("-").isdigit():
-        add_points(int(args[0]), int(args[1]), "admin")
-        return send(chat, t(lang, "ad_done"))
+    if cmd in ("users", "user"):
+        if cmd == "user" and args:
+            return admin_user_detail(chat, lang, args[0])
+        return admin_users_screen(chat, lang)
+    if cmd in ("events", "activity"):
+        return admin_events_screen(chat, lang)
+    if cmd == "give" and len(args) == 2 and args[0].isdigit() and args[1].lstrip("+-").isdigit():
+        delta = int(args[1])
+        target_uid = int(args[0])
+        ok = db.users.find_one({"_id": target_uid}, {"_id": 1}) is not None and admin_apply_point_delta(uid, target_uid, delta)
+        return send(chat, admin_text(lang, "Point balance updated." if ok else "Invalid amount or insufficient balance.",
+                                     "موجودی امتیاز به‌روزرسانی شد." if ok else "مقدار نامعتبر یا موجودی ناکافی است."))
     if cmd == "unban" and args and args[0].isdigit():
-        db.users.update_one({"_id": int(args[0])}, {"$set": {"strikes": 0}})
+        db.users.update_one({"_id": int(args[0])}, {"$set": {"strikes": 0, "banned": False}, "$unset": {"ban_reason": ""}})
         return send(chat, t(lang, "ad_unbanned"))
+    if cmd == "ban" and args and args[0].isdigit():
+        target = int(args[0])
+        if target in ADMINS:
+            return send(chat, admin_text(lang, "Admin accounts cannot be banned from this panel.", "از داخل پنل نمی‌توان حساب مدیر را مسدود کرد."))
+        db.users.update_one({"_id": target}, {"$set": {"banned": True, "ban_reason": f"admin:{uid}", "banned_at": time.time()}})
+        return send(chat, admin_text(lang, "User blocked.", "کاربر مسدود شد."))
     if cmd == "stop" and args:
         try:
             r = db.campaigns.find_one_and_update({"_id": ObjectId(args[0]), "status": "active"}, {"$set": {"status": "cancelled"}})
@@ -1968,8 +2249,9 @@ def admin_cmd(uid, chat, cmd, args, lang):
             add_points(r["owner"], r["remaining"] * r["cost"], "refund", r["_id"])
             refresh_campaign_listing(r["_id"])
         return send(chat, t(lang, "ad_stopped" if r else "ad_not_found"))
-    send(chat, t(lang, "ad_usage"))
-
+    return send(chat, admin_text(lang,
+        "<b>Admin panel</b>\n\n<code>/admin</code> · open panel\n<code>/stats</code> · statistics\n<code>/users</code> · user list\n<code>/user ID</code> · user profile\n<code>/events</code> · recent interactions\n<code>/give ID +/-N</code> · adjust points\n<code>/ban ID</code> · block user\n<code>/unban ID</code> · unblock/reset strikes\n<code>/stop CAMPAIGN_ID</code> · stop campaign\n<code>/reactwatch</code> · reaction diagnostics",
+        "<b>پنل مدیریت</b>\n\n<code>/admin</code> · پنل\n<code>/stats</code> · آمار\n<code>/users</code> · فهرست کاربران\n<code>/user ID</code> · مشخصات کاربر\n<code>/events</code> · تعاملات اخیر\n<code>/give ID +/-N</code> · تغییر امتیاز\n<code>/ban ID</code> · مسدودسازی\n<code>/unban ID</code> · رفع مسدودی/صفرکردن اخطار\n<code>/stop CAMPAIGN_ID</code> · توقف کمپین\n<code>/reactwatch</code> · عیب‌یابی واکنش‌ها"))
 
 # ═════════════════════════════ Update routing ═════════════════════════════
 def on_message(msg):
@@ -1980,6 +2262,11 @@ def on_message(msg):
     u = ensure_user(msg["from"])
     lang = lang_of(u)
     text = (msg.get("text") or "").strip()
+    event_action = "command" if text.startswith("/") else ("text" if text else "message")
+    event_detail = text.split()[0][:40] if text.startswith("/") else (db.states.find_one({"_id": uid}) or {}).get("step", "message")
+    track_user_event(uid, event_action, event_detail)
+    if u.get("banned") and uid not in ADMINS:
+        return send(chat, admin_text(lang, "⛔ Your access to this bot has been disabled.", "⛔ دسترسی شما به ربات غیرفعال شده است."))
 
     if text.startswith("/"):
         parts = text[1:].split()
@@ -1992,7 +2279,7 @@ def on_message(msg):
                 ref_register(uid, args[0][4:], msg["from"].get("first_name"))
             if cmd == "start" and not existed:
                 return send(chat, LANG_PICK, lang_kb())          # first contact: English first, then Persian
-            return send(chat, menu_text(u), main_kb(lang))
+            return send(chat, menu_text(u), main_kb(lang, uid))
         if cmd == "help":
             return send(chat, help_text(lang), home_kb(lang))
         if cmd in ("invite", "ref"):
@@ -2001,9 +2288,26 @@ def on_message(msg):
             return send(chat, LANG_PICK, lang_kb())
         if uid in ADMINS:
             return admin_cmd(uid, chat, cmd, args, lang)
-        return send(chat, menu_text(u), main_kb(lang))
+        return send(chat, menu_text(u), main_kb(lang, uid))
 
     st = db.states.find_one({"_id": uid})
+    if st and st.get("step") in ("admin_search", "admin_points") and uid in ADMINS and text:
+        step = st.get("step")
+        db.states.delete_one({"_id": uid})
+        if step == "admin_search":
+            matches = admin_search_results(text)
+            return admin_users_screen(chat, lang, 0, search_results=matches)
+        target = int((st.get("d") or {}).get("target", 0))
+        if not re.fullmatch(r"[+-]?\d+", text):
+            return send(chat, admin_text(lang, "Invalid number. Open the user profile and retry.", "عدد نامعتبر است. پروفایل کاربر را باز کنید و دوباره تلاش کنید."),
+                        [[B("↩️ پروفایل" if lang == "fa" else "↩️ Profile", f"ad:user:{target}")]])
+        delta = int(text)
+        ok = admin_apply_point_delta(uid, target, delta)
+        track_user_event(target, "admin_points", f"admin={uid}, delta={delta}, ok={ok}")
+        if ok:
+            return admin_user_detail(chat, lang, target)
+        return send(chat, admin_text(lang, "Adjustment failed. Check the amount and user's current balance.", "تغییر انجام نشد؛ مقدار و موجودی فعلی کاربر را بررسی کنید."),
+                    [[B("↩️ پروفایل" if lang == "fa" else "↩️ Profile", f"ad:user:{target}")]])
     if st and st.get("step") == "link" and msg.get("forward_origin"):
         origin = msg.get("forward_origin") or {}
         if origin.get("type") == "channel":
@@ -2019,7 +2323,7 @@ def on_message(msg):
         return on_state_text(uid, chat, text, st, lang)
     if st:
         return send(chat, t(lang, "e_answer_prev"), cancel_kb(lang))
-    send(chat, menu_text(u), main_kb(lang))
+    send(chat, menu_text(u), main_kb(lang, uid))
 
 
 def on_callback(cq):
@@ -2027,8 +2331,11 @@ def on_callback(cq):
     m = cq.get("message") or {}
     chat, mid = (m.get("chat") or {}).get("id"), m.get("message_id")
     u = ensure_user(cq["from"])
+    track_user_event(uid, "callback", data[:100])
     if not chat:
         return ans(cq)
+    if u.get("banned") and uid not in ADMINS:
+        return ans(cq, "Access disabled" if lang_of(u) != "fa" else "دسترسی غیرفعال است", True)
 
     if data.startswith("lg:"):                                   # language selection
         choice = data[3:] if data[3:] in ("en", "fa") else "en"
@@ -2036,7 +2343,7 @@ def on_callback(cq):
         u["lang"] = choice
         ans(cq)
         db.states.delete_one({"_id": uid})
-        return view(chat, mid, menu_text(u), main_kb(choice))
+        return view(chat, mid, menu_text(u), main_kb(choice, uid))
 
     lang = lang_of(u)
     if data == "lang":
@@ -2047,7 +2354,7 @@ def on_callback(cq):
     if data == "home":
         ans(cq)
         db.states.delete_one({"_id": uid})
-        return view(chat, mid, menu_text(u), main_kb(lang))
+        return view(chat, mid, menu_text(u), main_kb(lang, uid))
     if data == "help":
         ans(cq)
         return view(chat, mid, help_text(lang), home_kb(lang))
@@ -2060,19 +2367,121 @@ def on_callback(cq):
                     ("Create a campaign or review your existing campaigns." if lang == "en" else "کمپین جدید بسازید یا وضعیت کمپین‌های خود را بررسی کنید."),
                     campaigns_kb(lang))
     if data in ("earn", "earn_check"):
-        ans(cq)
         if not TASKS_CHANNEL or not tasks_channel_url():
+            ans(cq)
             return view(chat, mid, t(lang, "earn_unset"), [[B(tb(lang, "b_menu"), "home")]])
         member = required_channel_member(uid)
         if member is None:
+            ans(cq)
             msg = ("بررسی عضویت فعلاً ممکن نیست. مطمئن شوید ربات در کانال تاسک‌ها ادمین است و دوباره تلاش کنید."
                    if lang == "fa" else "Membership could not be checked right now. Make sure the bot is an administrator in the task channel and try again.")
             return view(chat, mid, H(_rtl(msg) if lang == "fa" else msg),
                         [[B("🔄 بررسی دوباره" if lang == "fa" else "🔄 Try again", "earn_check")],
                          [B(tb(lang, "b_menu"), "home")]])
         if not member:
+            ans(cq)
             return show_join_required(lang, chat, mid)
-        return show_task(lang, chat, mid)
+        # Member: no intermediate message is rendered. Telegram clients may only open arbitrary
+        # callback URLs when the bot's custom-URL feature is enabled; keep a URL-button fallback.
+        opened = ans(cq, url=tasks_channel_url())
+        if not opened.get("ok"):
+            return view(chat, mid, t(lang, "earn"),
+                        [[U(tb(lang, "b_showcase"), tasks_channel_url(), "primary")],
+                         [B(tb(lang, "b_back"), "home")]])
+        return
+    if data.startswith("ad:"):
+        if uid not in ADMINS:
+            return ans(cq, "Access denied" if lang != "fa" else "دسترسی مجاز نیست", True)
+        parts = data.split(":")
+        action = parts[1] if len(parts) > 1 else "home"
+        ans(cq)
+        if action == "home":
+            db.states.delete_one({"_id": uid})
+            return admin_home(chat, lang, mid)
+        if action == "stats":
+            return view(chat, mid, admin_stats_text(lang), [[B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")]])
+        if action == "users":
+            off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            return admin_users_screen(chat, lang, off, mid)
+        if action == "search":
+            set_state(uid, "admin_search", {})
+            prompt = ("🔎 شناسه عددی، نام کاربری یا بخشی از نام کاربر را بفرستید:" if lang == "fa"
+                      else "🔎 Send a numeric ID, username, or part of the user's name:")
+            return view(chat, mid, admin_text(lang, prompt, prompt),
+                        [[B("لغو" if lang == "fa" else "Cancel", "ad:home")]])
+        if action == "user" and len(parts) > 2 and parts[2].isdigit():
+            return admin_user_detail(chat, lang, int(parts[2]), mid)
+        if action == "toggle" and len(parts) > 2 and parts[2].isdigit():
+            target = int(parts[2])
+            if target in ADMINS:
+                return view(chat, mid, admin_text(lang, "Admin accounts cannot be blocked.", "حساب مدیر را نمی‌توان مسدود کرد."),
+                            [[B("↩️ پروفایل" if lang == "fa" else "↩️ Profile", f"ad:user:{target}")]])
+            target_user = db.users.find_one({"_id": target})
+            if not target_user:
+                return view(chat, mid, admin_text(lang, "User not found.", "کاربر پیدا نشد."), [[B("↩️ کاربران" if lang == "fa" else "↩️ Users", "ad:users:0")]])
+            if target_user.get("banned"):
+                db.users.update_one({"_id": target}, {"$set": {"banned": False}, "$unset": {"ban_reason": "", "banned_at": ""}})
+                track_user_event(target, "admin_unban", str(uid))
+            else:
+                db.users.update_one({"_id": target}, {"$set": {"banned": True, "ban_reason": f"admin:{uid}", "banned_at": time.time()}})
+                track_user_event(target, "admin_ban", str(uid))
+            return admin_user_detail(chat, lang, target, mid)
+        if action == "points" and len(parts) > 2 and parts[2].isdigit():
+            target = int(parts[2])
+            set_state(uid, "admin_points", {"target": target})
+            prompt = (f"مقدار امتیاز را با علامت بفرستید؛ مثلاً <code>+50</code> یا <code>-20</code>. کسر امتیاز بیشتر از موجودی مجاز نیست.\n\nکاربر: <code>{target}</code>" if lang == "fa" else
+                      f"Send a signed point adjustment, e.g. <code>+50</code> or <code>-20</code>. A deduction cannot exceed the balance.\n\nUser: <code>{target}</code>")
+            return view(chat, mid, H(_rtl(prompt) if lang == "fa" else prompt), [[B("لغو" if lang == "fa" else "Cancel", f"ad:user:{target}")]])
+        if action == "strikes" and len(parts) > 2 and parts[2].isdigit():
+            target = int(parts[2])
+            db.users.update_one({"_id": target}, {"$set": {"strikes": 0}})
+            track_user_event(target, "admin_reset_strikes", str(uid))
+            return admin_user_detail(chat, lang, target, mid)
+        if action == "ledger" and len(parts) > 2 and parts[2].isdigit():
+            return admin_user_ledger(chat, lang, int(parts[2]), mid)
+        if action == "events" and len(parts) > 2 and parts[2].isdigit():
+            return admin_events_screen(chat, lang, int(parts[2]), mid=mid)
+        if action == "eventspage" and len(parts) > 3 and parts[2].isdigit() and parts[3].isdigit():
+            return admin_events_screen(chat, lang, int(parts[2]), offset=int(parts[3]), mid=mid)
+        if action == "recent":
+            off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            return admin_events_screen(chat, lang, offset=off, mid=mid)
+        if action == "campaigns":
+            off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+            return admin_campaigns_screen(chat, lang, off, mid)
+        if action == "stop" and len(parts) > 2:
+            try:
+                cid = ObjectId(parts[2])
+            except InvalidId:
+                cid = None
+            camp = db.campaigns.find_one({"_id": cid, "status": "active"}) if cid else None
+            if not camp:
+                return view(chat, mid, admin_text(lang, "Active campaign not found.", "کمپین فعال پیدا نشد."), [[B("↩️ کمپین‌ها" if lang == "fa" else "↩️ Campaigns", "ad:campaigns:0")]])
+            title = html.escape(str(camp.get("title") or camp.get("uname") or camp.get("type") or cid))[:70]
+            prompt = (f"<b>توقف کمپین؟</b>\n\n{title}\nشناسه: <code>{cid}</code>\nامتیاز باقی‌مانده به مالک بازگردانده می‌شود." if lang == "fa" else
+                      f"<b>Stop this campaign?</b>\n\n{title}\nID: <code>{cid}</code>\nUnused points will be refunded to its owner.")
+            return view(chat, mid, H(_rtl(prompt) if lang == "fa" else prompt),
+                        [[B("بله، توقف" if lang == "fa" else "Yes, stop", f"ad:confirmstop:{cid}", "danger")],
+                         [B("لغو" if lang == "fa" else "Cancel", "ad:campaigns:0")]])
+        if action == "confirmstop" and len(parts) > 2:
+            try:
+                cid = ObjectId(parts[2])
+            except InvalidId:
+                cid = None
+            camp = db.campaigns.find_one({"_id": cid, "status": "active"}) if cid else None
+            if not camp:
+                return view(chat, mid, admin_text(lang, "Active campaign not found.", "کمپین فعال پیدا نشد."), [[B("↩️ کمپین‌ها" if lang == "fa" else "↩️ Campaigns", "ad:campaigns:0")]])
+            changed = db.campaigns.update_one({"_id": cid, "status": "active"}, {"$set": {"status": "cancelled"}})
+            if changed.modified_count:
+                refund = int(camp.get("remaining", 0)) * int(camp.get("cost", 0))
+                if refund:
+                    add_points(camp["owner"], refund, "refund", cid)
+                track_user_event(camp["owner"], "admin_campaign_stop", f"campaign={cid}, admin={uid}")
+                track_user_event(uid, "admin_campaign_stop", str(cid))
+                refresh_campaign_listing(cid)
+            return admin_campaigns_screen(chat, lang, 0, mid)
+        return admin_home(chat, lang, mid)
+
     if data == "ref":
         ans(cq)
         return view(chat, mid, ref_text(u), ref_kb(uid, lang))
