@@ -804,10 +804,8 @@ def set_state(uid, step, d):
 
 # ═════════════════════════════ UI builders ═════════════════════════════
 def main_kb(lang):
-    # Direct URL button for Earn Stars when the showcase URL is configured.
-    showcase_url = tasks_channel_url()
-    earn_button = U(tb(lang, "b_earn"), showcase_url, "primary") if showcase_url else B(tb(lang, "b_earn"), "earn", "primary")
-    return [[earn_button],
+    # Earn Stars must use a callback so required membership can be checked first.
+    return [[B(tb(lang, "b_earn"), "earn", "primary")],
             [B(tb(lang, "b_my"), "campaigns", "success")],
             [B(tb(lang, "b_acc"), "acc")]]
 
@@ -1073,13 +1071,40 @@ def fresh_reaction_snapshot(chat_id, message_id, max_age=REACTION_BASELINE_MAX_A
     return w
 
 
+def required_channel_member(uid):
+    """Check membership in the configured task/showcase channel. None means the check failed."""
+    if not TASKS_CHANNEL:
+        return None
+    r = tg("getChatMember", chat_id=TASKS_CHANNEL, user_id=uid)
+    if not r.get("ok") or not isinstance(r.get("result"), dict):
+        return None
+    return member_ok(r["result"])
+
+
+def show_join_required(lang, chat, mid=None):
+    """Prompt the user to join the task channel, then verify membership on demand."""
+    url = tasks_channel_url()
+    if lang == "fa":
+        msg = "<b>🔒 عضویت اجباری</b>\n\nبرای استفاده از بخش «کسب استارز رایگان»، ابتدا باید عضو کانال تاسک‌ها شوید. پس از عضویت روی «بررسی عضویت» بزنید."
+        join_label, check_label = "📢 عضویت در کانال تاسک‌ها", "✅ بررسی عضویت"
+    else:
+        msg = "<b>🔒 Required membership</b>\n\nTo use Earn Stars, please join the task channel first. After joining, tap “Check membership”."
+        join_label, check_label = "📢 Join task channel", "✅ Check membership"
+    kb = []
+    if url:
+        kb.append([U(join_label, url, "primary")])
+    kb.append([B(check_label, "earn_check", "success")])
+    kb.append([B(tb(lang, "b_menu"), "home")])
+    return view(chat, mid, H(_rtl(msg) if lang == "fa" else msg), kb)
+
+
 def show_task(lang, chat, mid=None):
-    """Earning always starts from the showcase channel."""
+    """Earning always starts from the showcase channel, after the membership gate."""
     url = tasks_channel_url()
     if not url:
-        return view(chat, mid, t(lang, "earn_unset"), [[B(tb(lang, "b_back"), "earn")]])
+        return view(chat, mid, t(lang, "earn_unset"), [[B(tb(lang, "b_back"), "home")]])
     return view(chat, mid, t(lang, "earn"),
-                [[U(tb(lang, "b_showcase"), url, "primary")], [B(tb(lang, "b_back"), "earn")]])
+                [[U(tb(lang, "b_showcase"), url, "primary")], [B(tb(lang, "b_back"), "home")]])
 
 
 def grant(uid, c, status, extra=None):
@@ -2034,12 +2059,20 @@ def on_callback(cq):
         return view(chat, mid, "<b>" + ("Campaign management" if lang == "en" else "مدیریت کمپین‌ها") + "</b>\n\n" +
                     ("Create a campaign or review your existing campaigns." if lang == "en" else "کمپین جدید بسازید یا وضعیت کمپین‌های خود را بررسی کنید."),
                     campaigns_kb(lang))
-    if data == "earn":
-        url = tasks_channel_url()
-        if not url:
-            ans(cq, tb(lang, "a_showcase_down"), True)
-            return None
-        return ans(cq, url=url)
+    if data in ("earn", "earn_check"):
+        ans(cq)
+        if not TASKS_CHANNEL or not tasks_channel_url():
+            return view(chat, mid, t(lang, "earn_unset"), [[B(tb(lang, "b_menu"), "home")]])
+        member = required_channel_member(uid)
+        if member is None:
+            msg = ("بررسی عضویت فعلاً ممکن نیست. مطمئن شوید ربات در کانال تاسک‌ها ادمین است و دوباره تلاش کنید."
+                   if lang == "fa" else "Membership could not be checked right now. Make sure the bot is an administrator in the task channel and try again.")
+            return view(chat, mid, H(_rtl(msg) if lang == "fa" else msg),
+                        [[B("🔄 بررسی دوباره" if lang == "fa" else "🔄 Try again", "earn_check")],
+                         [B(tb(lang, "b_menu"), "home")]])
+        if not member:
+            return show_join_required(lang, chat, mid)
+        return show_task(lang, chat, mid)
     if data == "ref":
         ans(cq)
         return view(chat, mid, ref_text(u), ref_kb(uid, lang))
