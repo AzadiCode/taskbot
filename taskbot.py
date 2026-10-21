@@ -250,18 +250,18 @@ def short(s, n=30):
 # Rules: English digits everywhere · no emoji · HTML only for structure · Persian is formal and uses half-spaces.
 S = {
     # ───────── Buttons (plain text) ─────────
-    "b_menu": ("Main menu", "منوی اصلی"),
-    "b_back": ("Back", "بازگشت"),
+    "b_menu": ("🏠 Main menu", "🏠 منوی اصلی"),
+    "b_back": ("↩️ Back", "↩️ بازگشت"),
     "b_cancel": ("Cancel", "انصراف"),
-    "b_earn": ("Earn coins", "کسب کوین"),
-    "b_new": ("New campaign", "ایجاد کمپین"),
-    "b_my": ("My campaigns", "کمپین‌های من"),
-    "b_ref": ("Invite friends", "دعوت از دوستان"),
-    "b_acc": ("Account", "حساب کاربری"),
-    "b_help": ("Help", "راهنما"),
-    "b_lang": ("Language", "زبان"),
-    "b_refresh": ("Refresh", "به‌روزرسانی"),
-    "b_showcase": ("Open showcase", "ورود به ویترین"),
+    "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
+    "b_new": ("➕ Create campaign", "➕ ایجاد کمپین"),
+    "b_my": ("📊 Campaigns", "📊 مدیریت کمپین‌ها"),
+    "b_ref": ("🎁 Compound Rewards+", "🎁 پاداش مرکب+"),
+    "b_acc": ("👤 Account", "👤 حساب کاربری"),
+    "b_help": ("📘 Help", "📘 راهنما"),
+    "b_lang": ("🌐 Language", "🌐 زبان"),
+    "b_refresh": ("🔄 Refresh", "🔄 به‌روزرسانی"),
+    "b_showcase": ("⭐ Open tasks", "⭐ ورود به تسک‌ها"),
     "b_view_showcase": ("View in showcase", "مشاهده در ویترین"),
     "b_back_showcase": ("Back to showcase", "بازگشت به ویترین"),
     "b_share": ("Share link", "اشتراک‌گذاری لینک"),
@@ -269,7 +269,7 @@ S = {
     "b_back_target": ("Back to destination", "بازگشت به مقصد"),
     "b_target": ("Go to target", "رفتن به مقصد"),
     "b_claim": ("Claim reward", "دریافت پاداش"),
-    "b_confirm": ("Confirm and pay {cost} coins", "تأیید و پرداخت {cost} کوین"),
+    "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
     "b_yes_cancel": ("Yes, cancel campaign", "بله، کمپین لغو شود"),
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
     "b_next": ("Next task", "تسک بعدی"),
@@ -279,7 +279,7 @@ S = {
     "b_cancel_campaign": ("Cancel campaign", "لغو کمپین"),
     "b_full": ("Capacity reached", "ظرفیت تکمیل شد"),
     "b_legacy": ("Retired verification method", "روش تأیید قدیمی غیرفعال"),
-    "type_btn": ("{name} — {cost} coins", "{name} — {cost} کوین"),
+    "type_btn": ("{name} — {cost} Stars", "{name} — {cost} استارز"),
 
     # ───────── Plain labels ─────────
     "tn_join": ("Join", "عضویت"),
@@ -298,8 +298,8 @@ S = {
     "lbl_paid": ("Paid reaction", "واکنش پولی"),
     "user_fallback": ("A user", "یک کاربر"),
     "campaign_fallback": ("Campaign", "کمپین"),
-    "share_text": ("Complete tasks on TaskPlus, earn coins and grow your channel.",
-                   "در تاسک‌پلاس تسک انجام دهید، کوین کسب کنید و کانال خود را رشد دهید."),
+    "share_text": ("Complete tasks on TaskPlus, earn Stars and grow your channel.",
+                   "در تاسک‌پلاس تسک انجام دهید، استارز کسب کنید و کانال خود را رشد دهید."),
 
     # ───────── Failure reasons (used inside notifications) ─────────
     "r_stopped": ("The campaign was stopped before verification and the spot was returned.",
@@ -307,33 +307,33 @@ S = {
     "r_paused": ("The campaign has been stopped.", "کمپین متوقف شده است."),
     "r_no_increase": ("No verifiable increase in the count was received within the time limit.",
                       "در مهلت تعیین‌شده، افزایش قابل‌تأییدی در شمارش دریافت نشد."),
-    "r_left": ("You left the channel or removed your reaction, so the coins for this task were reversed.",
-               "از کانال خارج شده‌اید یا واکنش خود را برداشته‌اید؛ کوین این تسک برگشت داده شد."),
+    "r_left": ("You left the channel or removed your reaction, so the Stars for this task were reversed.",
+               "از کانال خارج شده‌اید یا واکنش خود را برداشته‌اید؛ استارز این تسک برگشت داده شد."),
 
     # ───────── Language picker is built separately (see LANG_PICK) ─────────
 
     # ───────── Core screens ─────────
     "menu": (
         "<b>TaskPlus</b>\n<i>Task exchange for Telegram channels and groups</i>\n\n"
-        "<blockquote><b>Balance:</b> <code>{points}</code> coins{hold}</blockquote>\n\n"
-        "Welcome, {name}. Complete tasks to earn coins, then spend them on campaigns that grow your own channel.",
+        "<blockquote><b>Balance:</b> <code>{points}</code> Stars{hold}</blockquote>\n\n"
+        "Welcome, {name}. Complete tasks to earn Stars, then spend them on campaigns that grow your own channel.",
         "<b>تاسک‌پلاس</b>\n<i>سامانه‌ی تبادل تسک برای کانال‌ها و گروه‌های تلگرام</i>\n\n"
-        "<blockquote><b>موجودی:</b> <code>{points}</code> کوین{hold}</blockquote>\n\n"
-        "{name} گرامی، خوش آمدید. با انجام تسک کوین کسب کنید و از آن برای رشد کانال خود استفاده نمایید."),
-    "hold_line": ("\n<b>Pending:</b> <code>{hold}</code> coins", "\n<b>در انتظار تأیید:</b> <code>{hold}</code> کوین"),
+        "<blockquote><b>موجودی:</b> <code>{points}</code> استارز{hold}</blockquote>\n\n"
+        "{name} گرامی، خوش آمدید. با انجام تسک استارز کسب کنید و از آن برای رشد کانال خود استفاده نمایید."),
+    "hold_line": ("\n<b>Pending:</b> <code>{hold}</code> Stars", "\n<b>در انتظار تأیید:</b> <code>{hold}</code> استارز"),
 
     "help": (
         "<b>Help</b>\n<i>How TaskPlus works</i>\n\n"
-        "<b>Earn coins</b>\n"
+        "<b>⭐ Earn Stars</b>\n"
         "<blockquote>Open a task in the showcase channel, complete it, tap <b>Claim reward</b> under the post and confirm here.\n\n"
-        "<b>Join</b> — {r_join} coins. Membership is verified and paid instantly.\n"
-        "<b>Reaction</b> — {r_react} coins. Verified per user in groups and by count increase in channels.\n"
+        "<b>Join</b> — {r_join} Stars. Membership is verified and paid instantly.\n"
+        "<b>Reaction</b> — {r_react} Stars. Verified per user in groups and by count increase in channels.\n"
         "<b>View</b> — {r_view} coin. Paid after the required waiting time.</blockquote>\n\n"
         "<b>Create a campaign</b>\n"
         "<blockquote>Choose a task type, then send the destination link and the quantity. The cost is shown before you confirm. "
         "For join and group-reaction tasks the bot must be an administrator of the destination.</blockquote>\n\n"
         "<b>Invite friends</b>\n"
-        "<blockquote>Earn {ref_join} coins when a friend joins, and {ref_active} more once they become active "
+        "<blockquote>Earn {ref_join} Stars when a friend joins, and {ref_active} more once they become active "
         "({ref_tasks} verified join or reaction tasks).</blockquote>\n\n"
         "<b>Rules</b>\n"
         "<blockquote>Each campaign counts once per person. Leaving a channel or removing a reaction during the "
@@ -343,17 +343,17 @@ S = {
         "Channel reactions are verified by the increase in the post's total reaction count. This measures how many "
         "reactions were added, not who added them. Telegram may deliver count updates a few minutes late.</blockquote>",
         "<b>راهنما</b>\n<i>نحوه‌ی کار تاسک‌پلاس</i>\n\n"
-        "<b>کسب کوین</b>\n"
+        "<b>⭐ کسب استارز</b>\n"
         "<blockquote>تسک را در کانال ویترین انتخاب و انجام دهید، سپس زیر همان پست روی «دریافت پاداش» بزنید و اینجا تأیید کنید.\n\n"
-        "<b>عضویت</b> — {r_join} کوین. عضویت بررسی و پاداش بلافاصله واریز می‌شود.\n"
-        "<b>واکنش</b> — {r_react} کوین. در گروه به‌صورت فردی و در کانال بر اساس افزایش شمارش تأیید می‌شود.\n"
-        "<b>بازدید</b> — {r_view} کوین. پس از رعایت زمان انتظار پرداخت می‌شود.</blockquote>\n\n"
+        "<b>عضویت</b> — {r_join} استارز. عضویت بررسی و پاداش بلافاصله واریز می‌شود.\n"
+        "<b>واکنش</b> — {r_react} استارز. در گروه به‌صورت فردی و در کانال بر اساس افزایش شمارش تأیید می‌شود.\n"
+        "<b>بازدید</b> — {r_view} استارز. پس از رعایت زمان انتظار پرداخت می‌شود.</blockquote>\n\n"
         "<b>ایجاد کمپین</b>\n"
         "<blockquote>نوع تسک را انتخاب کنید و سپس لینک مقصد و تعداد را ارسال نمایید. هزینه پیش از تأیید نمایش داده می‌شود. "
         "برای تسک‌های عضویت و واکنش در گروه، ربات باید در مقصد ادمین باشد.</blockquote>\n\n"
         "<b>دعوت از دوستان</b>\n"
-        "<blockquote>با ورود هر دوست {ref_join} کوین و پس از فعال شدن او ({ref_tasks} تسک عضویت یا واکنش تأییدشده) "
-        "{ref_active} کوین دیگر دریافت می‌کنید.</blockquote>\n\n"
+        "<blockquote>با ورود هر دوست {ref_join} استارز و پس از فعال شدن او ({ref_tasks} تسک عضویت یا واکنش تأییدشده) "
+        "{ref_active} استارز دیگر دریافت می‌کنید.</blockquote>\n\n"
         "<b>قوانین</b>\n"
         "<blockquote>هر کمپین برای هر نفر فقط یک بار محاسبه می‌شود. خروج از کانال یا حذف واکنش در دوره‌ی بررسی "
         "({hold_h} ساعت) موجب برگشت پاداش و ثبت یک اخطار می‌شود. پس از {strike_limit} اخطار، انجام تسک غیرفعال خواهد شد.</blockquote>\n\n"
@@ -363,25 +363,25 @@ S = {
 
     "account": (
         "<b>Account</b>\n<i>Balance and activity overview</i>\n\n"
-        "<blockquote><b>Balance:</b> <code>{points}</code> coins{hold}\n"
-        "<b>Total earned:</b> <code>{earned}</code> coins</blockquote>\n"
+        "<blockquote><b>Balance:</b> <code>{points}</code> Stars{hold}\n"
+        "<b>Total earned:</b> <code>{earned}</code> Stars</blockquote>\n"
         "<blockquote><b>Invited:</b> <code>{refs}</code> ({ref_active} active)\n"
         "<b>Active campaigns:</b> <code>{active}</code> / {max_active}\n"
         "<b>Warnings:</b> <code>{strikes}</code> / {strike_limit}</blockquote>",
         "<b>حساب کاربری</b>\n<i>خلاصه‌ی موجودی و فعالیت</i>\n\n"
-        "<blockquote><b>موجودی:</b> <code>{points}</code> کوین{hold}\n"
-        "<b>مجموع درآمد:</b> <code>{earned}</code> کوین</blockquote>\n"
+        "<blockquote><b>موجودی:</b> <code>{points}</code> استارز{hold}\n"
+        "<b>مجموع درآمد:</b> <code>{earned}</code> استارز</blockquote>\n"
         "<blockquote><b>دعوت‌شده‌ها:</b> <code>{refs}</code> ({ref_active} فعال)\n"
         "<b>کمپین‌های فعال:</b> <code>{active}</code> از {max_active}\n"
         "<b>اخطارها:</b> <code>{strikes}</code> از {strike_limit}</blockquote>"),
 
     "earn": (
-        "<b>Earn coins</b>\n<i>Tasks are published in the showcase channel</i>\n\n"
+        "<b>⭐ Earn Stars</b>\n<i>Tasks are published in the showcase channel</i>\n\n"
         "<blockquote><b>1.</b> Choose a task and complete it.\n"
         "<b>2.</b> Tap <b>Claim reward</b> under the same post.\n"
         "<b>3.</b> Confirm completion here.</blockquote>\n\n"
         "Rewards are paid after an automatic check.",
-        "<b>کسب کوین</b>\n<i>تسک‌ها در کانال ویترین منتشر می‌شوند</i>\n\n"
+        "<b>⭐ کسب استارز</b>\n<i>تسک‌ها در کانال ویترین منتشر می‌شوند</i>\n\n"
         "<blockquote><b>1.</b> یک تسک را انتخاب و انجام دهید.\n"
         "<b>2.</b> زیر همان پست روی «دریافت پاداش» بزنید.\n"
         "<b>3.</b> انجام تسک را اینجا تأیید کنید.</blockquote>\n\n"
@@ -393,20 +393,20 @@ S = {
     # ───────── Referral ─────────
     "ref": (
         "<b>Invite friends</b>\n<i>Earn twice for every friend</i>\n\n"
-        "<blockquote><b>1.</b> A friend joins with your link — <code>{join}</code> coins\n"
-        "<b>2.</b> The friend becomes active ({tasks} join or reaction tasks) — <code>{active}</code> coins</blockquote>\n"
-        "Every active friend is worth <code>{total}</code> coins in total.\n\n"
+        "<blockquote><b>1.</b> A friend joins with your link — <code>{join}</code> Stars\n"
+        "<b>2.</b> The friend becomes active ({tasks} join or reaction tasks) — <code>{active}</code> Stars</blockquote>\n"
+        "Every active friend is worth <code>{total}</code> Stars in total.\n\n"
         "<blockquote><b>Invited:</b> <code>{count}</code>\n"
         "<b>Active:</b> <code>{active_count}</code>\n"
-        "<b>Referral earnings:</b> <code>{earned}</code> coins</blockquote>{friends}{capnote}\n\n"
+        "<b>Referral earnings:</b> <code>{earned}</code> Stars</blockquote>{friends}{capnote}\n\n"
         "<b>Your personal link</b>\n{link}",
         "<b>دعوت از دوستان</b>\n<i>برای هر دوست، دو بار پاداش بگیرید</i>\n\n"
-        "<blockquote><b>1.</b> ورود دوست با لینک شما — <code>{join}</code> کوین\n"
-        "<b>2.</b> فعال شدن دوست ({tasks} تسک عضویت یا واکنش) — <code>{active}</code> کوین</blockquote>\n"
-        "هر دوست فعال در مجموع <code>{total}</code> کوین برای شما دارد.\n\n"
+        "<blockquote><b>1.</b> ورود دوست با لینک شما — <code>{join}</code> استارز\n"
+        "<b>2.</b> فعال شدن دوست ({tasks} تسک عضویت یا واکنش) — <code>{active}</code> استارز</blockquote>\n"
+        "هر دوست فعال در مجموع <code>{total}</code> استارز برای شما دارد.\n\n"
         "<blockquote><b>دعوت‌شده:</b> <code>{count}</code>\n"
         "<b>فعال:</b> <code>{active_count}</code>\n"
-        "<b>درآمد دعوت:</b> <code>{earned}</code> کوین</blockquote>{friends}{capnote}\n\n"
+        "<b>درآمد دعوت:</b> <code>{earned}</code> استارز</blockquote>{friends}{capnote}\n\n"
         "<b>لینک اختصاصی شما</b>\n{link}"),
     "ref_friends": ("\n\n<b>Latest referrals</b>\n<blockquote>{rows}</blockquote>",
                     "\n\n<b>آخرین دعوت‌ها</b>\n<blockquote>{rows}</blockquote>"),
@@ -418,13 +418,13 @@ S = {
     "ref_link_missing": ("<i>The referral link is temporarily unavailable. Please try again shortly.</i>",
                          "<i>لینک دعوت موقتاً در دسترس نیست. لطفاً کمی بعد دوباره تلاش کنید.</i>"),
     "n_ref_join": (
-        "<b>New referral</b>\n\n<blockquote>{name} joined with your link.\n<b>Reward:</b> <code>+{bonus}</code> coins</blockquote>\n"
-        "You will receive {active_bonus} more coins once they complete {tasks} tasks.",
-        "<b>دعوت جدید</b>\n\n<blockquote>{name} با لینک شما وارد ربات شد.\n<b>پاداش:</b> <code>+{bonus}</code> کوین</blockquote>\n"
-        "پس از انجام {tasks} تسک توسط او، {active_bonus} کوین دیگر دریافت خواهید کرد."),
+        "<b>New referral</b>\n\n<blockquote>{name} joined with your link.\n<b>Reward:</b> <code>+{bonus}</code> Stars</blockquote>\n"
+        "You will receive {active_bonus} more Stars once they complete {tasks} tasks.",
+        "<b>دعوت جدید</b>\n\n<blockquote>{name} با لینک شما وارد ربات شد.\n<b>پاداش:</b> <code>+{bonus}</code> استارز</blockquote>\n"
+        "پس از انجام {tasks} تسک توسط او، {active_bonus} استارز دیگر دریافت خواهید کرد."),
     "n_ref_active": (
-        "<b>Referral activated</b>\n\n<blockquote>{name} completed {tasks} tasks.\n<b>Reward:</b> <code>+{bonus}</code> coins</blockquote>",
-        "<b>فعال‌سازی دعوت</b>\n\n<blockquote>{name} {tasks} تسک انجام داد.\n<b>پاداش:</b> <code>+{bonus}</code> کوین</blockquote>"),
+        "<b>Referral activated</b>\n\n<blockquote>{name} completed {tasks} tasks.\n<b>Reward:</b> <code>+{bonus}</code> Stars</blockquote>",
+        "<b>فعال‌سازی دعوت</b>\n\n<blockquote>{name} {tasks} تسک انجام داد.\n<b>پاداش:</b> <code>+{bonus}</code> استارز</blockquote>"),
 
     # ───────── Claim flow ─────────
     "claim_page": (
@@ -434,21 +434,21 @@ S = {
         "نتیجه پس از بررسی همین‌جا اعلام می‌شود."),
     "claim_reacted": (" and added the reaction", " و واکنش را ثبت کرده‌اید"),
     "task_paid": (
-        "<b>Task verified</b>\n\n<blockquote><b>Reward:</b> <code>+{reward}</code> coins</blockquote>\nThe coins were added to your balance.",
-        "<b>تسک تأیید شد</b>\n\n<blockquote><b>پاداش:</b> <code>+{reward}</code> کوین</blockquote>\nکوین به موجودی شما افزوده شد."),
+        "<b>Task verified</b>\n\n<blockquote><b>Reward:</b> <code>+{reward}</code> Stars</blockquote>\nThe Stars were added to your balance.",
+        "<b>تسک تأیید شد</b>\n\n<blockquote><b>پاداش:</b> <code>+{reward}</code> استارز</blockquote>\nاستارز به موجودی شما افزوده شد."),
     "count_pending": (
-        "<b>Request received</b>\n\n<blockquote><b>Reward:</b> <code>{reward}</code> coins\n<b>Time limit:</b> {window} minutes</blockquote>\n"
+        "<b>Request received</b>\n\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars\n<b>Time limit:</b> {window} minutes</blockquote>\n"
         "Waiting for Telegram's count update, which may arrive up to {grace} minutes late. "
         "If a valid increase is recorded, the reward is paid automatically and you will be notified.",
-        "<b>درخواست ثبت شد</b>\n\n<blockquote><b>پاداش:</b> <code>{reward}</code> کوین\n<b>مهلت:</b> {window} دقیقه</blockquote>\n"
+        "<b>درخواست ثبت شد</b>\n\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز\n<b>مهلت:</b> {window} دقیقه</blockquote>\n"
         "در انتظار به‌روزرسانی شمارش تلگرام هستیم؛ ممکن است تا {grace} دقیقه دیرتر برسد. "
         "در صورت ثبت افزایش معتبر، پاداش به‌صورت خودکار واریز می‌شود و به شما اطلاع داده خواهد شد."),
     "count_ok": (
         "<b>Increase verified</b>\n\nThe reaction increase was verified and your reward has been paid.",
         "<b>افزایش تأیید شد</b>\n\nافزایش واکنش تأیید و پاداش شما پرداخت شد."),
     "n_paid": (
-        "<b>Task verified</b>\n\n<blockquote><b>Reward:</b> <code>+{reward}</code> coins</blockquote>",
-        "<b>تسک تأیید شد</b>\n\n<blockquote><b>پاداش:</b> <code>+{reward}</code> کوین</blockquote>"),
+        "<b>Task verified</b>\n\n<blockquote><b>Reward:</b> <code>+{reward}</code> Stars</blockquote>",
+        "<b>تسک تأیید شد</b>\n\n<blockquote><b>پاداش:</b> <code>+{reward}</code> استارز</blockquote>"),
     "n_claim_failed": (
         "<b>No reward</b>\n\n{reason} No reward was paid; you may try again.",
         "<b>بدون پاداش</b>\n\n{reason} پاداشی پرداخت نشد؛ می‌توانید دوباره تلاش کنید."),
@@ -533,16 +533,16 @@ S = {
     "a_window_set": ("Time limit set to {window} minutes.", "مهلت روی {window} دقیقه تنظیم شد."),
     "a_max_active": ("You can have at most {n} active campaigns.", "حداکثر {n} کمپین فعال می‌توانید داشته باشید."),
     "a_no_funds": ("Insufficient balance.", "موجودی کافی نیست."),
-    "a_admin_check_pre": ("The destination check is temporarily unavailable. No coins were charged. Try again.",
-                          "بررسی ادمین مقصد موقتاً ممکن نیست و کوینی کسر نشد. دوباره تلاش کنید."),
-    "a_admin_needed": ("The bot must be an administrator of the destination until the campaign ends. No coins were charged.",
-                       "ربات باید تا پایان کمپین در مقصد ادمین باشد. کوینی کسر نشد."),
+    "a_admin_check_pre": ("The destination check is temporarily unavailable. No Stars were charged. Try again.",
+                          "بررسی ادمین مقصد موقتاً ممکن نیست و استارزی کسر نشد. دوباره تلاش کنید."),
+    "a_admin_needed": ("The bot must be an administrator of the destination until the campaign ends. No Stars were charged.",
+                       "ربات باید تا پایان کمپین در مقصد ادمین باشد. استارزی کسر نشد."),
     "a_baseline_stale": ("The baseline count is outdated. Send the post link again to refresh monitoring.",
                          "شمارش پایه قدیمی است. برای تازه‌سازی پایش، لینک پست را دوباره ارسال کنید."),
     "a_showcase_down": ("The showcase is unavailable.", "ویترین در دسترس نیست."),
     "a_published": ("Campaign published.", "کمپین منتشر شد."),
     "a_cancel_inactive": ("This campaign is not active.", "این کمپین فعال نیست."),
-    "a_cancelled": ("Cancelled. {n} coins refunded.", "لغو شد. {n} کوین بازگردانده شد."),
+    "a_cancelled": ("Cancelled. {n} Stars refunded.", "لغو شد. {n} استارز بازگردانده شد."),
 
     # ───────── Create-campaign flow ─────────
     "new": (
@@ -617,18 +617,18 @@ S = {
     "qty_prompt": ("<b>Quantity</b>\n\nHow many units do you need? Send a number from <code>1</code> to <code>{max}</code>.",
                    "<b>تعداد</b>\n\nچند واحد نیاز دارید؟ عددی بین <code>1</code> تا <code>{max}</code> ارسال کنید."),
     "qty_insufficient": (
-        "<b>Insufficient balance</b>\n\nYour balance (<code>{points}</code> coins) does not cover a single unit (<code>{cost}</code> coins).\n"
-        "Complete a few tasks or invite friends to earn coins.",
-        "<b>موجودی ناکافی</b>\n\nموجودی شما (<code>{points}</code> کوین) برای ثبت حتی یک واحد (<code>{cost}</code> کوین) کافی نیست.\n"
-        "ابتدا چند تسک انجام دهید یا با دعوت از دوستان کوین کسب کنید."),
+        "<b>Insufficient balance</b>\n\nYour balance (<code>{points}</code> Stars) does not cover a single unit (<code>{cost}</code> Stars).\n"
+        "Complete a few tasks or invite friends to earn Stars.",
+        "<b>موجودی ناکافی</b>\n\nموجودی شما (<code>{points}</code> استارز) برای ثبت حتی یک واحد (<code>{cost}</code> استارز) کافی نیست.\n"
+        "ابتدا چند تسک انجام دهید یا با دعوت از دوستان استارز کسب کنید."),
     "qty_nan": ("Please send a number only.", "لطفاً فقط یک عدد ارسال کنید."),
     "qty_range": ("The number must be between 1 and {max}.", "عدد باید بین 1 تا {max} باشد."),
     "summary": (
         "<b>Campaign summary</b>\n\n<blockquote><b>Type:</b> {type}\n<b>Target:</b> {title}\n"
-        "<b>Quantity:</b> <code>{qty}</code>\n<b>Cost:</b> <code>{total}</code> coins\n<b>Verification:</b> {how}</blockquote>"
+        "<b>Quantity:</b> <code>{qty}</code>\n<b>Cost:</b> <code>{total}</code> Stars\n<b>Verification:</b> {how}</blockquote>"
         "{admin_note}\n\nConfirm to publish this campaign.",
         "<b>خلاصه‌ی کمپین</b>\n\n<blockquote><b>نوع:</b> {type}\n<b>مقصد:</b> {title}\n"
-        "<b>تعداد:</b> <code>{qty}</code>\n<b>هزینه:</b> <code>{total}</code> کوین\n<b>روش تأیید:</b> {how}</blockquote>"
+        "<b>تعداد:</b> <code>{qty}</code>\n<b>هزینه:</b> <code>{total}</code> استارز\n<b>روش تأیید:</b> {how}</blockquote>"
         "{admin_note}\n\nبرای انتشار کمپین، تأیید کنید."),
     "summary_admin": ("\n<i>The bot must remain an administrator of the destination until the campaign ends; otherwise the campaign pauses temporarily.</i>",
                       "\n<i>ربات باید تا پایان کمپین در مقصد ادمین بماند؛ در غیر این صورت کمپین موقتاً متوقف می‌شود.</i>"),
@@ -645,10 +645,10 @@ S = {
     "publish_failed": (
         "<b>Campaign not published — cost refunded</b>\n\nThe bot administrator must set <code>TASKS_CHANNEL</code>, "
         "add the bot to the showcase channel as an administrator and allow it to post and edit messages.\n\n"
-        "You can create the campaign again once the showcase is ready. Your coins have been returned.",
+        "You can create the campaign again once the showcase is ready. Your Stars have been returned.",
         "<b>کمپین منتشر نشد — هزینه بازگردانده شد</b>\n\nمدیر ربات باید متغیر <code>TASKS_CHANNEL</code> را تنظیم کند، "
         "ربات را در کانال ویترین ادمین نماید و دسترسی ارسال و ویرایش پیام را فعال کند.\n\n"
-        "پس از آماده شدن ویترین می‌توانید کمپین را دوباره ثبت کنید. کوین‌های شما بازگردانده شده است."),
+        "پس از آماده شدن ویترین می‌توانید کمپین را دوباره ثبت کنید. استارز‌های شما بازگردانده شده است."),
 
     # ───────── My campaigns ─────────
     "my": ("<b>My campaigns</b>\n<i>Your latest 10 campaigns</i>\n\n{rows}",
@@ -680,9 +680,9 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n\n<blockquote><b>Reward:</b> <code>{reward}</code> coins\n"
+        "<b>{type}</b> · {target}\n\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars\n"
         "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n\n<blockquote><b>پاداش:</b> <code>{reward}</code> کوین\n"
+        "<b>{type}</b> · {target}\n\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز\n"
         "<b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n<b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
                   "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
@@ -803,10 +803,20 @@ def set_state(uid, step, d):
 # ═════════════════════════════ UI builders ═════════════════════════════
 def main_kb(lang):
     return [[B(tb(lang, "b_earn"), "earn", "primary")],
-            [B(tb(lang, "b_new"), "new"), B(tb(lang, "b_my"), "my")],
-            [B(tb(lang, "b_ref"), "ref", "success")],
-            [B(tb(lang, "b_acc"), "acc"), B(tb(lang, "b_help"), "help")],
-            [B(tb(lang, "b_lang"), "lang")]]
+            [B(tb(lang, "b_my"), "campaigns", "success")],
+            [B(tb(lang, "b_acc"), "acc")]]
+
+
+def account_kb(lang):
+    return [[B(tb(lang, "b_ref"), "ref", "success")],
+            [B(tb(lang, "b_help"), "help"), B(tb(lang, "b_lang"), "lang")],
+            [B(tb(lang, "b_menu"), "home")]]
+
+
+def campaigns_kb(lang):
+    return [[B(tb(lang, "b_new"), "new", "primary")],
+            [B(tb(lang, "b_my"), "my")],
+            [B(tb(lang, "b_menu"), "home")]]
 
 
 def home_kb(lang):
@@ -882,7 +892,7 @@ def acc_text(u):
 
 
 def acc_kb(lang):
-    return [[B(tb(lang, "b_ref"), "ref")], [B(tb(lang, "b_menu"), "home")]]
+    return account_kb(lang)
 
 
 def ref_text(u):
@@ -1816,7 +1826,7 @@ def confirm_new(cq, uid, lang, chat, mid):
 def render_my(uid, lang, chat, mid):
     cs = list(db.campaigns.find({"owner": uid}, sort=[("created", -1)], limit=10))
     if not cs:
-        return view(chat, mid, t(lang, "my_empty"), [[B(tb(lang, "b_new"), "new", "primary")], [B(tb(lang, "b_menu"), "home")]])
+        return view(chat, mid, t(lang, "my_empty"), campaigns_kb(lang))
     rows, kb = [], []
     for i, c in enumerate(cs, 1):
         pending = 0
@@ -1976,9 +1986,17 @@ def on_callback(cq):
     if data == "acc":
         ans(cq)
         return view(chat, mid, acc_text(u), acc_kb(lang))
-    if data == "earn":
+    if data == "campaigns":
         ans(cq)
-        return show_task(lang, chat, mid)
+        return view(chat, mid, "<b>" + ("Campaign management" if lang == "en" else "مدیریت کمپین‌ها") + "</b>\\n\\n" +
+                    ("Create a campaign or review your existing campaigns." if lang == "en" else "کمپین جدید بسازید یا وضعیت کمپین‌های خود را بررسی کنید."),
+                    campaigns_kb(lang))
+    if data == "earn":
+        url = tasks_channel_url()
+        if not url:
+            ans(cq, tb(lang, "a_showcase_down"), True)
+            return None
+        return ans(cq, url=url)
     if data == "ref":
         ans(cq)
         return view(chat, mid, ref_text(u), ref_kb(uid, lang))
