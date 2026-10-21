@@ -13,12 +13,15 @@ Stack: Flask + MongoDB(pymongo) + وب‌هوک، تک‌فایل و بدون م
             شمارش تجمیعی هویت کاربر را ثابت نمی‌کند؛ این روش تعداد افزایش‌ها را می‌سنجد، نه اینکه چه کسی واکنش داده است.
 - بازدید  : فقط تأیید زمانی (از طریق Bot API قابل راستی‌آزمایی نیست) → پاداش کم
 
+- دعوت    : پاداش دو‌مرحله‌ای (ورود دوست + فعال‌شدن دوست)؛ لینک اختصاصی start=ref_<uid>
+
 نیازمندی‌ها: flask pymongo requests gunicorn؛ mongomock فقط برای اجرای آزمایشی بدون MongoDB
 اجرا: gunicorn taskbot:app
 """
 import os, re, time, hmac, hashlib, random, logging, threading
 
 import requests
+from urllib.parse import quote
 from flask import Flask, request
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
@@ -38,18 +41,22 @@ START_POINTS = int(os.environ.get("START_POINTS", "20"))        # هدیه‌ی 
 HOLD_HOURS   = float(os.environ.get("HOLD_HOURS", "24"))       # مدت معلق ماندن پاداش
 DAILY_TASKS  = int(os.environ.get("DAILY_TASKS", "60"))        # سقف تسک روزانه‌ی هر کاربر
 STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))        # بعد از این تعداد اخطار، انجام تسک بسته می‌شه
+REF_JOIN_BONUS   = int(os.environ.get("REF_JOIN_BONUS", "2"))      # پاداش کوچکِ ورود دوستِ دعوت‌شده
+REF_ACTIVE_BONUS = int(os.environ.get("REF_ACTIVE_BONUS", "8"))    # پاداش شیرینِ فعال‌شدن دوست (باید از پاداش ورود بیشتر باشه)
+REF_ACTIVE_TASKS = int(os.environ.get("REF_ACTIVE_TASKS", "3"))    # تعداد تسک عضویت/ری‌اکشنِ تأییدشده برای «فعال» حساب شدن
+REF_DAILY_CAP    = int(os.environ.get("REF_DAILY_CAP", "20"))      # سقف روزانهٔ پاداش ورود برای هر دعوت‌کننده (ضد سوءاستفاده)
 MAX_QTY      = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE   = int(os.environ.get("MAX_ACTIVE", "10"))         # سقف کمپین فعال هر کاربر
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))  # فرصت اضافه برای تأخیر آپدیت شمارش تلگرام
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))  # حداکثر سن شمارش پایه (ثانیه)
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))  # فاصله بررسی ادمین کمپین‌ها
-VERSION      = "v47-fix-channel-view-callback-objectid"
+VERSION      = "v48-ui-refresh-referral"
 
 # نوع تسک: پاداش انجام‌دهنده / هزینه‌ی ثبت برای صاحب کمپین (هر واحد) / حداقل صبر (ثانیه)
 TYPES = {
-    "join":  {"title": "عضویت",   "reward": 3, "cost": 4, "wait": 0},
-    "react": {"title": "ری‌اکشن", "reward": 2, "cost": 3, "wait": 10},
-    "view":  {"title": "بازدید",  "reward": 1, "cost": 2, "wait": 5},
+    "join":  {"title": "👥 عضویت",   "reward": 3, "cost": 4, "wait": 0},
+    "react": {"title": "❤️ ری‌اکشن", "reward": 2, "cost": 3, "wait": 10},
+    "view":  {"title": "👁 بازدید",  "reward": 1, "cost": 2, "wait": 5},
 }
 
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +73,7 @@ db.completions.create_index([("uid", 1), ("cid", 1)], unique=True)     # هر ک
 db.completions.create_index([("status", 1), ("due", 1)])
 db.campaigns.create_index([("status", 1), ("remaining", 1)])
 db.campaigns.create_index("owner")
+db.users.create_index("referred_by")
 db.reaction_watch.create_index([("chat_id", 1), ("mid", 1)])
 db.reaction_credits.create_index([("post_key", 1), ("event_at", 1)])
 db.completions.create_index([("status", 1), ("claim_expires", 1)])
@@ -102,7 +110,7 @@ def btn(text, data=None, url=None, style=None):
             style = "danger"
         elif any(k in label for k in ("انجام دادم", "ثبت و کسر", "تأیید", "تایید", "بله، لغو کن", "دریافت پاداش", "ساخت کمپین", "ثبت درخواست")):
             style = "success"
-        elif any(k in label for k in ("شروع کسب کوین", "تسک بعدی", "انجام تسک", "ادامه", "مشاهده تسک", "ویترین تسک", "بازگشت به کانال", "رفتن به پست مقصد", "تسک‌های کانال", "۲ دقیقه", "۵ دقیقه")):
+        elif any(k in label for k in ("کسب کوین", "تسک بعدی", "انجام تسک", "ادامه", "مشاهده تسک", "ویترین تسک", "بازگشت به کانال", "رفتن به پست مقصد", "تسک‌های کانال", "۲ دقیقه", "۵ دقیقه")):
             style = "primary"
     out = {"text": text, "url": url} if url else {"text": text, "callback_data": data}
     if style in ("primary", "success", "danger"):
@@ -302,77 +310,56 @@ def task_listing_url(c):
 
 
 def main_kb():
-    rows = [[btn("🎯 شروع کسب کوین", "earn")],
-            [btn("➕ ساخت کمپین", "new"), btn("📊 کمپین‌های من", "my")]]
-    ch_url = tasks_channel_url()
-    if ch_url:
-        rows.append([btn("📣 ویترین تسک‌ها", url=ch_url)])
-    rows += [[btn("📡 پایش ری‌اکشن‌ها", "rwatch")],
-             [btn("👤 حساب کاربری", "acc"), btn("📘 راهنمای استفاده", "help")]]
-    return rows
+    return [[btn("🎯 کسب کوین", "earn")],
+            [btn("➕ ساخت کمپین", "new", style="plain"), btn("📊 کمپین‌های من", "my")],
+            [btn("🎁 دعوت دوستان", "ref", style="success")],
+            [btn("👤 حساب من", "acc"), btn("💡 راهنما", "help")]]
 
 
 def menu_text(u):
     name = u.get("name") or "دوست من"
-    hold = f"\n⏳ <b>پاداش‌های در انتظار:</b> {u['hold']} کوین" if u.get("hold") else ""
-    channel_line = "\n📣 فهرست عمومی تسک‌ها از دکمهٔ <b>ویترین تسک‌ها</b> در دسترس است." if tasks_channel_url() else ""
-    return (f"🤖 <b>به تاسک‌پلاس خوش اومدی، {name}!</b>\n\n"
-            f"اینجا می‌تونی با انجام تسک‌های دیگران کوین بگیری و با کوینت برای کانال یا پست خودت کمپین بسازی.\n\n"
-            f"💰 <b>موجودی قابل‌استفاده:</b> {u.get('points', 0)} کوین{hold}"
-            f"{channel_line}\n\n<b>از کجا شروع کنیم؟</b> یکی از گزینه‌های پایین رو انتخاب کن؛ من قدم‌به‌قدم راهنماییت می‌کنم.")
+    hold = f"\n⏳ در انتظار تأیید: <b>{u['hold']}</b> کوین" if u.get("hold") else ""
+    return (f"👋 سلام {name}، به <b>تاسک‌پلاس</b> خوش اومدی!\n\n"
+            f"💰 موجودی: <b>{u.get('points', 0)}</b> کوین{hold}\n\n"
+            "تسک انجام بده، کوین بگیر و با کوین برای کانال خودت کمپین بساز.\n"
+            "دوستانت رو هم دعوت کن تا از هر کدوم پاداش بگیری 🎁")
 
 
 def help_text():
     t = TYPES
     return (
-        "📘 <b>راهنمای سریع تاسک‌پلاس</b>\n\n"
-        "<b>🎯 کسب کوین</b>\nتسکی رو از فهرست انتخاب کن، دستورالعملش رو انجام بده و دکمهٔ «انجام دادم» رو بزن. نتیجه رو همین‌جا بهت اعلام می‌کنم.\n\n"
-        f"<b>{t['join']['title']}</b> — پاداش {t['join']['reward']} کوین؛ عضویت با ربات بررسی می‌شه و در صورت تأیید، پاداش فوری واریز می‌شه.\n"
-        f"<b>{t['react']['title']}</b> — پاداش {t['react']['reward']} کوین؛ در گروه، در صورت پشتیبانی تأیید فردی انجام می‌شه؛ در کانال، افزایش شمارش کل بررسی می‌شه.\n"
-        f"<b>{t['view']['title']}</b> — پاداش {t['view']['reward']} کوین؛ زمان لازم رو رعایت کن.\n\n"
-        "<b>➕ ساخت کمپین</b>\nنوع تسک، لینک مقصد و تعداد موردنظرت رو وارد کن. پیش از ثبت، هزینه و روش تأیید رو بهت نشون می‌دم. برای تأیید عضویت، ربات باید ادمین کانال یا گروه مقصد باشه.\n\n"
-        "<b>📡 ری‌اکشن کانال؛ شفاف و مهم</b>\nدر این روش، افزایش شمارش کلی ری‌اکشن‌ها بررسی می‌شه؛ این شمارش هویت شخصی واکنش‌دهنده رو مشخص نمی‌کنه. تلگرام ممکنه آپدیت شمارش رو با تأخیر بفرسته، پس پرداخت فوری فقط زمانی انجام می‌شه که افزایش معتبر دریافت و به تسک اختصاص داده بشه.\n\n"
-        f"<b>🛡️ رعایت قوانین</b>\nهر کاربر برای هر کمپین فقط یک بار می‌تونه درخواست ثبت کنه. تخلف یا برداشتن عضویت/ری‌اکشن در تسک‌های مشمول بازبینی ممکنه باعث برگشت کوین و اخطار بشه. سقف اخطار: {STRIKE_LIMIT}.\n\n"
-        "برای دیدن تسک‌های موجود، «🎯 شروع کسب کوین» رو بزن؛ برای بررسی وضعیت کمپین‌های خودت، «📊 کمپین‌های من» رو انتخاب کن.")
+        "💡 <b>راهنمای تاسک‌پلاس</b>\n\n"
+        "<b>🎯 کسب کوین</b>\n"
+        "تسک رو در کانال ویترین انجام بده، زیر همون پست «🎁 دریافت پاداش» رو بزن و اینجا «انجام دادم» رو تأیید کن.\n"
+        f"• {t['join']['title']} — {t['join']['reward']} کوین؛ عضویت بررسی و پاداش فوری واریز می‌شه.\n"
+        f"• {t['react']['title']} — {t['react']['reward']} کوین؛ در گروه تأیید فردی، در کانال بر اساس افزایش شمارش.\n"
+        f"• {t['view']['title']} — {t['view']['reward']} کوین؛ بعد از رعایت زمان لازم.\n\n"
+        "<b>➕ ساخت کمپین</b>\n"
+        "نوع تسک، لینک مقصد و تعداد رو بده؛ هزینه پیش از ثبت نشون داده می‌شه. برای عضویت و ری‌اکشن گروه، ربات باید ادمین مقصد باشه.\n\n"
+        "<b>🎁 دعوت دوستان</b>\n"
+        f"با ورود هر دوست {REF_JOIN_BONUS} کوین می‌گیری و وقتی فعال بشه ({REF_ACTIVE_TASKS} تسک عضویت/ری‌اکشن) {REF_ACTIVE_BONUS} کوین دیگه.\n\n"
+        "<b>📡 نکتهٔ ری‌اکشن کانال</b>\n"
+        "تأیید بر اساس افزایش شمارش کل انجام می‌شه و هویت واکنش‌دهنده رو مشخص نمی‌کنه؛ تلگرام ممکنه آپدیت رو چند دقیقه دیر بفرسته.\n\n"
+        f"<b>🛡️ قوانین</b>\nهر کمپین برای هر نفر فقط یک بار. خروج از کانال یا برداشتن ری‌اکشن یعنی برگشت کوین و اخطار (سقف {STRIKE_LIMIT} اخطار).")
 
 
 def acc_text(u):
     n = db.campaigns.count_documents({"owner": u["_id"], "status": "active"})
-    return ("👤 <b>حساب کاربری تو</b>\n\n"
-            f"💰 <b>موجودی قابل‌استفاده:</b> {u.get('points', 0)} کوین\n"
-            f"⏳ <b>پاداش در انتظار:</b> {u.get('hold', 0)} کوین\n"
-            f"🏆 <b>مجموع کوین کسب‌شده:</b> {u.get('earned', 0)}\n"
-            f"🛡️ <b>اخطارها:</b> {u.get('strikes', 0)} از {STRIKE_LIMIT}\n"
-            f"📋 <b>کمپین‌های فعال تو:</b> {n} از {MAX_ACTIVE}\n\n"
-            "هر زمان خواستی می‌تونی از منوی اصلی تسک انجام بدی یا کمپین تازه بسازی.")
+    hold = f"\n⏳ در انتظار تأیید: <b>{u['hold']}</b> کوین" if u.get("hold") else ""
+    return ("👤 <b>حساب من</b>\n\n"
+            f"💰 موجودی: <b>{u.get('points', 0)}</b> کوین{hold}\n"
+            f"🏆 مجموع کسب‌شده: {u.get('earned', 0)} کوین\n"
+            f"👥 دعوت‌ها: {u.get('ref_count', 0)} نفر ({u.get('ref_active_count', 0)} فعال)\n"
+            f"📋 کمپین فعال: {n} از {MAX_ACTIVE}\n"
+            f"🛡️ اخطار: {u.get('strikes', 0)} از {STRIKE_LIMIT}")
+
+
+def acc_kb():
+    return [[btn("🎁 دعوت دوستان", "ref")], [btn("🏠 منوی اصلی", "home")]]
 
 
 def link_of(c):
     return f"https://t.me/{c['uname']}" + (f"/{c['mid']}" if c.get("mid") else "")
-
-
-def task_text(c):
-    t = TYPES[c["type"]]
-    head = (f"{t['title']}  ·  <b>پاداش: {t['reward']} کوین</b>\n"
-            f"📌 <b>مقصد:</b> {c.get('title') or c['uname']}\n\n")
-    if c["type"] == "join":
-        how = ("<b>مراحل انجام</b>\n۱. دکمهٔ «باز کردن مقصد» رو بزن.\n۲. عضو کانال یا گروه شو.\n۳. برگرد و «انجام دادم» رو انتخاب کن.\n\n"
-               "⚡ عضویت خودکار بررسی می‌شه و در صورت تأیید، پاداش همون لحظه واریز می‌شه.")
-    elif c["type"] == "view":
-        how = ("<b>مراحل انجام</b>\n۱. مقصد رو باز کن و پست رو ببین.\n"
-               f"۲. حداقل {t['wait']} ثانیه صبر کن.\n۳. به ربات برگرد و «انجام دادم» رو بزن.\n\n"
-               "ℹ️ توجه: بازدید به‌تنهایی از طریق Bot API قابل اثبات قطعی نیست؛ این تسک بر اساس زمان ثبت‌شده مدیریت می‌شه.")
-    elif c.get("mode") == "auto":
-        how = ("<b>مراحل انجام</b>\n۱. پست مقصد رو باز کن.\n۲. ری‌اکشن خواسته‌شده رو ثبت کن.\n۳. به ربات برگرد و «انجام دادم» رو بزن.\n\n"
-               "⚡ ری‌اکشن در صورت پشتیبانی تلگرام به‌صورت خودکار بررسی می‌شه و پس از تأیید، پاداش فوری واریز می‌شه.")
-    elif c.get("mode") == "count":
-        how = ("<b>مراحل انجام</b>\n۱. پست مقصد رو باز کن و ری‌اکشن بزن.\n"
-               f"۲. حداکثر تا {c.get('window_min', 5)} دقیقه به ربات برگرد و «انجام دادم» رو انتخاب کن.\n\n"
-               "📡 <b>نحوهٔ بررسی:</b> افزایش شمارش کل ری‌اکشن‌های پست بررسی می‌شه؛ این روش هویت فردی واکنش‌دهنده رو مشخص نمی‌کنه. اگر افزایش معتبر در بازهٔ تسک دریافت و به درخواستت اختصاص داده بشه، پاداش فوری واریز می‌شه.\n"
-               "⏱ ممکنه خود تلگرام آپدیت شمارش رو با تأخیر ارسال کنه؛ تا پایان بررسی، پیام وضعیت رو نگه دار.")
-    else:
-        how = "روش تأیید این تسک در دسترس نیست؛ لطفاً یک تسک فعال دیگر انتخاب کن."
-    return head + how
 
 
 # ───────────────────────── تسک‌ها: انتخاب، ثبت انجام، تأیید نهایی ─────────────────────────
@@ -389,30 +376,19 @@ def fresh_reaction_snapshot(chat_id, message_id, max_age=REACTION_BASELINE_MAX_A
     return w
 
 
-def next_task(uid, skip):
-    done = [x["cid"] for x in db.completions.find({"uid": uid}, {"cid": 1})]
-    ids = done + [ObjectId(s) for s in skip if ObjectId.is_valid(s)]
-    candidates = db.campaigns.find({"status": "active", "remaining": {"$gt": 0}, "owner": {"$ne": uid},
-                                    "_id": {"$nin": ids}}, sort=[("created", 1)])
-    for c in candidates:
-        if c.get("admin_paused") and campaign_needs_admin(c):
-            continue
-        if c.get("type") == "react" and c.get("mode") == "count":
-            if not fresh_reaction_snapshot(c.get("chat_id"), c.get("mid")):
-                continue
-        return c
-    return None
-
-
 def show_task(uid, chat, mid=None):
-    """مسیر کسب کوین فقط از کانال است؛ فهرست و لینک پست مقصد داخل ربات نمایش داده نمی‌شود."""
+    """مسیر کسب کوین فقط از کانال ویترین است."""
     ch_url = tasks_channel_url()
     if not ch_url:
-        return view(chat, mid, "⚠️ کانال تسک‌ها هنوز تنظیم نشده است. لطفاً بعداً دوباره تلاش کن.", HOME_KB)
+        return view(chat, mid, "⚠️ کانال تسک‌ها هنوز تنظیم نشده؛ کمی بعد دوباره سر بزن.", HOME_KB)
     return view(chat, mid,
-                "📣 <b>تسک‌ها در کانال انجام می‌شوند.</b>\n\n"
-                "تسک را در کانال کامل کن؛ سپس در همان پست روی «🎁 دریافت پاداش» بزن تا درخواستت ثبت شود.",
-                [[btn("📣 مشاهده تسک‌های کانال", url=ch_url, style="primary")], [btn("🏠 منوی اصلی", "home")]])
+                "🎯 <b>کسب کوین</b>\n\n"
+                "تسک‌ها در کانال ویترین منتشر می‌شن:\n"
+                "۱. یه تسک انتخاب کن و انجامش بده\n"
+                "۲. زیر همون پست «🎁 دریافت پاداش» رو بزن\n"
+                "۳. اینجا «انجام دادم» رو تأیید کن\n\n"
+                "پاداش بعد از بررسی خودکار واریز می‌شه.",
+                [[btn("📣 رفتن به ویترین", url=ch_url, style="primary")], [btn("🏠 منوی اصلی", "home")]])
 
 
 def campaign_listing_text(c):
@@ -428,38 +404,36 @@ def campaign_listing_text(c):
     elif c.get("status") == "active" and remaining:
         state = "🟢 فعال"
     else:
-        state = "⚪ تکمیل ظرفیت"
+        state = "⚪ ظرفیت تکمیل شد"
 
     if c.get("type") == "react" and c.get("mode") == "count":
-        instruction = f"ری‌اکشن درخواستی را روی پست بزن و تا {int(c.get('window_min', 5))} دقیقه درخواست پاداش را ثبت کن."
+        instruction = f"ری‌اکشن درخواستی رو روی پست بزن و تا {int(c.get('window_min', 5))} دقیقه بعدش «🎁 دریافت پاداش» رو بزن."
     elif c.get("type") == "join":
-        instruction = "از طریق پست مقصد عضو کانال شو؛ سپس درخواست پاداش را ثبت کن."
+        instruction = "عضو مقصد شو، بعد «🎁 دریافت پاداش» رو بزن."
     elif c.get("type") == "view":
-        instruction = "پست مقصد را ببین و زمان تعیین‌شده را رعایت کن؛ سپس درخواست پاداش را ثبت کن."
+        instruction = "پست مقصد رو ببین و چند ثانیه صبر کن، بعد «🎁 دریافت پاداش» رو بزن."
     else:
-        instruction = "دستور تسک را در پست مقصد کامل کن؛ سپس درخواست پاداش را ثبت کن."
+        instruction = "دستور تسک رو در مقصد انجام بده، بعد «🎁 دریافت پاداش» رو بزن."
 
-    return (f"<b>{t['title']}</b>\n"
-            f"📌 {target}\n\n"
-            f"🎁 <b>پاداش:</b> {c.get('reward', 0)} کوین  ·  👥 <b>ظرفیت:</b> {remaining} نفر\n"
-            f"📍 <b>وضعیت:</b> {state}\n\n"
-            f"📝 {instruction}\n\n"
-            "پس از انجام کار، از همین پست «🎁 دریافت پاداش» را بزن.")
+    return (f"<b>{t['title']}</b>  ·  📌 {target}\n\n"
+            f"🎁 پاداش: <b>{c.get('reward', 0)}</b> کوین\n"
+            f"👥 ظرفیت باقی‌مانده: <b>{remaining}</b> نفر\n"
+            f"📍 {state}\n\n"
+            f"📝 {instruction}")
+
 
 def campaign_listing_keyboard(c):
     # کمپین‌های قدیمیِ وابسته به اسکرین‌شات/هوش مصنوعی دیگر قابل انجام نیستند.
     if c.get("type") == "react" and c.get("mode") not in ("auto", "count"):
         return [[btn("⚪ روش قدیمی غیرفعال", "noop")]]
-    # تسک تمام‌شده فقط نشانگر قرمز دارد.
     available = (c.get("status") == "active" and int(c.get("remaining", 0)) > 0
                  and not (c.get("admin_paused") and campaign_needs_admin(c)))
     if not available:
-        return [[btn("🔴 تکمیل شده", "noop", style="danger")]]
+        return [[btn("🔴 ظرفیت تکمیل شد", "noop", style="danger")]]
     rows = []
-    # دکمهٔ آبی همیشه مستقیماً پست/مقصد تلگرام را باز می‌کند.
     target_link = link_of(c)
     if target_link:
-        rows.append(btn("🔵 رفتن به پست مقصد", url=target_link, style="primary"))
+        rows.append(btn("🔗 رفتن به مقصد", url=target_link, style="primary"))
     # دکمهٔ پاداش callback است تا تأخیر اجباری قبل از ورود به صفحهٔ دریافت پاداش اعمال شود.
     if bot_deep_link(c.get("_id")):
         rows.append(btn("🎁 دریافت پاداش", f"rp:{c['_id']}", style="success"))
@@ -612,14 +586,14 @@ def on_claim(cq, uid, chat, mid, cid_s):
         if consume_credit_for_claim(comp):
             return view(chat, mid, "✅ افزایش شمارش تأیید شد؛ پاداش همین حالا پرداخت شد.",
                         [[btn("🎯 تسک بعدی", "earn")], [btn("🏠 منو", "home")]])
-        return view(chat, mid, f"🕓 <b>درخواستت ثبت شد و در حال بررسی است.</b>\n\n"
-                               f"🎁 پاداش: {c['reward']} کوین\n"
-                               f"⏱ مهلت انجام: {window_min} دقیقه\n\n"
-                               f"منتظر آپدیت شمارش تلگرام هستیم؛ ممکن است چند دقیقه طول بکشد (حداکثر فرصت اضافه: {REACTION_UPDATE_GRACE // 60} دقیقه). "
-                               "اگر افزایش معتبر شمارش در بازهٔ تسک ثبت شود، پاداش به‌صورت خودکار و فوری واریز می‌شود و پیام تأیید می‌گیری.",
-                    [[btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")], [btn("🏠 منوی اصلی", "home")]])
-    # عضویت و ری‌اکشنِ قابل‌تأیید با Bot API همان لحظه بررسی شده‌اند؛
-    # برای این دو نوع تسک پاداش را بی‌دلیل ۲۴ ساعت معلق نکن.
+        return view(chat, mid,
+                    f"🕓 <b>درخواستت ثبت شد</b>\n\n"
+                    f"🎁 پاداش: {c['reward']} کوین\n"
+                    f"⏱ مهلت: {window_min} دقیقه\n\n"
+                    f"منتظر آپدیت شمارش تلگرام هستیم؛ ممکنه تا {REACTION_UPDATE_GRACE // 60} دقیقه دیرتر برسه. "
+                    "اگه افزایش معتبری ثبت بشه، پاداش خودکار واریز می‌شه و بهت خبر می‌دم.",
+                    [[btn("↩️ بازگشت به مقصد", url=link_of(c), style="primary")], [btn("🏠 منوی اصلی", "home")]])
+    # عضویت و ری‌اکشنِ گروه همان لحظه بررسی شده‌اند؛ پاداششان را معلق نگه نمی‌داریم.
     instant = (c.get("type") in ("join", "view") or
                (c.get("type") == "react" and c.get("mode") == "auto"))
     code, comp = grant(uid, c, "pending")
@@ -635,9 +609,8 @@ def on_claim(cq, uid, chat, mid, cid_s):
             pay(comp, notify=False)
         ans(cq, "✅ بررسی شد و پاداش واریز شد")
         return view(chat, mid,
-                    f"<b>تسک تکمیل شد و پاداش پرداخت شد.</b>\n\n{c['reward']} کوین به موجودی‌ات اضافه شد.",
-                    [[btn("🎯 تسک بعدی", "earn", style="success")],
-                     [btn("👤 حساب کاربری", "acc", style="primary")]])
+                    f"✅ <b>تسک تأیید شد!</b>\n\n💰 {c['reward']} کوین به موجودیت اضافه شد.",
+                    [[btn("🎯 تسک بعدی", "earn")], [btn("👤 حساب من", "acc")]])
     after_ok(cq, chat, mid, c, comp)
 
 
@@ -784,6 +757,105 @@ def reaction_watch_text(uid, all_admin=False):
     return "\n".join(lines)[:3900]
 
 
+# ───────────────────────── دعوت دوستان (پاداش دو‌مرحله‌ای) ─────────────────────────
+def ref_link(uid):
+    username = _me.get("username") or ""
+    return f"https://t.me/{username}?start=ref_{uid}" if username else ""
+
+
+def _plain(s, n=18):
+    return re.sub(r"[<>&]", "", str(s or ""))[:n].strip()
+
+
+def ref_register(uid, ref_s, name=""):
+    """ثبت دعوت برای کاربر کاملاً جدید + پاداش کوچک ورود به دعوت‌کننده (با سقف روزانه)."""
+    try:
+        ref = int(ref_s)
+    except (TypeError, ValueError):
+        return
+    if ref == uid or not db.users.find_one({"_id": ref}, {"_id": 1}):
+        return
+    got = db.users.update_one({"_id": uid, "referred_by": {"$exists": False}},
+                              {"$set": {"referred_by": ref, "ref_tasks": 0}})
+    if not got.modified_count:
+        return
+    db.users.update_one({"_id": ref}, {"$inc": {"ref_count": 1}})
+    if not REF_JOIN_BONUS or not counter_take(f"refd:{ref}:{day()}", REF_DAILY_CAP):
+        return
+    add_points(ref, REF_JOIN_BONUS, "ref_join", uid)
+    db.users.update_one({"_id": ref}, {"$inc": {"ref_earned": REF_JOIN_BONUS}})
+    send(ref, f"🎉 <b>یه دوست جدید اومد!</b>\n\n"
+              f"{_plain(name) or 'یه نفر'} با لینک تو وارد شد.\n"
+              f"💰 +{REF_JOIN_BONUS} کوین\n\n"
+              f"وقتی {REF_ACTIVE_TASKS} تسک انجام بده، {REF_ACTIVE_BONUS} کوین دیگه هم می‌گیری 🎁",
+         [[btn("🎁 دعوت دوستان", "ref")]])
+
+
+def ref_on_task_paid(uid, typ):
+    """هر تسک عضویت/ری‌اکشنِ پرداخت‌شدهٔ کاربرِ دعوت‌شده یک قدم به فعال‌شدنش نزدیک می‌کند.
+    (بازدید حساب نمی‌شه چون قابل راستی‌آزمایی نیست.)"""
+    if typ not in ("join", "react"):
+        return
+    r = db.users.update_one({"_id": uid, "referred_by": {"$exists": True}, "ref_active": {"$ne": True}},
+                            {"$inc": {"ref_tasks": 1}})
+    if not r.modified_count:
+        return
+    u = db.users.find_one({"_id": uid}) or {}
+    if int(u.get("ref_tasks", 0)) < REF_ACTIVE_TASKS:
+        return
+    won = db.users.update_one({"_id": uid, "ref_active": {"$ne": True}},
+                              {"$set": {"ref_active": True, "ref_active_at": time.time()}})
+    if not won.modified_count:      # کارگر دیگری همزمان فعال‌سازی را ثبت کرده؛ پاداش دوبار پرداخت نمی‌شه
+        return
+    ref = u.get("referred_by")
+    if not ref or not REF_ACTIVE_BONUS:
+        return
+    db.users.update_one({"_id": ref}, {"$inc": {"ref_active_count": 1, "ref_earned": REF_ACTIVE_BONUS}})
+    add_points(ref, REF_ACTIVE_BONUS, "ref_active", uid)
+    send(ref, f"🔥 <b>دوستت فعال شد!</b>\n\n"
+              f"{_plain(u.get('name')) or 'دوستت'} {REF_ACTIVE_TASKS} تسک انجام داد.\n"
+              f"💰 +{REF_ACTIVE_BONUS} کوین",
+         [[btn("🎁 دعوت دوستان", "ref")]])
+
+
+def ref_text(u):
+    uid = u["_id"]
+    link = ref_link(uid)
+    total, active = int(u.get("ref_count", 0)), int(u.get("ref_active_count", 0))
+    out = ("🎁 <b>دعوت دوستان</b>\n\n"
+           "از هر دوستی که دعوت کنی دو بار پاداش می‌گیری:\n"
+           f"1️⃣ وقتی با لینکت وارد ربات بشه: <b>{REF_JOIN_BONUS}</b> کوین\n"
+           f"2️⃣ وقتی فعال بشه ({REF_ACTIVE_TASKS} تسک عضویت یا ری‌اکشن): <b>{REF_ACTIVE_BONUS}</b> کوین\n\n"
+           f"💡 هر دوست فعال در مجموع <b>{REF_JOIN_BONUS + REF_ACTIVE_BONUS}</b> کوین برات داره.\n\n"
+           f"👥 دعوت‌شده: {total}  ·  ✅ فعال: {active}\n"
+           f"💰 درآمد دعوت: <b>{int(u.get('ref_earned', 0))}</b> کوین")
+    friends = list(db.users.find({"referred_by": uid}, sort=[("joined", -1)], limit=5))
+    if friends:
+        rows = []
+        for f in friends:
+            st = "✅ فعال" if f.get("ref_active") else f"⏳ {min(int(f.get('ref_tasks', 0)), REF_ACTIVE_TASKS)}/{REF_ACTIVE_TASKS}"
+            rows.append(f"• {_plain(f.get('name')) or 'کاربر'} — {st}")
+        out += "\n\n<b>آخرین دعوت‌ها</b>\n" + "\n".join(rows)
+    if counter_get(f"refd:{uid}:{day()}") >= REF_DAILY_CAP:
+        out += "\n\n⏸ سقف پاداش ورود برای امروز پر شده؛ از فردا دوباره فعال می‌شه."
+    if link:
+        out += f"\n\n🔗 <b>لینک اختصاصی تو</b>\n<code>{link}</code>"
+    else:
+        out += "\n\n⚠️ لینک دعوت موقتاً در دسترس نیست؛ کمی بعد دوباره امتحان کن."
+    return out
+
+
+def ref_kb(uid):
+    link = ref_link(uid)
+    rows = []
+    if link:
+        share = "با تاسک‌پلاس تسک انجام بده، کوین بگیر و کانالت رو رشد بده 🚀"
+        rows.append([btn("📤 اشتراک‌گذاری لینک", url=f"https://t.me/share/url?url={quote(link, safe='')}&text={quote(share)}",
+                         style="primary")])
+    rows.append([btn("🏠 منوی اصلی", "home")])
+    return rows
+
+
 # ───────────────────────── برگشت / پرداخت / بازبینی ─────────────────────────
 def undo(comp, had_hold, strike, why):
     """لغو یک انجام: کوین معلق حذف، ظرفیت کمپین دوباره باز (یا اگه کمپین لغو شده، هزینه به صاحب برمی‌گرده)"""
@@ -809,10 +881,13 @@ def pay(comp, notify=True):
         return
     db.users.update_one({"_id": comp["uid"]}, {"$inc": {"hold": -comp["reward"], "points": comp["reward"], "earned": comp["reward"]}})
     ledger(comp["uid"], comp["reward"], "task", comp["cid"])
-    c = db.campaigns.find_one({"_id": comp["cid"]}) or {}
     if notify:
-        kb = [[btn("🎯 انجام تسک بعدی", "earn", style="success")], [btn("👤 حساب کاربری", "acc", style="primary")]]
-        send(comp["uid"], f"🎉 <b>تسکت تأیید شد!</b>\n\n💰 پاداش {comp['reward']} کوین با موفقیت به موجودی‌ات اضافه شد. ممنون از مشارکتت ❤️", kb)
+        send(comp["uid"], f"✅ <b>تسکت تأیید شد!</b>\n\n💰 {comp['reward']} کوین به موجودیت اضافه شد.",
+             [[btn("🎯 تسک بعدی", "earn"), btn("👤 حساب من", "acc")]])
+    try:
+        ref_on_task_paid(comp["uid"], comp.get("type"))
+    except Exception:
+        log.exception("ref_on_task_paid")
 
 
 def settle(comp):
@@ -893,10 +968,9 @@ def set_state(uid, step, d):
 
 def start_new(cq, uid, chat, mid):
     ans(cq)
-    t = TYPES
-    view(chat, mid, "🧩 <b>ساخت کمپین جدید</b>\n\nاول نوع فعالیتی رو انتخاب کن که می‌خوای برای کانال یا پستت سفارش بدی. هزینهٔ هر واحد قبل از ثبت نهایی بهت نمایش داده می‌شه.\n\n"
-         + "\n".join(f"{v['title']} — <b>{v['cost']} کوین</b> برای هر واحد" for v in t.values()),
-         [[btn(f"{v['title']} · {v['cost']} کوین", f"nt:{k}") for k, v in t.items()], [btn("↩️ بازگشت به منو", "home")]])
+    rows = [[btn(f"{v['title']} · {v['cost']} کوین", f"nt:{k}")] for k, v in TYPES.items()]
+    view(chat, mid, "➕ <b>ساخت کمپین</b>\n\nچه فعالیتی رو می‌خوای برای کانال یا پستت سفارش بدی؟\nهزینهٔ هر واحد روی دکمه‌ها نوشته شده.",
+         rows + [[btn("🏠 منوی اصلی", "home")]])
 
 
 def pick_type(cq, uid, chat, mid, typ):
@@ -907,11 +981,11 @@ def pick_type(cq, uid, chat, mid, typ):
     ans(cq)
     set_state(uid, "link", {"type": typ})
     if typ == "join":
-        txt = ("👥 <b>مقصد کمپین عضویت</b>\n\nیوزرنیم یا لینک عمومی کانال/گروه رو بفرست؛ مثلاً <code>@mychannel</code>.\n\n"
-               f"🛡️ برای اینکه بتونم عضویت رو بررسی کنم، ابتدا ربات <code>@{_me.get('username', '')}</code> رو در مقصد ادمین کن.")
+        txt = ("👥 <b>مقصد عضویت</b>\n\nیوزرنیم یا لینک عمومی کانال/گروه رو بفرست؛ مثلاً <code>@mychannel</code>.\n\n"
+               f"🛡️ اول ربات <code>@{_me.get('username', '')}</code> رو در مقصد ادمین کن تا بتونم عضویت‌ها رو بررسی کنم.")
     else:
-        txt = ("🔗 <b>انتخاب پست مقصد</b>\n\nلینک پست رو بفرست؛ یا اگر لینک نداره، خودِ پیام رو از کانال برای ربات فوروارد کن.\n\n"
-               "فورواردِ پست کانال معمولاً شناسهٔ دقیق پست رو مشخص می‌کنه. در گروه‌ها تلگرام ممکنه شناسهٔ پیام اصلی رو در اطلاعات فوروارد پنهان کنه؛ در این حالت برای ری‌اکشن خودکار باید لینک پست یا یوزرنیم گروه + شمارهٔ پیام رو وارد کنی.")
+        txt = ("🔗 <b>پست مقصد</b>\n\nلینک پست رو بفرست (مثلاً <code>https://t.me/channel/123</code>) یا خود پست کانال رو برای من فوروارد کن.\n\n"
+               "ℹ️ پیام‌های گروه با فوروارد قابل شناسایی نیستن؛ برای گروه حتماً لینک پیام رو بفرست.")
     view(chat, mid, txt, [[btn("❌ انصراف", "home")]])
 
 
@@ -919,9 +993,10 @@ def ask_qty(chat, d, c_cost):
     u = db.users.find_one({"_id": chat}) or {}
     mx = min(MAX_QTY, u.get("points", 0) // c_cost)
     if mx < 1:
-        return send(chat, f"موجودی‌ات ({u.get('points', 0)}) برای ثبت حتی یک واحد ({c_cost} کوین) کافی نیست. اول چند تسک انجام بده.",
-                    [[btn("🎯 انجام تسک", "earn")]])
-    send(chat, f"🔢 چند واحد می‌خوای؟ (۱ تا {mx}) — فقط عدد بفرست.", [[btn("❌ انصراف", "home")]])
+        return send(chat, f"💰 موجودیت ({u.get('points', 0)} کوین) برای ثبت حتی یک واحد ({c_cost} کوین) کافی نیست.\n"
+                          "اول چند تسک انجام بده یا با دعوت دوستان کوین بگیر.",
+                    [[btn("🎯 کسب کوین", "earn")], [btn("🎁 دعوت دوستان", "ref")]])
+    send(chat, f"🔢 چند واحد می‌خوای؟ (۱ تا {mx})\nفقط عدد بفرست.", [[btn("❌ انصراف", "home")]])
     return True
 
 
@@ -990,16 +1065,16 @@ def on_state_text(uid, chat, text, st):
             return send(chat, f"عدد باید بین ۱ تا {mx} باشه.")
         d["qty"] = q
         set_state(uid, "confirm", d)
-        how = {"join": "تأیید خودکار با عضویت‌سنجی + چک دوباره‌ی آخر دوره‌ی معلق",
+        how = {"join": "عضویت‌سنجی خودکار + بازبینی پایان دورهٔ معلق",
                "view": "تأیید زمانی (بازدید قابل راستی‌آزمایی دقیق نیست)",
-               "react": ("تأیید خودکار فردی (گروه)" if d.get("mode") == "auto" else
-                         f"تأیید شمارشی کانال؛ مهلت {d.get('window_min', 5)} دقیقه + پرداخت فوری")}[typ]
-        admin_note = ("\n👑 ادمین اجباری ربات: فعال تا پایان کمپین؛ در صورت قطع دسترسی، کمپین موقتاً متوقف می‌شود."
+               "react": ("تأیید فردی ری‌اکشن (گروه)" if d.get("mode") == "auto" else
+                         f"تأیید شمارشی کانال · مهلت {d.get('window_min', 5)} دقیقه")}[typ]
+        admin_note = ("\n👑 ربات باید تا پایان کمپین ادمین مقصد بمونه؛ در غیر این صورت کمپین موقتاً متوقف می‌شه."
                       if typ == "join" or (typ == "react" and d.get("mode") == "auto") else "")
-        return send(chat, f"📝 خلاصه‌ی تسک\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n💰 هزینه: {q * cost} کوین\n"
-                          f"🛡 تأیید: {how}{admin_note}\n\nثبت بشه؟",
+        return send(chat, f"📝 <b>خلاصهٔ کمپین</b>\n\n{TYPES[typ]['title']}\n📌 {d['title']}\n🔢 تعداد: {q}\n"
+                          f"💰 هزینه: <b>{q * cost}</b> کوین\n🛡 تأیید: {how}{admin_note}\n\nثبت بشه؟",
                     [[btn(f"✅ ثبت و کسر {q * cost} کوین", "ok")], [btn("❌ انصراف", "home")]])
-    send(chat, "از منو ادامه بده 👇", main_kb())
+    send(chat, "👇 از منو ادامه بده.", main_kb())
 
 
 def confirm_new(cq, uid, chat, mid):
@@ -1050,10 +1125,12 @@ def confirm_new(cq, uid, chat, mid):
                     "بعد از آماده شدن ویترین، می‌تونی کمپین رو دوباره ثبت کنی؛ کوین هزینه‌شده به حسابت برگشته.",
                     [[btn("📊 کمپین‌های من", "my")], [btn("🏠 منوی اصلی", "home")]])
     ans(cq, "کمپین منتشر شد")
-    msg = ("🚀 <b>کمپینت با موفقیت منتشر شد!</b>\n\n"
-           "تسک در کانال ویترین قرار گرفت و کاربران از همون‌جا وارد ربات می‌شن تا دستورالعمل رو ببینن و انجام تسک رو ثبت کنن.\n\n"
-           "🔔 پس از تأیید هر انجام، نتیجه و وضعیت واریز پاداش به کاربر داخل ربات اعلام می‌شه. وضعیت کمپینت رو هم می‌تونی از بخش «کمپین‌های من» پیگیری کنی.")
-    kb = [[btn("📣 مشاهدهٔ تسک در ویترین", url=tasks_channel_url())], [btn("📊 کمپین‌های من", "my")], [btn("🏠 منوی اصلی", "home")]]
+    msg = ("🚀 <b>کمپینت منتشر شد!</b>\n\n"
+           "تسک در کانال ویترین قرار گرفت. بعد از تأیید هر انجام، پاداش خودکار واریز می‌شه و پیشرفت کمپین رو از «📊 کمپین‌های من» می‌بینی.")
+    kb = []
+    if tasks_channel_url():
+        kb.append([btn("📣 دیدن در ویترین", url=tasks_channel_url())])
+    kb += [[btn("📊 کمپین‌های من", "my")], [btn("🏠 منوی اصلی", "home")]]
     view(chat, mid, msg, kb)
 
 
@@ -1065,7 +1142,8 @@ def my_campaigns(cq, uid, chat, mid):
 def render_my(uid, chat, mid):
     cs = list(db.campaigns.find({"owner": uid}, sort=[("created", -1)], limit=10))
     if not cs:
-        return view(chat, mid, "هنوز تسکی ثبت نکردی.", [[btn("➕ ثبت تسک جدید", "new")], [btn("🏠 منو", "home")]])
+        return view(chat, mid, "📊 <b>کمپین‌های من</b>\n\nهنوز کمپینی نساختی.",
+                    [[btn("➕ ساخت کمپین", "new")], [btn("🏠 منوی اصلی", "home")]])
     lines, kb = [], []
     for i, c in enumerate(cs, 1):
         if c.get("type") == "react" and c.get("mode") == "count":
@@ -1079,7 +1157,9 @@ def render_my(uid, chat, mid):
         lines.append(f"{i}. {TYPES[c['type']]['title']} {c['title']} — {progress} {st}")
         if c["status"] == "active" and c["remaining"] > 0:
             kb.append([btn(f"❌ لغو شماره {i}", f"x:{c['_id']}")])
-    view(chat, mid, "📋 تسک‌های من\n\n" + "\n".join(lines), kb + [[btn("🏠 منو", "home")]])
+    if db.reaction_watch.count_documents({"$or": [{"owner": uid}, {"owners": uid}]}):
+        kb.append([btn("📡 پایش ری‌اکشن‌ها", "rwatch")])
+    view(chat, mid, "📊 <b>کمپین‌های من</b>\n\n" + "\n".join(lines), kb + [[btn("🏠 منوی اصلی", "home")]])
 
 
 def cancel_campaign(cq, uid, chat, mid, cid_s, sure):
@@ -1109,8 +1189,11 @@ def admin_cmd(uid, chat, cmd, args):
         return send(chat, reaction_watch_text(uid, all_admin=True))
     if cmd == "stats":
         by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "paid", "reversed")}
+        refs = db.users.count_documents({"referred_by": {"$exists": True}})
+        refs_active = db.users.count_documents({"ref_active": True})
         return send(chat, f"📊 کاربران: {db.users.count_documents({})}\nکمپین فعال: {db.campaigns.count_documents({'status': 'active'})}\n"
-                          + "\n".join(f"{k}: {v}" for k, v in by.items()))
+                          + "\n".join(f"{k}: {v}" for k, v in by.items())
+                          + f"\nدعوت‌شده‌ها: {refs} (فعال: {refs_active})")
     if cmd == "give" and len(args) == 2 and args[1].lstrip("-").isdigit():
         add_points(int(args[0]), int(args[1]), "admin")
         return send(chat, "انجام شد.")
@@ -1173,19 +1256,19 @@ def open_linked_task(uid, chat, cid_s):
     else:
         ses = {"t": time.time()}
     db.sessions.update_one({"_id": f"{uid}:{cid}"}, {"$set": ses}, upsert=True)
-    return send(chat, "<b>ثبت انجام تسک</b>\n\n"
-                "اگر کار را در کانال کامل کرده‌ای" +
-                (" و ری‌اکشن خواسته‌شده را زده‌ای" if c.get("type") == "react" else "") +
-                "، درخواستت را ثبت کن.\n\n"
-                "درخواست پس از بررسی تأیید یا رد می‌شود و نتیجه همین‌جا اعلام خواهد شد.",
+    return send(chat, "🎁 <b>دریافت پاداش</b>\n\n"
+                "اگه تسک رو در کانال انجام دادی" +
+                (" و ری‌اکشن رو زدی" if c.get("type") == "react" else "") +
+                "، «انجام دادم» رو بزن. بعد از بررسی، نتیجه همین‌جا اعلام می‌شه.",
                 [[btn("✅ انجام دادم", f"c:{cid}", style="success")],
-                 [btn("↩️ بازگشت به انجام مأموریت", url=link_of(c), style="primary")]])
+                 [btn("↩️ بازگشت به مقصد", url=link_of(c), style="primary")]])
 
 
 def on_message(msg):
     if msg["chat"]["type"] != "private" or "from" not in msg:
         return
     uid, chat = msg["from"]["id"], msg["chat"]["id"]
+    existed = db.users.find_one({"_id": uid}, {"_id": 1}) is not None
     u = ensure_user(msg["from"])
     text = (msg.get("text") or "").strip()
     if text.startswith("/"):
@@ -1195,9 +1278,13 @@ def on_message(msg):
             db.states.delete_one({"_id": uid})
             if cmd == "start" and args and args[0].startswith("task_"):
                 return open_linked_task(uid, chat, args[0][5:])
+            if cmd == "start" and args and args[0].startswith("ref_") and not existed:
+                ref_register(uid, args[0][4:], msg["from"].get("first_name"))
             return send(chat, menu_text(u), main_kb())
         if cmd == "help":
             return send(chat, help_text(), HOME_KB)
+        if cmd in ("invite", "ref"):
+            return send(chat, ref_text(u), ref_kb(uid))
         if uid in ADMINS:
             return admin_cmd(uid, chat, cmd, args)
         return send(chat, menu_text(u), main_kb())
@@ -1238,18 +1325,13 @@ def on_callback(cq):
         return view(chat, mid, help_text(), HOME_KB)
     if data == "acc":
         ans(cq)
-        return view(chat, mid, acc_text(u), HOME_KB)
+        return view(chat, mid, acc_text(u), acc_kb())
     if data == "earn":
         ans(cq)
-        ch_url = tasks_channel_url()
-        if ch_url:
-            return view(chat, mid, "📣 <b>تسک‌ها فقط در کانال انجام می‌شن</b>\n\nاز کانال، پست موردنظرت رو باز کن و تسک رو همون‌جا انجام بده. بعد روی «🎁 دریافت پاداش» بزن تا درخواستت در ربات ثبت بشه.",
-                        [[btn("📣 مشاهده تسک‌های کانال", url=ch_url, style="primary")], [btn("🏠 منوی اصلی", "home")]])
-        return view(chat, mid, "⚠️ کانال تسک‌ها هنوز تنظیم نشده. لطفاً بعداً دوباره تلاش کن.", HOME_KB)
-    if data.startswith("nx:"):
-        ans(cq)
-        db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
         return show_task(uid, chat, mid)
+    if data == "ref":
+        ans(cq)
+        return view(chat, mid, ref_text(u), ref_kb(uid))
     if data.startswith("rp:"):
         cid_s = data[3:]
         try:
@@ -1289,7 +1371,7 @@ def on_callback(cq):
         return my_campaigns(cq, uid, chat, mid)
     if data == "rwatch":
         ans(cq)
-        return view(chat, mid, reaction_watch_text(uid), [[btn("🔄 بروزرسانی", "rwatch")], [btn("🏠 منو", "home")]])
+        return view(chat, mid, reaction_watch_text(uid), [[btn("🔄 به‌روزرسانی", "rwatch")], [btn("↩️ کمپین‌های من", "my")]])
     if data.startswith("rw:"):
         return choose_reaction_window(cq, uid, chat, mid, data[3:])
     if data.startswith("x:"):
@@ -1439,9 +1521,9 @@ def setup():
     bot_id()
     r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
            allowed_updates=["message", "callback_query", "message_reaction", "message_reaction_count"])
-    tg("setMyCommands", commands=[{"command": "start", "description": "شروع و منوی اصلی"},
-                                   {"command": "help", "description": "راهنمای استفاده"},
-                                   {"command": "reactwatch", "description": "پایش شمارش ری‌اکشن‌ها (ادمین)"}])
+    tg("setMyCommands", commands=[{"command": "start", "description": "منوی اصلی"},
+                                   {"command": "invite", "description": "دعوت دوستان و پاداش"},
+                                   {"command": "help", "description": "راهنما"}])
     log.info("webhook: %s", r)
     if TASKS_CHANNEL:
         log.info("TASKS_CHANNEL configured: %s", TASKS_CHANNEL)
