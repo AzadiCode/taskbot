@@ -802,7 +802,10 @@ def set_state(uid, step, d):
 
 # ═════════════════════════════ UI builders ═════════════════════════════
 def main_kb(lang):
-    return [[B(tb(lang, "b_earn"), "earn", "primary")],
+    # Direct URL button for Earn Stars when the showcase URL is configured.
+    showcase_url = tasks_channel_url()
+    earn_button = U(tb(lang, "b_earn"), showcase_url, "primary") if showcase_url else B(tb(lang, "b_earn"), "earn", "primary")
+    return [[earn_button],
             [B(tb(lang, "b_my"), "campaigns", "success")],
             [B(tb(lang, "b_acc"), "acc")]]
 
@@ -1988,7 +1991,7 @@ def on_callback(cq):
         return view(chat, mid, acc_text(u), acc_kb(lang))
     if data == "campaigns":
         ans(cq)
-        return view(chat, mid, "<b>" + ("Campaign management" if lang == "en" else "مدیریت کمپین‌ها") + "</b>\\n\\n" +
+        return view(chat, mid, "<b>" + ("Campaign management" if lang == "en" else "مدیریت کمپین‌ها") + "</b>\n\n" +
                     ("Create a campaign or review your existing campaigns." if lang == "en" else "کمپین جدید بسازید یا وضعیت کمپین‌های خود را بررسی کنید."),
                     campaigns_kb(lang))
     if data == "earn":
