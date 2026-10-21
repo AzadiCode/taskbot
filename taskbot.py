@@ -456,13 +456,13 @@ def campaign_listing_keyboard(c):
     if not available:
         return [[btn("🔴 تکمیل شده", "noop", style="danger")]]
     rows = []
-    # دکمهٔ مقصد callback است تا کلیک اول/دوم هر کاربر ثبت شود؛ بعد از کلیک دوم
-    # لینک مستقیم تلگرام در پیام خصوصی فرستاده می‌شود (بدون لینک واسط مرورگر).
-    if link_of(c):
-        rows.append(btn("🔵 رفتن به پست مقصد", f"go:{c['_id']}", style="primary"))
-    deep = bot_deep_link(c.get("_id"))
-    if deep:
-        rows.append(btn("🎁 دریافت پاداش", url=deep, style="success"))
+    # دکمهٔ آبی همیشه مستقیماً پست/مقصد تلگرام را باز می‌کند.
+    target_link = link_of(c)
+    if target_link:
+        rows.append(btn("🔵 رفتن به پست مقصد", url=target_link, style="primary"))
+    # دکمهٔ پاداش callback است تا تأخیر اجباری قبل از ورود به صفحهٔ دریافت پاداش اعمال شود.
+    if bot_deep_link(c.get("_id")):
+        rows.append(btn("🎁 دریافت پاداش", f"rp:{c['_id']}", style="success"))
     return [rows] if rows else []
 
 
@@ -480,9 +480,7 @@ def publish_campaign(c):
     listed_at = time.time()
     db.campaigns.update_one({"_id": c["_id"]}, {"$set": {"listing_chat_id": result.get("chat", {}).get("id"),
                                                               "listing_message_id": result.get("message_id"),
-                                                              "listed_at": listed_at,
-                                                              "reward_reveal_at": listed_at + 5,
-                                                              "reward_button_shown": False}})
+                                                              "listed_at": listed_at}})
     return True
 
 
@@ -853,27 +851,6 @@ _last = {"clean": 0}
 
 def tick():
     t = time.time()
-    # مهاجرت پست‌های قدیمی: نسخه‌های قبلی ممکن است اصلاً reward_reveal_at نداشته باشند.
-    # برای آگهی‌هایی که قبلاً در کانال منتشر شده‌اند، دکمه را همین حالا قابل نمایش می‌کنیم.
-    try:
-        db.campaigns.update_many(
-            {"listing_chat_id": {"$exists": True}, "listing_message_id": {"$exists": True},
-             "reward_button_shown": {"$ne": True}, "reward_reveal_at": {"$exists": False}},
-            {"$set": {"reward_reveal_at": t}}
-        )
-    except Exception:
-        log.exception("legacy listing reward migration")
-    # نمایش دکمهٔ پاداش ۵ ثانیه پس از انتشار؛ ابتدا وضعیت ثبت می‌شود تا کیبورد شامل دکمه باشد.
-    due_listings = db.campaigns.find({"reward_reveal_at": {"$lte": t}, "reward_button_shown": {"$ne": True}},
-                                     {"_id": 1, "listing_chat_id": 1, "listing_message_id": 1})
-    for item in due_listings:
-        try:
-            changed = db.campaigns.update_one({"_id": item["_id"], "reward_button_shown": {"$ne": True}},
-                                              {"$set": {"reward_button_shown": True}})
-            if changed.modified_count:
-                refresh_campaign_listing(item["_id"])
-        except Exception:
-            log.exception("delayed reward button update")
     monitor_campaign_admins(t)
     expire_count_claims(t)
     db.completions.update_many({"status": "settling", "lock": {"$lt": t - 600}}, {"$set": {"status": "pending"}})
@@ -1273,10 +1250,8 @@ def on_callback(cq):
         ans(cq)
         db.users.update_one({"_id": uid}, {"$push": {"skip": {"$each": [data[3:]], "$slice": -30}}})
         return show_task(uid, chat, mid)
-    if data.startswith("go:"):
+    if data.startswith("rp:"):
         cid_s = data[3:]
-        # شناسهٔ کمپین در MongoDB از نوع ObjectId است؛ callback آن را به شکل رشته می‌فرستد.
-        # تبدیل نکردن رشته به ObjectId باعث می‌شد حتی کمپین فعال هم «غیرفعال» دیده شود.
         try:
             cid = ObjectId(cid_s)
         except (InvalidId, TypeError):
@@ -1284,27 +1259,24 @@ def on_callback(cq):
         c = db.campaigns.find_one({"_id": cid})
         if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
             return ans(cq, "این تسک دیگر فعال نیست.", True)
-        target_link = link_of(c)
-        if not target_link or not target_link.startswith(("https://t.me/", "http://t.me/", "https://telegram.me/", "http://telegram.me/")):
-            return ans(cq, "لینک مقصد معتبر نیست.", True)
-        click_id = f"{cid}:{uid}"
-        click = db.campaign_clicks.find_one({"_id": click_id})
+        deep = bot_deep_link(cid)
+        if not deep:
+            return ans(cq, "لینک ورود به صفحهٔ دریافت پاداش در دسترس نیست.", True)
+        # تأخیر برای هر کاربر و هر تسک جداگانه است و فقط روی دکمهٔ پاداش اعمال می‌شود.
+        click_id = f"reward:{cid}:{uid}"
         now = time.time()
+        click = db.campaign_clicks.find_one({"_id": click_id})
         if not click:
-            db.campaign_clicks.update_one({"_id": click_id}, {"$set": {"first_click_at": now}}, upsert=True)
-            return ans(cq, "چند ثانیه صبر کن و مطمئن شو پست رو دیدی؛ بعد دوباره همین دکمه رو بزن.", True)
+            db.campaign_clicks.update_one(
+                {"_id": click_id}, {"$set": {"first_click_at": now}}, upsert=True
+            )
+            return ans(cq, "برای ثبت بازدید، ۵ ثانیه صبر کن و مطمئن شو تسک رو دیدی؛ بعد دوباره روی «🎁 دریافت پاداش» بزن.", True)
         first_at = float(click.get("first_click_at", now))
         remaining_wait = 5 - (now - first_at)
         if remaining_wait > 0:
-            return ans(cq, f"هنوز {int(remaining_wait + 0.999)} ثانیه صبر کن؛ بعد دوباره بزن.", True)
-        # answerCallbackQuery نمی‌تواند یک لینک دلخواه را مستقیماً باز کند؛ لینک مستقیم
-        # پست را در پیام خصوصی می‌فرستیم تا کاربر بدون واسطهٔ مرورگر بازش کند.
-        sent = send(uid, "🔵 برای باز کردن مستقیم پست مقصد روی دکمهٔ زیر بزن:",
-                    [[btn("🔵 باز کردن پست مقصد", url=target_link)]])
-        if sent and sent.get("ok"):
-            db.campaign_clicks.update_one({"_id": click_id}, {"$set": {"last_open_link_at": now}})
-            return ans(cq, "لینک مستقیم پست رو در پیام خصوصی فرستادم.")
-        return ans(cq, "برای دریافت لینک مستقیم، اول وارد گفت‌وگوی خصوصی ربات شو و Start رو بزن؛ بعد دوباره تلاش کن.", True)
+            return ans(cq, f"هنوز {int(remaining_wait + 0.999)} ثانیه صبر کن؛ بعد دوباره روی «🎁 دریافت پاداش» بزن.", True)
+        # لینک deep-link معتبر تلگرام از طریق answerCallbackQuery باز می‌شود؛ مرورگر واسطه‌ای نداریم.
+        return ans(cq, url=deep)
     if data.startswith("c:"):
         return on_claim(cq, uid, chat, mid, data[2:])
     if data == "new":
