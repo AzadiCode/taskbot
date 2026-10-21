@@ -981,9 +981,12 @@ def campaign_listing_text(c):
         ins = "ins_view"
     else:
         ins = "ins_other"
+    # Strong, recognizable task headings in the public showcase post.
+    heading_keys = {"join": "tn_join", "react": "tn_react", "view": "tn_view"}
     blocks = []
     for lang in ("en", "fa"):
-        blocks.append(str(t(lang, "listing", type=tn(lang, typ) if typ in TYPES else tb(lang, "campaign_fallback"),
+        heading = tb(lang, heading_keys[typ]) if typ in heading_keys else tb(lang, "campaign_fallback")
+        blocks.append(str(t(lang, "listing", type=H("<b>" + html.escape(heading) + "</b>"),
                             target=ctitle(c), reward=c.get("reward", 0), remaining=remaining,
                             state=K(campaign_state_key(c)),
                             instruction=t(lang, ins, window=int(c.get("window_min", 5))))))
@@ -1130,7 +1133,7 @@ def latest_task_post_url():
     """Return a direct link to the newest published task post in the showcase channel."""
     latest = db.campaigns.find_one(
         {"listing_chat_id": {"$exists": True}, "listing_message_id": {"$exists": True}},
-        sort=[("listed_at", -1), ("listing_message_id", -1)]
+        sort=[("listing_message_id", -1), ("listed_at", -1)]
     )
     if not latest:
         return tasks_channel_url()
