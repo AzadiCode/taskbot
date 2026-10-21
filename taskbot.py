@@ -267,8 +267,8 @@ S = {
     "b_share": ("Share link", "اشتراک‌گذاری لینک"),
     "b_done": ("I have completed it", "انجام دادم"),
     "b_back_target": ("Back to destination", "بازگشت به مقصد"),
-    "b_target": ("Go to target", "رفتن به مقصد"),
-    "b_claim": ("Claim reward", "دریافت پاداش"),
+    "b_target": ("🎯 Target", "🎯 مقصد"),
+    "b_claim": ("🎁 Claim", "🎁 دریافت پاداش"),
     "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
     "b_yes_cancel": ("Yes, cancel campaign", "بله، کمپین لغو شود"),
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
@@ -958,7 +958,7 @@ def campaign_state_key(c):
 
 
 def campaign_listing_text(c):
-    """Public post: English block first, Persian block second."""
+    """Public post: concise Persian block first, then English translation."""
     typ = c.get("type")
     remaining = max(0, int(c.get("remaining", 0)))
     if typ == "react" and c.get("mode") == "count":
@@ -977,7 +977,7 @@ def campaign_listing_text(c):
                             target=ctitle(c), reward=c.get("reward", 0), remaining=remaining,
                             state=K(campaign_state_key(c)),
                             instruction=t(lang, ins, window=int(c.get("window_min", 5))))))
-    return blocks[0] + "\n\n" + HR + "\n\n" + blocks[1]
+    return blocks[1] + "\n────────\n" + blocks[0]
 
 
 def campaign_listing_keyboard(c):
