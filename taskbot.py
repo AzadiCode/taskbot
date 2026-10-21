@@ -823,11 +823,13 @@ def campaigns_kb(lang):
 
 
 def home_kb(lang):
-    return [[B(tb(lang, "b_menu"), "home")]]
+    # Help/account-related screens should return to Account, not reset to the main menu.
+    return [[B(tb(lang, "b_back"), "acc")]]
 
 
 def cancel_kb(lang):
-    return [[B(tb(lang, "b_cancel"), "home", "danger")]]
+    # Campaign creation flow: cancel/back returns to Campaign management.
+    return [[B(tb(lang, "b_cancel"), "campaigns", "danger")]]
 
 
 def lang_kb():
@@ -926,7 +928,7 @@ def ref_kb(uid, lang):
     if link:
         rows.append([U(tb(lang, "b_share"),
                        f"https://t.me/share/url?url={quote(link, safe='')}&text={quote(tb(lang, 'share_text'))}", "primary")])
-    rows.append([B(tb(lang, "b_menu"), "home")])
+    rows.append([B(tb(lang, "b_back"), "acc")])
     return rows
 
 
@@ -1073,9 +1075,9 @@ def show_task(lang, chat, mid=None):
     """Earning always starts from the showcase channel."""
     url = tasks_channel_url()
     if not url:
-        return view(chat, mid, t(lang, "earn_unset"), home_kb(lang))
+        return view(chat, mid, t(lang, "earn_unset"), [[B(tb(lang, "b_back"), "earn")]])
     return view(chat, mid, t(lang, "earn"),
-                [[U(tb(lang, "b_showcase"), url, "primary")], [B(tb(lang, "b_menu"), "home")]])
+                [[U(tb(lang, "b_showcase"), url, "primary")], [B(tb(lang, "b_back"), "earn")]])
 
 
 def grant(uid, c, status, extra=None):
@@ -1117,7 +1119,7 @@ def settle_instantly(comp, **extra):
 
 
 def next_kb(lang):
-    return [[B(tb(lang, "b_next"), "earn", "success"), B(tb(lang, "b_acc"), "acc")], [B(tb(lang, "b_menu"), "home")]]
+    return [[B(tb(lang, "b_next"), "earn", "success"), B(tb(lang, "b_acc"), "acc")], [B(tb(lang, "b_back"), "earn")]]
 
 
 def on_claim(cq, uid, chat, mid, cid_s):
@@ -1187,7 +1189,7 @@ def on_claim(cq, uid, chat, mid, cid_s):
             return view(chat, mid, t(lang, "count_ok"), next_kb(lang))
         return view(chat, mid, t(lang, "count_pending", reward=c["reward"], window=window_min,
                                  grace=REACTION_UPDATE_GRACE // 60),
-                    [[U(tb(lang, "b_back_target"), link_of(c), "primary")], [B(tb(lang, "b_menu"), "home")]])
+                    [[U(tb(lang, "b_back_target"), link_of(c), "primary")], [B(tb(lang, "b_back"), "earn")]])
 
     # Join / group-reaction are verified right now, and views after the waiting time: pay immediately.
     code, comp = grant(uid, c, "pending")
@@ -1646,7 +1648,7 @@ def needs_admin_mode(typ, mode):
 def start_new(cq, lang, chat, mid):
     ans(cq)
     rows = [[B(tb(lang, "type_btn", name=tn(lang, k), cost=v["cost"]), f"nt:{k}")] for k, v in TYPES.items()]
-    view(chat, mid, t(lang, "new"), rows + [[B(tb(lang, "b_menu"), "home")]])
+    view(chat, mid, t(lang, "new"), rows + [[B(tb(lang, "b_back"), "campaigns")]])
 
 
 def pick_type(cq, uid, lang, chat, mid, typ):
@@ -1816,12 +1818,12 @@ def confirm_new(cq, uid, lang, chat, mid):
         add_points(uid, total_cost, "refund", campaign["_id"])
         ans(cq, tb(lang, "a_showcase_down"), True)
         return view(chat, mid, t(lang, "publish_failed"),
-                    [[B(tb(lang, "b_my"), "my")], [B(tb(lang, "b_menu"), "home")]])
+                    [[B(tb(lang, "b_my"), "my")], [B(tb(lang, "b_back"), "campaigns")]])
     ans(cq, tb(lang, "a_published"))
     kb = []
     if tasks_channel_url():
         kb.append([U(tb(lang, "b_view_showcase"), tasks_channel_url(), "primary")])
-    kb += [[B(tb(lang, "b_my"), "my")], [B(tb(lang, "b_menu"), "home")]]
+    kb += [[B(tb(lang, "b_my"), "my")], [B(tb(lang, "b_back"), "campaigns")]]
     view(chat, mid, t(lang, "published"), kb)
 
 
@@ -1853,7 +1855,7 @@ def render_my(uid, lang, chat, mid):
             kb.append([B(tb(lang, "b_cancel_n", n=i), f"x:{c['_id']}", "danger")])
     if db.reaction_watch.count_documents({"$or": [{"owner": uid}, {"owners": uid}]}):
         kb.append([B(tb(lang, "b_watch"), "rwatch")])
-    view(chat, mid, t(lang, "my", rows=H("\n\n".join(rows))), kb + [[B(tb(lang, "b_menu"), "home")]])
+    view(chat, mid, t(lang, "my", rows=H("\n\n".join(rows))), kb + [[B(tb(lang, "b_back"), "campaigns")]])
 
 
 def cancel_campaign(cq, uid, lang, chat, mid, cid_s, sure):
