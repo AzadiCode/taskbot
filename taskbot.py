@@ -267,8 +267,8 @@ S = {
     "b_share": ("Share link", "اشتراک‌گذاری لینک"),
     "b_done": ("I have completed it", "انجام دادم"),
     "b_back_target": ("Back to destination", "بازگشت به مقصد"),
-    "b_target": ("🎯 Target", "🎯 مقصد"),
-    "b_claim": ("🎁 Claim", "🎁 پاداش"),
+    "b_target": ("🎯 Target", "مقصد"),
+    "b_claim": ("🎁 Claim", "پاداش"),
     "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
     "b_yes_cancel": ("Yes, cancel campaign", "بله، کمپین لغو شود"),
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
@@ -314,11 +314,11 @@ S = {
 
     # ───────── Core screens ─────────
     "menu": (
-        "<b>TaskPlus</b>\n<i>Task exchange for Telegram channels and groups</i>\n\n"
-        "<blockquote><b>Balance:</b> <code>{points}</code> Stars{hold}</blockquote>\n\n"
+        "<b>Grameeting👁‍🗨</b>\n<i>Task exchange for Telegram channels and groups</i>\n\n"
+        "<blockquote><b>Balance:</b> <code>{points}</code> Stars⭐{hold}</blockquote>\n\n"
         "Welcome, {name}. Complete tasks to earn Stars, then spend them on campaigns that grow your own channel.",
-        "<b>تاسک‌پلاس</b>\n<i>سامانه‌ی تبادل تسک برای کانال‌ها و گروه‌های تلگرام</i>\n\n"
-        "<blockquote><b>موجودی:</b> <code>{points}</code> استارز{hold}</blockquote>\n\n"
+        "<b>Grameeting👁‍🗨</b>\nپلتفرم نوین عضوگیری . ریکشن پست . و ویو سریع حرفه ای و رایگان برای تمامی کانال‌ها و گروه‌های تلگرام\n"
+        "<blockquote><b>موجودی:</b> <code>{points}</code> استارز⭐{hold}</blockquote>\n\n"
         "{name} گرامی، خوش آمدید. با انجام تسک استارز کسب کنید و از آن برای رشد کانال خود استفاده نمایید."),
     "hold_line": ("\n<b>Pending:</b> <code>{hold}</code> Stars", "\n<b>در انتظار تأیید:</b> <code>{hold}</code> استارز"),
 
@@ -680,9 +680,9 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> ⭐ Stars\n"
+        "<b>{type}</b> · {target}\n\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> Stars⭐\n"
         "👥 <b>Remaining spots:</b> <code>{remaining}</code>\n📌 <b>Status:</b> {state}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> ⭐ استارز\n"
+        "<b>{type}</b> · {target}\n\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
         "👥 <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n📌 <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
                   "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
