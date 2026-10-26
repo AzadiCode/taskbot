@@ -49,7 +49,7 @@ ADMINS = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""))}
 TASKS_CHANNEL = os.environ.get("TASKS_CHANNEL", "").strip()        # e.g. @MyTasksChannel (bot must be admin)
 TASKS_CHANNEL_URL = os.environ.get("TASKS_CHANNEL_URL", "").strip()
 
-START_POINTS = int(os.environ.get("START_POINTS", "20"))
+START_POINTS = int(os.environ.get("START_POINTS", "13"))
 HOLD_HOURS = float(os.environ.get("HOLD_HOURS", "24"))
 DAILY_TASKS = int(os.environ.get("DAILY_TASKS", "60"))
 STRIKE_LIMIT = int(os.environ.get("STRIKE_LIMIT", "3"))
