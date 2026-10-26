@@ -25,6 +25,10 @@ BOT_TOKEN, BASE_URL, MONGO_URI, SECRET_KEY, ADMIN_IDS, TASKS_CHANNEL, TASKS_CHAN
 START_POINTS, HOLD_HOURS, DAILY_TASKS, STRIKE_LIMIT, REF_JOIN_BONUS, REF_ACTIVE_BONUS,
 REF_ACTIVE_TASKS, REF_DAILY_CAP, MAX_QTY, MAX_ACTIVE, REACTION_UPDATE_GRACE,
 REACTION_BASELINE_MAX_AGE, ADMIN_MONITOR_INTERVAL
+
+Growth engine (v52) — optional env / متغیرهای اختیاری رشد:
+DAILY_REWARDS="1,1,2,2,3,3,5"  WEEKLY_PRIZES="30,20,10"  REF_WELCOME_BONUS=5  REF_HOURLY_MAX=12
+GOLDEN_HOUR="17-19" (UTC, خالی = غیرفعال)  GOLDEN_MULT=2  REMINDERS=1  REMIND_HOURS="5-18" (UTC)  DAILY_REPORT_HOUR=17
 """
 import os, re, time, html, hashlib, random, logging, threading
 
@@ -58,7 +62,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v51-admin-panel-paged-activity"
+VERSION = "v52-growth-engine"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -257,7 +261,7 @@ S = {
     "b_cancel": ("Cancel", "⭕️ انصراف"),
     "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
     "b_new": ("➕ Create campaign", "➕ ایجاد کمپین"),
-    "b_my": ("📊 Campaigns", "📊 مدیریت کمپین‌ها"),
+    "b_my": ("📣 Grow my channel", "📣 رشد کانال من"),
     "b_mine": ("📋 My campaigns", "📋 کمپین‌های من"),
     "b_ref": ("🎁 Compound Rewards+", "🎁 پاداش مرکب+"),
     "b_acc": ("👤 Account", "👤 حساب کاربری"),
@@ -301,8 +305,8 @@ S = {
     "lbl_paid": ("Paid reaction", "واکنش پولی"),
     "user_fallback": ("A user", "یک کاربر"),
     "campaign_fallback": ("Campaign", "کمپین"),
-    "share_text": ("Complete tasks on TaskPlus, earn Stars and grow your channel.",
-                   "در تاسک‌پلاس تسک انجام دهید، استارز کسب کنید و کانال خود را رشد دهید."),
+    "share_text": ("🎁 Free Stars every day! Complete easy tasks, collect daily gifts and grow your channel on autopilot with TaskPlus.",
+                   "🎁 هر روز استارز رایگان! با انجام تسک‌های ساده و هدیه‌ی روزانه، کانال خود را در تاسک‌پلاس به‌صورت خودکار رشد دهید."),
 
     # ───────── Failure reasons (used inside notifications) ─────────
     "r_stopped": ("The campaign was stopped before verification and the spot was returned.",
@@ -338,6 +342,9 @@ S = {
         "<b>Invite friends</b>\n"
         "<blockquote>Earn {ref_join} Stars when a friend joins, and {ref_active} more once they become active "
         "({ref_tasks} verified join or reaction tasks).</blockquote>\n"
+        "<b>Daily rewards</b>\n"
+        "<blockquote>🎁 Collect the daily gift every day — streaks pay more. 🎰 Finish one task to unlock a free lucky-wheel spin. "
+        "🏆 Top earners and top inviters win weekly prizes, and levels unlock bigger gifts and higher daily limits.</blockquote>\n"
         "<b>Rules</b>\n"
         "<blockquote>Each campaign counts once per person. Leaving a channel or removing a reaction during the "
         "{hold_h}-hour review period reverses the reward and adds one warning. After {strike_limit} warnings, "
@@ -357,6 +364,9 @@ S = {
         "<b>دعوت از دوستان</b>\n"
         "<blockquote>با ورود هر دوست {ref_join} استارز و پس از فعال شدن او ({ref_tasks} تسک عضویت یا واکنش تأییدشده) "
         "{ref_active} استارز دیگر دریافت می‌کنید.</blockquote>\n"
+        "<b>پاداش‌های روزانه</b>\n"
+        "<blockquote>🎁 هر روز هدیه‌ی روزانه را بگیرید؛ استریک بلندتر، پاداش بیشتر. 🎰 با انجام یک تسک، چرخش رایگان گردونه‌ی شانس باز می‌شود. "
+        "🏆 برترین‌های هفته در درآمد و دعوت جایزه می‌گیرند و سطح‌های بالاتر هدیه‌ی بزرگ‌تر و سقف تسک بیشتری دارند.</blockquote>\n"
         "<b>قوانین</b>\n"
         "<blockquote>هر کمپین برای هر نفر فقط یک بار محاسبه می‌شود. خروج از کانال یا حذف واکنش در دوره‌ی بررسی "
         "({hold_h} ساعت) موجب برگشت پاداش و ثبت یک اخطار می‌شود. پس از {strike_limit} اخطار، انجام تسک غیرفعال خواهد شد.</blockquote>\n"
@@ -754,7 +764,7 @@ def track_user_event(uid, action, detail=""):
         now = time.time()
         label = str(detail or "")[:120]
         db.user_events.insert_one({"uid": int(uid), "action": str(action)[:40], "detail": label, "t": now})
-        db.users.update_one({"_id": int(uid)}, {"$set": {"last_seen": now, "last_action": str(action)[:40]}})
+        db.users.update_one({"_id": int(uid)}, {"$set": {"last_seen": now, "last_action": str(action)[:40], "remind_miss": 0, "blocked": False}})
     except Exception:
         log.exception("failed to track user event uid=%s action=%s", uid, action)
 
@@ -773,7 +783,7 @@ def admin_home_keyboard(lang):
     return [
         [B("📊 آمار کلی" if fa else "📊 Overview", "ad:stats", "primary")],
         [B("👥 کاربران" if fa else "👥 Users", "ad:users:0"), B("🔎 جست‌وجو" if fa else "🔎 Search", "ad:search")],
-        [B("📣 کمپین‌ها" if fa else "📣 Campaigns", "ad:campaigns:0")],
+        [B("📣 کمپین‌ها" if fa else "📣 Campaigns", "ad:campaigns:0"), B("📢 همه‌پیامی" if fa else "📢 Broadcast", "ad:bc")],
         [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0")],
         [B("↩️ بازگشت به منو" if fa else "↩️ Main menu", "home")],
     ]
@@ -1063,25 +1073,32 @@ def set_state(uid, step, d):
 
 # ═════════════════════════════ UI builders ═════════════════════════════
 def main_kb(lang, uid=None):
-    # Earn Stars uses a callback so membership is checked at click time.
+    # Earn Stars uses a callback so membership is checked at click time. Four focused buttons only.
+    ready = True
+    if uid is not None:
+        ready = (db.users.find_one({"_id": int(uid)}, {"daily_last": 1}) or {}).get("daily_last") != day()
     rows = [[B(tb(lang, "b_earn"), "earn", "primary")],
-            [B(tb(lang, "b_my"), "campaigns", "success")],
-            [B(tb(lang, "b_acc"), "acc")]]
+            [B(tb(lang, "b_gift_ready" if ready else "b_gift"), "gift", "success" if ready else None), B(tb(lang, "b_top"), "top")],
+            [B(tb(lang, "b_my"), "campaigns"), B(tb(lang, "b_acc"), "acc")]]
     if uid is not None and int(uid) in ADMINS:
         rows.append([B("🛡 پنل مدیریت" if lang == "fa" else "🛡 Admin panel", "ad:home", "danger")])
     return rows
 
 
-def account_kb(lang):
-    return [[B(tb(lang, "b_ref"), "ref", "success")],
+def account_kb(lang, uid=None):
+    off = bool((db.users.find_one({"_id": int(uid)}, {"remind_off": 1}) or {}).get("remind_off")) if uid is not None else False
+    return [[B(tb(lang, "b_ref"), "ref", "success"), B(tb(lang, "b_ach"), "ach")],
+            [B(tb(lang, "b_rm_off" if off else "b_rm_on"), "rm")],
             [B(tb(lang, "b_help"), "help"), B(tb(lang, "b_lang"), "lang")],
             [B(tb(lang, "b_menu"), "home")]]
 
 
-def campaigns_kb(lang):
-    return [[B(tb(lang, "b_new"), "new", "primary")],
-            [B(tb(lang, "b_mine"), "my")],
-            [B(tb(lang, "b_menu"), "home")]]
+def campaigns_kb(lang, uid=None):
+    rows = [[B(tb(lang, "b_new"), "new", "primary")]]
+    last = (db.users.find_one({"_id": int(uid)}, {"last_join": 1}) or {}).get("last_join") if uid is not None else None
+    if last:
+        rows.append([B(tb(lang, "b_repeat", name=last), "rep", "success")])      # one-tap repeat of the last join campaign
+    return rows + [[B(tb(lang, "b_mine"), "my")], [B(tb(lang, "b_menu"), "home")]]
 
 
 def home_kb(lang):
@@ -1140,7 +1157,7 @@ def menu_text(u):
     lang = lang_of(u)
     hold = t(lang, "hold_line", hold=u["hold"]) if u.get("hold") else H("")
     name = short(u.get("name"), 30) or tb(lang, "friend")
-    return t(lang, "menu", name=name, points=u.get("points", 0), hold=hold)
+    return H(str(t(lang, "menu", name=name, points=u.get("points", 0), hold=hold)) + growth_menu_extra(u, lang))
 
 
 def help_text(lang):
@@ -1153,13 +1170,14 @@ def acc_text(u):
     lang = lang_of(u)
     active = db.campaigns.count_documents({"owner": u["_id"], "status": "active"})
     hold = t(lang, "hold_line", hold=u["hold"]) if u.get("hold") else H("")
-    return t(lang, "account", points=u.get("points", 0), hold=hold, earned=u.get("earned", 0),
+    base = t(lang, "account", points=u.get("points", 0), hold=hold, earned=u.get("earned", 0),
              refs=u.get("ref_count", 0), ref_active=u.get("ref_active_count", 0), active=active,
              max_active=MAX_ACTIVE, strikes=u.get("strikes", 0), strike_limit=STRIKE_LIMIT)
+    return H(str(base) + "\n" + growth_acc_extra(u, lang))
 
 
-def acc_kb(lang):
-    return account_kb(lang)
+def acc_kb(lang, uid=None):
+    return account_kb(lang, uid)
 
 
 def ref_text(u):
@@ -1178,10 +1196,11 @@ def ref_text(u):
         friends_html = t(lang, "ref_friends", rows=H("\n".join(rows)))
     cap = t(lang, "ref_cap") if counter_get(f"refd:{uid}:{day()}") >= REF_DAILY_CAP else H("")
     link_html = H(f"<code>{html.escape(link)}</code>") if link else t(lang, "ref_link_missing")
-    return t(lang, "ref", join=REF_JOIN_BONUS, tasks=REF_ACTIVE_TASKS, active=REF_ACTIVE_BONUS,
+    base = t(lang, "ref", join=REF_JOIN_BONUS, tasks=REF_ACTIVE_TASKS, active=REF_ACTIVE_BONUS,
              total=REF_JOIN_BONUS + REF_ACTIVE_BONUS, count=int(u.get("ref_count", 0)),
              active_count=int(u.get("ref_active_count", 0)), earned=int(u.get("ref_earned", 0)),
              friends=friends_html, capnote=cap, link=link_html)
+    return H(str(base) + str(ladder_text(u, lang)))
 
 
 def ref_kb(uid, lang):
@@ -1371,7 +1390,7 @@ def show_task(lang, chat, mid=None):
 
 def grant(uid, c, status, extra=None):
     """Take one spot from a campaign and record the completion. Returns (code, comp); code: ok | full | dup | limit."""
-    if not counter_take(f"d:{uid}:{day()}", DAILY_TASKS):
+    if not counter_take(f"d:{uid}:{day()}", daily_cap(uid)):
         return "limit", None
     r = db.campaigns.find_one_and_update({"_id": c["_id"], "status": "active", "remaining": {"$gt": 0}},
                                          {"$inc": {"remaining": -1}})
@@ -1396,8 +1415,8 @@ def grant(uid, c, status, extra=None):
     return "ok", comp
 
 
-def claim_alert(lang, code):
-    return {"limit": tb(lang, "a_limit", n=DAILY_TASKS), "full": tb(lang, "a_full"), "dup": tb(lang, "a_dup")}[code]
+def claim_alert(lang, code, uid=None):
+    return {"limit": tb(lang, "a_limit", n=daily_cap(uid) if uid else DAILY_TASKS), "full": tb(lang, "a_full"), "dup": tb(lang, "a_dup")}[code]
 
 
 def settle_instantly(comp, **extra):
@@ -1506,11 +1525,11 @@ def on_claim(cq, uid, chat, mid, cid_s):
                  "task_deadline": deadline, "claim_expires": deadline, "day_key": f"d:{uid}:{day()}"}
         code, comp = grant(uid, c, "count_pending", extra=extra)
         if code != "ok":
-            ans(cq, claim_alert(lang, code), True)
+            ans(cq, claim_alert(lang, code, uid), True)
             return show_task(lang, chat, mid)
         ans(cq, tb(lang, "a_count_pending"))
         if consume_credit_for_claim(comp):
-            return view(chat, mid, t(lang, "count_ok"), next_kb(lang, uid))
+            return view(chat, mid, H(str(t(lang, "count_ok")) + progress_line(uid, lang)), next_kb(lang, uid))
         return view(chat, mid, t(lang, "count_pending", reward=c["reward"], window=window_min,
                                  grace=REACTION_UPDATE_GRACE // 60),
                     [[U(tb(lang, "b_back_target"), link_of(c), "primary")], [B(tb(lang, "b_back"), "earn")]])
@@ -1518,11 +1537,11 @@ def on_claim(cq, uid, chat, mid, cid_s):
     # Join / group-reaction are verified right now, and views after the waiting time: pay immediately.
     code, comp = grant(uid, c, "pending")
     if code != "ok":
-        ans(cq, claim_alert(lang, code), True)
+        ans(cq, claim_alert(lang, code, uid), True)
         return show_task(lang, chat, mid)
     settle_instantly(comp, **({"verified_at": time.time(), "due": time.time()} if c["type"] == "view" else {}))
     ans(cq, tb(lang, "a_paid"))
-    return view(chat, mid, t(lang, "task_paid", reward=c["reward"]), next_kb(lang, uid))
+    return view(chat, mid, H(str(t(lang, "task_paid", reward=c["reward"])) + progress_line(uid, lang)), next_kb(lang, uid))
 
 
 def open_linked_task(uid, chat, cid_s):
@@ -1828,6 +1847,12 @@ def ref_register(uid, ref_s, name=""):
     if not got.modified_count:
         return
     db.users.update_one({"_id": ref}, {"$inc": {"ref_count": 1}})
+    if REF_WELCOME_BONUS:                          # two-sided reward: the invited friend also gets a welcome bonus
+        add_points(uid, REF_WELCOME_BONUS, "ref_welcome", ref)
+        db.users.update_one({"_id": uid}, {"$set": {"ref_welcome": REF_WELCOME_BONUS}})
+    if db.users.count_documents({"referred_by": ref, "joined": {"$gte": time.time() - 3600}}) > REF_HOURLY_MAX:
+        db.users.update_one({"_id": uid}, {"$set": {"ref_suspect": True}})    # burst of joins from one link: no join bonus
+        return
     if not REF_JOIN_BONUS or not counter_take(f"refd:{ref}:{day()}", REF_DAILY_CAP):
         return
     add_points(ref, REF_JOIN_BONUS, "ref_join", uid)
@@ -1857,6 +1882,11 @@ def ref_on_task_paid(uid, typ):
         return
     db.users.update_one({"_id": ref}, {"$inc": {"ref_active_count": 1, "ref_earned": REF_ACTIVE_BONUS}})
     add_points(ref, REF_ACTIVE_BONUS, "ref_active", uid)
+    try:
+        wk_add(ref, refs=1)
+        check_achievements(ref)
+    except Exception:
+        log.exception("ref growth hooks")
     notify(ref, "n_ref_active", kb=lambda lang: [[B(tb(lang, "b_ref"), "ref")]],
            name=short(u.get("name"), 18) or K("user_fallback"), tasks=REF_ACTIVE_TASKS, bonus=REF_ACTIVE_BONUS)
 
@@ -1888,8 +1918,13 @@ def pay(comp, announce=True):
     db.users.update_one({"_id": comp["uid"]}, {"$inc": {"hold": -comp["reward"], "points": comp["reward"],
                                                          "earned": comp["reward"]}})
     ledger(comp["uid"], comp["reward"], "task", comp["cid"])
+    try:
+        gamify_on_paid(comp)                      # golden hour, level-ups, weekly score, achievements
+    except Exception:
+        log.exception("gamify_on_paid")
     if announce:
-        notify(comp["uid"], "n_paid", kb=lambda lg, _u=comp["uid"]: next_kb(lg, _u), reward=comp["reward"])
+        lg = ulang(comp["uid"])
+        send(comp["uid"], H(str(t(lg, "n_paid", reward=comp["reward"])) + progress_line(comp["uid"], lg)), next_kb(lg, comp["uid"]))
     try:
         ref_on_task_paid(comp["uid"], comp.get("type"))
     except Exception:
@@ -1950,15 +1985,6 @@ def tick():
         db.sessions.delete_many({"t": {"$lt": now - 7 * 86400}})
 
 
-def worker():
-    while True:
-        try:
-            tick()
-        except Exception:
-            log.exception("tick")
-        time.sleep(30)
-
-
 # ═════════════════════════════ Create campaign (multi-step) ═════════════════════════════
 POST_RE = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z][A-Za-z0-9_]{3,31})/(\d+)", re.I)
 CHAN_RE = re.compile(r"^(?:https?://)?(?:(?:t\.me|telegram\.me)/)?@?([A-Za-z][A-Za-z0-9_]{3,31})/?$", re.I)
@@ -1992,7 +2018,9 @@ def ask_qty(chat, lang, d, cost):
     if mx < 1:
         return send(chat, t(lang, "qty_insufficient", points=u.get("points", 0), cost=cost),
                     [[B(tb(lang, "b_earn"), "earn", "primary")], [B(tb(lang, "b_ref"), "ref", "success")]])
-    send(chat, t(lang, "qty_prompt", max=mx), cancel_kb(lang))
+    opts = list(dict.fromkeys([n for n in (10, 25, 50) if n < mx] + [mx]))
+    quick = [B(tb(lang, "b_max", n=n) if n == mx else str(n), f"q:{n}", "primary" if n == mx else None) for n in opts]
+    send(chat, t(lang, "qty_prompt", max=mx), [quick] + cancel_kb(lang))
     return True
 
 
@@ -2143,6 +2171,13 @@ def confirm_new(cq, uid, lang, chat, mid):
         ans(cq, tb(lang, "a_showcase_down"), True)
         return view(chat, mid, t(lang, "publish_failed"),
                     [[B(tb(lang, "b_mine"), "my")], [B(tb(lang, "b_back"), "campaigns")]])
+    if typ == "join":
+        db.users.update_one({"_id": uid}, {"$set": {"last_join": d["uname"]}})
+    db.users.update_one({"_id": uid}, {"$inc": {"campaigns_made": 1}})
+    try:
+        check_achievements(uid)
+    except Exception:
+        log.exception("check_achievements")
     ans(cq, tb(lang, "a_published"))
     kb = []
     if tasks_channel_url():
@@ -2212,6 +2247,8 @@ def admin_cmd(uid, chat, cmd, args, lang):
         return admin_home(chat, lang)
     if cmd == "reactwatch":
         return send(chat, reaction_watch_text(uid, lang, all_admin=True))
+    if cmd in ("broadcast", "bc"):
+        return admin_bc_home(chat, lang)
     if cmd == "stats":
         by = {s: db.completions.count_documents({"status": s}) for s in ("pending", "paid", "reversed")}
         return send(chat, t(lang, "ad_stats", users=db.users.count_documents({}),
@@ -2253,6 +2290,803 @@ def admin_cmd(uid, chat, cmd, args, lang):
         "<b>Admin panel</b>\n\n<code>/admin</code> · open panel\n<code>/stats</code> · statistics\n<code>/users</code> · user list\n<code>/user ID</code> · user profile\n<code>/events</code> · recent interactions\n<code>/give ID +/-N</code> · adjust points\n<code>/ban ID</code> · block user\n<code>/unban ID</code> · unblock/reset strikes\n<code>/stop CAMPAIGN_ID</code> · stop campaign\n<code>/reactwatch</code> · reaction diagnostics",
         "<b>پنل مدیریت</b>\n\n<code>/admin</code> · پنل\n<code>/stats</code> · آمار\n<code>/users</code> · فهرست کاربران\n<code>/user ID</code> · مشخصات کاربر\n<code>/events</code> · تعاملات اخیر\n<code>/give ID +/-N</code> · تغییر امتیاز\n<code>/ban ID</code> · مسدودسازی\n<code>/unban ID</code> · رفع مسدودی/صفرکردن اخطار\n<code>/stop CAMPAIGN_ID</code> · توقف کمپین\n<code>/reactwatch</code> · عیب‌یابی واکنش‌ها"))
 
+# ═════════════════════════════ Growth engine (v52) ═════════════════════════════
+# Daily gift + streak · lucky wheel · levels · achievements/referral ladder · weekly leaderboard with prizes
+# smart reminders · golden hour · onboarding · admin broadcast queue · auto channel posts · growth analytics
+def _env_ints(name, default):
+    vals = [int(x) for x in re.findall(r"\d+", os.environ.get(name, default))]
+    return vals or [int(x) for x in re.findall(r"\d+", default)]
+
+
+def _env_window(name, default):
+    m = re.fullmatch(r"\s*(\d{1,2})\s*-\s*(\d{1,2})\s*", os.environ.get(name, default) or "")
+    return (int(m[1]) % 24, int(m[2]) % 24) if m else None
+
+
+DAILY_REWARDS = _env_ints("DAILY_REWARDS", "1,1,2,2,3,3,5")            # reward per streak day (cycles every len())
+WEEKLY_PRIZES = _env_ints("WEEKLY_PRIZES", "30,20,10")                  # Stars for ranks 1..n on each weekly board
+REF_WELCOME_BONUS = int(os.environ.get("REF_WELCOME_BONUS", "5"))       # extra Stars for a friend who joins by invite
+REF_HOURLY_MAX = int(os.environ.get("REF_HOURLY_MAX", "12"))            # more invites than this per hour = suspicious
+GOLDEN_WINDOW = _env_window("GOLDEN_HOUR", "")                          # e.g. "17-19" (UTC); empty = disabled
+GOLDEN_MULT = max(1, int(os.environ.get("GOLDEN_MULT", "2")))
+REMIND_ON = os.environ.get("REMINDERS", "1") != "0"
+REMIND_WINDOW = _env_window("REMIND_HOURS", "5-18") or (5, 18)          # UTC hours in which reminders may be sent
+REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", "17"))            # UTC hour of the daily channel report
+STREAK_MILESTONES = {7: 3, 14: 6, 30: 15, 60: 30, 100: 60}
+
+# need (verified tasks), icon, English, فارسی, one-time level-up bonus, gift multiplier, extra daily task cap
+LEVELS = [
+    (0,   "🥉", "Bronze",  "برنزی",     0,   1.0, 0),
+    (25,  "🥈", "Silver",  "نقره‌ای",   5,   1.2, 10),
+    (100, "🥇", "Gold",    "طلایی",     15,  1.4, 20),
+    (300, "💎", "Diamond", "الماس",     40,  1.7, 40),
+    (800, "👑", "Legend",  "افسانه‌ای", 100, 2.0, 80),
+]
+# key, icon, English, فارسی, reward, user field, needed value
+ACH = [
+    ("t1",   "🚀", "First task",          "اولین تسک",           2,   "done_tasks", 1),
+    ("t10",  "⭐", "10 tasks",            "10 تسک",              3,   "done_tasks", 10),
+    ("t50",  "🌟", "50 tasks",            "50 تسک",              5,   "done_tasks", 50),
+    ("t250", "💫", "250 tasks",           "250 تسک",             15,  "done_tasks", 250),
+    ("t1000", "🏆", "1000 tasks",         "1000 تسک",            50,  "done_tasks", 1000),
+    ("r1",   "🤝", "1 active friend",     "1 دوست فعال",         3,   "ref_active_count", 1),
+    ("r5",   "👥", "5 active friends",    "5 دوست فعال",         10,  "ref_active_count", 5),
+    ("r25",  "🚀", "25 active friends",   "25 دوست فعال",        40,  "ref_active_count", 25),
+    ("r100", "👑", "100 active friends",  "100 دوست فعال",       150, "ref_active_count", 100),
+    ("s3",   "🔥", "3-day streak",        "استریک 3 روزه",       2,   "streak_best", 3),
+    ("s7",   "🔥", "7-day streak",        "استریک 7 روزه",       5,   "streak_best", 7),
+    ("s30",  "🌋", "30-day streak",       "استریک 30 روزه",      25,  "streak_best", 30),
+    ("c1",   "📣", "First campaign",      "اولین کمپین",         3,   "campaigns_made", 1),
+    ("c10",  "📢", "10 campaigns",        "10 کمپین",            10,  "campaigns_made", 10),
+]
+WHEEL = [(1, 40), (2, 30), (3, 15), (4, 8), (6, 4), (10, 2), (20, 1)]      # (Stars, weight) — average ≈ 2.4
+
+db.weekly.create_index([("wk", 1), ("score", -1)])
+db.weekly.create_index([("wk", 1), ("refs", -1)])
+db.users.create_index("last_seen")
+db.users.create_index("joined")
+db.users.create_index([("earned", -1)])
+db.broadcasts.create_index("status")
+
+S.update({
+    # ───────── Buttons ─────────
+    "b_gift": ("🎁 Daily gift", "🎁 هدیه‌ی روزانه"),
+    "b_gift_ready": ("🎁 Daily gift ✨", "🎁 هدیه‌ی روزانه ✨"),
+    "b_top": ("🏆 Leaderboard", "🏆 جدول برترین‌ها"),
+    "b_ach": ("🏅 Achievements", "🏅 دستاوردها"),
+    "b_wheel": ("🎰 Lucky wheel", "🎰 گردونه‌ی شانس"),
+    "b_spin": ("🎰 Spin now", "🎰 چرخاندن"),
+    "b_collect": ("🎁 Collect gift", "🎁 دریافت هدیه"),
+    "b_rm_on": ("🔔 Reminders: on", "🔔 یادآور: روشن"),
+    "b_rm_off": ("🔕 Reminders: off", "🔕 یادآور: خاموش"),
+    "b_rm_stop": ("🔕 Stop reminders", "🔕 خاموش کردن یادآور"),
+    "b_repeat": ("🔁 Repeat: @{name}", "🔁 تکرار: @{name}"),
+    "b_max": ("Max {n}", "حداکثر {n}"),
+    "b_earners": ("⭐ Earners", "⭐ درآمدسازها"),
+    "b_inviters": ("👥 Inviters", "👥 دعوت‌کننده‌ها"),
+    "b_check": ("✅ Check membership", "✅ بررسی عضویت"),
+    "b_join_channel": ("📢 Join task channel", "📢 عضویت در کانال تاسک‌ها"),
+    "b_open_bot": ("🚀 Open the bot", "🚀 ورود به ربات"),
+
+    # ───────── Daily gift ─────────
+    "g_gift_ok": (
+        "<b>🎁 Daily gift collected!</b>\n<blockquote><b>Reward:</b> <code>+{reward}</code> ⭐ Stars{bonus}\n"
+        "<b>Streak:</b> 🔥 <code>{streak}</code> day(s)</blockquote>\n{cal}\n"
+        "<i>Tomorrow: <code>+{next}</code> ⭐ — keep your streak alive!</i>",
+        "<b>🎁 هدیه‌ی روزانه دریافت شد!</b>\n<blockquote><b>پاداش:</b> <code>+{reward}</code> ⭐ استارز{bonus}\n"
+        "<b>استریک:</b> 🔥 <code>{streak}</code> روز</blockquote>\n{cal}\n"
+        "<i>فردا: <code>+{next}</code> ⭐ — استریک خود را حفظ کنید!</i>"),
+    "g_milestone": ("\n<b>Streak milestone bonus:</b> <code>+{n}</code> ⭐",
+                    "\n<b>جایزه‌ی ویژه‌ی استریک:</b> <code>+{n}</code> ⭐"),
+    "g_gift_wait": (
+        "<b>🎁 Daily gift</b>\n<blockquote>Today's gift is already collected ✅\n"
+        "<b>Streak:</b> 🔥 <code>{streak}</code> day(s)\n<b>Next gift in:</b> {hours}h {mins}m — <code>+{next}</code> ⭐</blockquote>\n{cal}\n"
+        "<i>Tip: complete a task today to unlock your free lucky-wheel spin.</i>",
+        "<b>🎁 هدیه‌ی روزانه</b>\n<blockquote>هدیه‌ی امروز را قبلاً دریافت کرده‌اید ✅\n"
+        "<b>استریک:</b> 🔥 <code>{streak}</code> روز\n<b>هدیه‌ی بعدی:</b> {hours} ساعت و {mins} دقیقه دیگر — <code>+{next}</code> ⭐</blockquote>\n{cal}\n"
+        "<i>نکته: با انجام یک تسک در امروز، چرخش رایگان گردونه‌ی شانس باز می‌شود.</i>"),
+    "g_gift_join": (
+        "<b>🔒 Members-only gift</b>\n\nThe daily gift is for members of the task channel. Join, then tap <b>Check membership</b>.",
+        "<b>🔒 هدیه‌ی ویژه‌ی اعضا</b>\n\nهدیه‌ی روزانه مخصوص اعضای کانال تاسک‌هاست. عضو شوید و سپس روی «بررسی عضویت» بزنید."),
+
+    # ───────── Lucky wheel ─────────
+    "g_wheel_locked": (
+        "<b>🎰 Lucky wheel</b>\n<blockquote>Complete at least <b>1 task</b> today to unlock your free spin.\n"
+        "<b>Prizes:</b> <code>1</code> to <code>{top}</code> ⭐ Stars</blockquote>",
+        "<b>🎰 گردونه‌ی شانس</b>\n<blockquote>برای باز شدن چرخش رایگان، امروز دست‌کم <b>1 تسک</b> انجام دهید.\n"
+        "<b>جوایز:</b> از <code>1</code> تا <code>{top}</code> ⭐ استارز</blockquote>"),
+    "g_wheel_ready": (
+        "<b>🎰 Lucky wheel</b>\n<blockquote>Your free spin for today is ready!\n<b>Prizes:</b> <code>1</code> to <code>{top}</code> ⭐ Stars</blockquote>",
+        "<b>🎰 گردونه‌ی شانس</b>\n<blockquote>چرخش رایگان امروز شما آماده است!\n<b>جوایز:</b> از <code>1</code> تا <code>{top}</code> ⭐ استارز</blockquote>"),
+    "g_wheel_used": (
+        "<b>🎰 Lucky wheel</b>\n<blockquote>You already spun today ✅\nCome back tomorrow for another free spin.</blockquote>",
+        "<b>🎰 گردونه‌ی شانس</b>\n<blockquote>امروز چرخانده‌اید ✅\nفردا برای چرخش رایگان بعدی برگردید.</blockquote>"),
+    "g_wheel_win": (
+        "<b>🎰 Lucky wheel</b>\n\n<code>{reel}</code>\n<blockquote><b>You won:</b> <code>+{prize}</code> ⭐ Stars</blockquote>",
+        "<b>🎰 گردونه‌ی شانس</b>\n\n<code>{reel}</code>\n<blockquote><b>برنده شدید:</b> <code>+{prize}</code> ⭐ استارز</blockquote>"),
+    "g_wheel_spin": ("<b>🎰 Lucky wheel</b>\n\n<code>{reel}</code>", "<b>🎰 گردونه‌ی شانس</b>\n\n<code>{reel}</code>"),
+
+    # ───────── Leaderboard ─────────
+    "g_lb": (
+        "<b>🏆 Weekly leaderboard</b>\n<i>{board} · resets every Monday (UTC)</i>\n\n{rows}\n\n"
+        "<blockquote><b>Your rank:</b> {rank}\n<b>Your score:</b> <code>{score}</code></blockquote>\n<i>Weekly prizes: {prizes} ⭐</i>",
+        "<b>🏆 جدول برترین‌های هفته</b>\n<i>{board} · هر دوشنبه (UTC) بازنشانی می‌شود</i>\n\n{rows}\n\n"
+        "<blockquote><b>رتبه‌ی شما:</b> {rank}\n<b>امتیاز شما:</b> <code>{score}</code></blockquote>\n<i>جوایز هفتگی: {prizes} ⭐</i>"),
+    "g_lb_empty": ("No scores yet — be the first this week!", "هنوز امتیازی ثبت نشده؛ این هفته اولین نفر باشید!"),
+    "g_rank_none": ("not ranked yet", "هنوز رتبه‌ای ندارید"),
+    "g_you": ("← you", "← شما"),
+
+    # ───────── Levels / progress ─────────
+    "g_levelup": (
+        "<b>{icon} Level up!</b>\n<blockquote>You reached <b>{level}</b>.\n<b>Bonus:</b> <code>+{bonus}</code> ⭐ Stars\n"
+        "<b>Perks:</b> gift x{mult} · {cap} tasks per day</blockquote>",
+        "<b>{icon} ارتقای سطح!</b>\n<blockquote>به سطح <b>{level}</b> رسیدید.\n<b>جایزه:</b> <code>+{bonus}</code> ⭐ استارز\n"
+        "<b>مزایا:</b> هدیه‌ی روزانه x{mult} · {cap} تسک در روز</blockquote>"),
+    "g_progress": (
+        "\n<blockquote>{icon} <b>{level}</b> {bar} <code>{prog}</code>\n🎯 Today: <code>{today}</code> / {cap}{golden}</blockquote>",
+        "\n<blockquote>{icon} <b>{level}</b> {bar} <code>{prog}</code>\n🎯 امروز: <code>{today}</code> از {cap}{golden}</blockquote>"),
+    "g_golden_line": ("\n⚡ Golden hour: rewards x{m}", "\n⚡ ساعت طلایی: پاداش x{m}"),
+    "g_golden_menu": ("\n⚡ <b>Golden hour is live!</b> Task rewards are x{m} until {end}:00 UTC.",
+                      "\n⚡ <b>ساعت طلایی فعال است!</b> پاداش تسک‌ها تا ساعت {end}:00 (UTC) {m} برابر است."),
+    "g_menu_line": (
+        "<blockquote>{icon} <b>{level}</b> {bar} <code>{prog}</code>\n🔥 Streak: <code>{streak}</code> day(s){gift}</blockquote>{golden}",
+        "<blockquote>{icon} <b>{level}</b> {bar} <code>{prog}</code>\n🔥 استریک: <code>{streak}</code> روز{gift}</blockquote>{golden}"),
+    "g_menu_gift": ("\n🎁 <b>Your daily gift is ready!</b>", "\n🎁 <b>هدیه‌ی روزانه‌ی شما آماده است!</b>"),
+    "g_acc_extra": (
+        "<blockquote>{icon} <b>{level}</b> {bar} <code>{prog}</code>\n<b>Perks:</b> gift x{mult} · {cap} tasks/day\n"
+        "🔥 <b>Streak:</b> <code>{streak}</code> (best {best})\n🏅 <b>Achievements:</b> <code>{ach}</code> / {total}\n"
+        "🏆 <b>Weekly rank:</b> {rank}</blockquote>",
+        "<blockquote>{icon} <b>{level}</b> {bar} <code>{prog}</code>\n<b>مزایا:</b> هدیه x{mult} · {cap} تسک در روز\n"
+        "🔥 <b>استریک:</b> <code>{streak}</code> (رکورد {best})\n🏅 <b>دستاوردها:</b> <code>{ach}</code> از {total}\n"
+        "🏆 <b>رتبه‌ی هفتگی:</b> {rank}</blockquote>"),
+
+    # ───────── Achievements ─────────
+    "g_ach": ("<b>🏅 Achievements</b>\n<i>{n} of {total} unlocked</i>\n\n{rows}",
+              "<b>🏅 دستاوردها</b>\n<i>{n} از {total} باز شده</i>\n\n{rows}"),
+    "g_ach_new": ("<b>🏅 New achievement!</b>\n<blockquote>{rows}</blockquote>\n<b>Total reward:</b> <code>+{total}</code> ⭐ Stars",
+                  "<b>🏅 دستاورد جدید!</b>\n<blockquote>{rows}</blockquote>\n<b>مجموع پاداش:</b> <code>+{total}</code> ⭐ استارز"),
+    "g_ladder": ("\n\n<b>Invite milestones</b>\n<blockquote>{rows}</blockquote>",
+                 "\n\n<b>پله‌های دعوت</b>\n<blockquote>{rows}</blockquote>"),
+    "g_ladder_row": ("{mark} <b>{need}</b> active friends — <code>+{reward}</code> ⭐",
+                     "{mark} <b>{need}</b> دوست فعال — <code>+{reward}</code> ⭐"),
+
+    # ───────── Reminders / onboarding ─────────
+    "g_rm_risk": (
+        "<b>🔥 Your {streak}-day streak is at risk!</b>\nCollect today's gift to keep it alive — <code>+{reward}</code> ⭐ is waiting.",
+        "<b>🔥 استریک {streak} روزه‌ی شما در خطر است!</b>\nبرای حفظ آن هدیه‌ی امروز را بگیرید — <code>+{reward}</code> ⭐ منتظر شماست."),
+    "g_rm_gift": (
+        "<b>🎁 Your daily gift is ready</b>\n<code>+{reward}</code> ⭐ Stars and <code>{open}</code> open tasks are waiting for you.",
+        "<b>🎁 هدیه‌ی روزانه‌ی شما آماده است</b>\n<code>+{reward}</code> ⭐ استارز و <code>{open}</code> تسک باز منتظر شماست."),
+    "g_rm_off": ("<b>🔕 Reminders turned off</b>\nYou can turn them back on from Account.",
+                 "<b>🔕 یادآور خاموش شد</b>\nهر زمان خواستید از بخش «حساب کاربری» دوباره روشنش کنید."),
+    "g_welcome": (
+        "<b>Welcome, {name}! 🎉</b>\n<blockquote>🎁 <b>Starting balance:</b> <code>{start}</code> ⭐ Stars{welcome}</blockquote>\n"
+        "<b>Start in 3 steps</b>\n<blockquote><b>1.</b> Tap <b>Earn Stars</b> and open a task.\n"
+        "<b>2.</b> Complete it and tap <b>Claim reward</b>.\n<b>3.</b> Spend Stars on <b>Grow my channel</b>.</blockquote>\n"
+        "<i>Collect your 🎁 daily gift every day — longer streaks pay more!</i>",
+        "<b>{name} عزیز، خوش آمدید! 🎉</b>\n<blockquote>🎁 <b>موجودی اولیه:</b> <code>{start}</code> ⭐ استارز{welcome}</blockquote>\n"
+        "<b>شروع در 3 قدم</b>\n<blockquote><b>1.</b> روی «کسب استارز» بزنید و یک تسک را باز کنید.\n"
+        "<b>2.</b> تسک را انجام دهید و روی «دریافت پاداش» بزنید.\n<b>3.</b> استارز را برای «رشد کانال من» خرج کنید.</blockquote>\n"
+        "<i>هر روز 🎁 هدیه‌ی روزانه را بگیرید؛ استریک بلندتر، پاداش بیشتر!</i>"),
+    "g_welcome_bonus": ("\n🤝 <b>Invite bonus:</b> <code>+{n}</code> ⭐", "\n🤝 <b>جایزه‌ی دعوت:</b> <code>+{n}</code> ⭐"),
+})
+
+
+# ───────────────────────── locks & helpers ─────────────────────────
+def take_lock(name, ttl):
+    """Cross-worker lock: only one gunicorn worker runs a background job at a time."""
+    now = time.time()
+    try:
+        db.locks.update_one({"_id": name, "until": {"$lt": now}}, {"$set": {"until": now + ttl}}, upsert=True)
+        return True
+    except DuplicateKeyError:
+        return False
+
+
+def release_lock(name):
+    db.locks.update_one({"_id": name}, {"$set": {"until": 0}})
+
+
+def in_window(win):
+    if not win:
+        return False
+    h, (a, b) = time.gmtime().tm_hour, win
+    return (a <= h < b) if a < b else (h >= a or h < b)
+
+
+def golden_active():
+    return GOLDEN_MULT > 1 and in_window(GOLDEN_WINDOW)
+
+
+def level_index(done):
+    idx = 0
+    for i, lv in enumerate(LEVELS):
+        if int(done or 0) >= lv[0]:
+            idx = i
+    return idx
+
+
+def level_view(u, lang):
+    done = int((u or {}).get("done_tasks", 0) or 0)
+    i = level_index(done)
+    lv = LEVELS[i]
+    if i + 1 < len(LEVELS):
+        need = LEVELS[i + 1][0]
+        b, prog = bar(done - lv[0], need - lv[0]), f"{done}/{need}"
+    else:
+        b, prog = bar(1, 1), f"{done} · MAX"
+    return {"icon": lv[1], "level": lv[3] if lang == "fa" else lv[2], "bar": b, "prog": prog,
+            "mult": lv[5], "cap": DAILY_TASKS + lv[6], "idx": i}
+
+
+def daily_cap(uid):
+    u = db.users.find_one({"_id": uid}, {"done_tasks": 1}) or {}
+    return DAILY_TASKS + LEVELS[level_index(u.get("done_tasks", 0))][6]
+
+
+def utc_date(offset_days=0):
+    return time.strftime("%Y-%m-%d", time.gmtime(time.time() + offset_days * 86400))
+
+
+def week_id(ts=None):
+    return time.strftime("%G-W%V", time.gmtime(ts if ts is not None else time.time()))
+
+
+# ───────────────────────── daily gift & streak ─────────────────────────
+def gift_reward(streak, u):
+    base = DAILY_REWARDS[(max(int(streak), 1) - 1) % len(DAILY_REWARDS)]
+    mult = LEVELS[level_index((u or {}).get("done_tasks", 0))][5]
+    return max(base, int(round(base * mult))), STREAK_MILESTONES.get(int(streak), 0)
+
+
+def gift_calendar(streak):
+    n = len(DAILY_REWARDS)
+    pos = ((int(streak) - 1) % n) + 1 if int(streak) > 0 else 0
+    return "".join("✅" if i <= pos else ("🎁" if i == n else "⬜") for i in range(1, n + 1))
+
+
+def gift_kb(lang):
+    return [[B(tb(lang, "b_wheel"), "wheel"), B(tb(lang, "b_top"), "top")], [B(tb(lang, "b_menu"), "home")]]
+
+
+def gift_wait_screen(u, lang):
+    streak = int(u.get("streak", 0))
+    secs = 86400 - int(time.time() % 86400)
+    nxt, _ = gift_reward(streak + 1, u)
+    return (t(lang, "g_gift_wait", streak=streak, hours=secs // 3600, mins=(secs % 3600) // 60, next=nxt,
+              cal=gift_calendar(streak)), gift_kb(lang), None)
+
+
+def gift_claim(uid, lang):
+    """Collect today's gift. Returns (text, keyboard, toast)."""
+    u = db.users.find_one({"_id": uid}) or {}
+    today = day()
+    if u.get("daily_last") == today:
+        return gift_wait_screen(u, lang)
+    if required_channel_member(uid) is False:               # members-only: the gift keeps the showcase channel growing
+        kb = []
+        if tasks_channel_url():
+            kb.append([U(tb(lang, "b_join_channel"), tasks_channel_url(), "primary")])
+        kb += [[B(tb(lang, "b_check"), "gift", "success")], [B(tb(lang, "b_menu"), "home")]]
+        return t(lang, "g_gift_join"), kb, None
+    old = db.users.find_one_and_update({"_id": uid, "daily_last": {"$ne": today}}, {"$set": {"daily_last": today}})
+    if not old:                                               # lost a race with a double tap
+        return gift_wait_screen(db.users.find_one({"_id": uid}) or u, lang)
+    streak = int(old.get("streak", 0)) + 1 if old.get("daily_last") == utc_date(-1) else 1
+    amount, milestone = gift_reward(streak, old)
+    db.users.update_one({"_id": uid}, {"$set": {"streak": streak, "streak_best": max(int(old.get("streak_best", 0)), streak)}})
+    add_points(uid, amount + milestone, "daily", f"s{streak}")
+    try:
+        check_achievements(uid)
+    except Exception:
+        log.exception("check_achievements")
+    nxt, _ = gift_reward(streak + 1, old)
+    bonus = t(lang, "g_milestone", n=milestone) if milestone else H("")
+    return (t(lang, "g_gift_ok", reward=amount, bonus=bonus, streak=streak, cal=gift_calendar(streak), next=nxt),
+            gift_kb(lang), "🎁 +%d" % (amount + milestone))
+
+
+# ───────────────────────── lucky wheel ─────────────────────────
+def wheel_state(uid):
+    if counter_get(f"wheel:{uid}:{day()}") >= 1:
+        return "used"
+    return "ready" if counter_get(f"d:{uid}:{day()}") >= 1 else "locked"
+
+
+def wheel_screen(uid, lang):
+    st = wheel_state(uid)
+    top = max(p for p, _ in WHEEL)
+    kb = []
+    if st == "ready":
+        kb.append([B(tb(lang, "b_spin"), "spin", "success")])
+    elif st == "locked":
+        kb.append([B(tb(lang, "b_earn"), "earn", "primary")])
+    kb.append([B(tb(lang, "b_gift"), "gift"), B(tb(lang, "b_menu"), "home")])
+    return t(lang, "g_wheel_" + st, top=top), kb
+
+
+def wheel_spin(cq, uid, lang, chat, mid):
+    if wheel_state(uid) != "ready" or not counter_take(f"wheel:{uid}:{day()}", 1):
+        ans(cq)
+        text, kb = wheel_screen(uid, lang)
+        return view(chat, mid, text, kb)
+    ans(cq)
+    prize = random.choices([p for p, _ in WHEEL], weights=[w for _, w in WHEEL])[0]
+    for reel in ("🎲 ▫️ ▫️ ▫️", "🎲 🍀 ▫️ ▫️", "🎲 🍀 💫 ▫️"):
+        view(chat, mid, t(lang, "g_wheel_spin", reel=reel), [])
+        time.sleep(0.5)
+    add_points(uid, prize, "wheel", day())
+    kb = [[B(tb(lang, "b_earn"), "earn", "primary"), B(tb(lang, "b_gift"), "gift")], [B(tb(lang, "b_menu"), "home")]]
+    return view(chat, mid, t(lang, "g_wheel_win", reel="🎲 🍀 💫 ⭐", prize=prize), kb)
+
+
+# ───────────────────────── weekly leaderboard ─────────────────────────
+def wk_add(uid, score=0, refs=0):
+    inc = {k: int(v) for k, v in (("score", score), ("refs", refs)) if v}
+    if not inc:
+        return
+    u = db.users.find_one({"_id": uid}, {"name": 1}) or {}
+    wk = week_id()
+    db.weekly.update_one({"_id": f"{wk}:{uid}"}, {"$inc": inc, "$set": {"wk": wk, "uid": uid, "name": short(u.get("name"), 20)}},
+                         upsert=True)
+
+
+def board_rows(wk, field, limit=10):
+    return list(db.weekly.find({"wk": wk, field: {"$gt": 0}}).sort([(field, -1), ("uid", 1)]).limit(limit))
+
+
+def board_rank(wk, field, uid):
+    mine = db.weekly.find_one({"_id": f"{wk}:{uid}"}) or {}
+    score = int(mine.get(field, 0) or 0)
+    if score <= 0:
+        return None, 0
+    return db.weekly.count_documents({"wk": wk, field: {"$gt": score}}) + 1, score
+
+
+def prize_text():
+    return " · ".join(f"{m} {p}" for m, p in zip(("🥇", "🥈", "🥉", "4.", "5."), WEEKLY_PRIZES))
+
+
+def lb_screen(uid, lang, which="e"):
+    field = "refs" if which == "r" else "score"
+    wk = week_id()
+    rows = []
+    for i, r in enumerate(board_rows(wk, field), 1):
+        medal = ("🥇", "🥈", "🥉")[i - 1] if i <= 3 else f"{i}."
+        me = " " + tb(lang, "g_you") if r.get("uid") == uid else ""
+        rows.append(f"{medal} {html.escape(r.get('name') or tb(lang, 'user_fallback'))} — <code>{int(r.get(field, 0))}</code>{me}")
+    rank, score = board_rank(wk, field, uid)
+    text = t(lang, "g_lb", board=tb(lang, "b_inviters" if which == "r" else "b_earners"),
+             rows=H("\n".join(rows) if rows else html.escape(tb(lang, "g_lb_empty"))),
+             rank=f"#{rank}" if rank else tb(lang, "g_rank_none"), score=score, prizes=prize_text())
+    kb = [[B(tb(lang, "b_earners"), "lb:e", "primary" if which != "r" else None),
+           B(tb(lang, "b_inviters"), "lb:r", "primary" if which == "r" else None)],
+          [B(tb(lang, "b_gift"), "gift"), B(tb(lang, "b_menu"), "home")]]
+    return text, kb
+
+
+def weekly_close():
+    """Once per week: pay prizes to the top of both boards and post the results in the showcase channel."""
+    prev = week_id(time.time() - 7 * 86400)
+    try:
+        db.meta.update_one({"_id": "wk_closed", "v": {"$ne": prev}}, {"$set": {"v": prev}}, upsert=True)
+    except DuplicateKeyError:
+        return
+    sections, plain = [], {}
+    for field, head_en, head_fa in (("score", "⭐ Top earners", "⭐ برترین درآمدسازها"), ("refs", "👥 Top inviters", "👥 برترین دعوت‌کننده‌ها")):
+        rows_en, rows_fa = [], []
+        for i, r in enumerate(board_rows(prev, field, len(WEEKLY_PRIZES)), 1):
+            uid, prize = r["uid"], WEEKLY_PRIZES[i - 1]
+            if user_is_banned(uid):
+                continue
+            add_points(uid, prize, "weekly_prize", f"{prev}:{field}:{i}")
+            plain.setdefault(uid, []).append((i, field, prize))
+            nm = html.escape(r.get("name") or "—")
+            medal = ("🥇", "🥈", "🥉", "4.", "5.")[i - 1]
+            rows_en.append(f"{medal} {nm} — <code>{int(r.get(field, 0))}</code> (+{prize} ⭐)")
+        if rows_en:
+            sections.append((head_en, head_fa, "\n".join(rows_en)))
+    for uid, wins in plain.items():
+        total = sum(w[2] for w in wins)
+        lang = ulang(uid)
+        msg = (f"<b>🏆 Weekly prize!</b>\nYou placed in last week's leaderboard and won <code>+{total}</code> ⭐ Stars."
+               if lang != "fa" else f"<b>🏆 جایزه‌ی هفتگی!</b>\nدر جدول برترین‌های هفته‌ی گذشته جایگاه کسب کردید و <code>+{total}</code> ⭐ استارز برنده شدید.")
+        send(uid, H(_rtl(msg) if lang == "fa" else msg), [[B(tb(lang, "b_top"), "top")]])
+    if sections and TASKS_CHANNEL:
+        en = f"<b>🏆 Weekly results · {prev}</b>\n\n" + "\n\n".join(f"<b>{h}</b>\n{rows}" for h, _, rows in sections) + \
+             "\n\nPrizes were added to the winners' balances. A new week starts now — good luck!"
+        fa = _rtl(f"<b>🏆 نتایج هفتگی · {prev}</b>\n\n" + "\n\n".join(f"<b>{h}</b>\n{rows}" for _, h, rows in sections) +
+                  "\n\nجوایز به موجودی برندگان افزوده شد. هفته‌ی جدید از همین حالا آغاز می‌شود؛ موفق باشید!")
+        post_to_channel(fa + "\n────────\n" + en)
+
+
+# ───────────────────────── achievements & levels ─────────────────────────
+def check_achievements(uid):
+    u = db.users.find_one({"_id": uid}) or {}
+    have, won = set(u.get("ach", [])), []
+    for a in ACH:
+        if a[0] not in have and int(u.get(a[5], 0) or 0) >= a[6]:
+            if db.users.update_one({"_id": uid, "ach": {"$ne": a[0]}}, {"$push": {"ach": a[0]}}).modified_count:
+                won.append(a)
+    if not won:
+        return
+    total = sum(a[4] for a in won)
+    add_points(uid, total, "achievement", ",".join(a[0] for a in won))
+    lang = lang_of(u)
+    rows = "\n".join(f"{a[1]} {html.escape(a[3] if lang == 'fa' else a[2])} — <code>+{a[4]}</code>" for a in won)
+    send(uid, t(lang, "g_ach_new", rows=H(rows), total=total), [[B(tb(lang, "b_ach"), "ach")]])
+
+
+def ach_screen(uid, lang):
+    u = db.users.find_one({"_id": uid}) or {}
+    have = set(u.get("ach", []))
+    rows = [f"{'✅' if a[0] in have else '🔒'} {a[1]} {html.escape(a[3] if lang == 'fa' else a[2])} — <code>+{a[4]}</code> ⭐" for a in ACH]
+    text = t(lang, "g_ach", n=len(have & {a[0] for a in ACH}), total=len(ACH), rows=H("\n".join(rows)))
+    return text, [[B(tb(lang, "b_acc"), "acc")], [B(tb(lang, "b_menu"), "home")]]
+
+
+def ladder_text(u, lang):
+    have = set((u or {}).get("ach", []))
+    rows = [str(t(lang, "g_ladder_row", mark="✅" if a[0] in have else "🔒", need=a[6], reward=a[4])) for a in ACH if a[5] == "ref_active_count"]
+    return t(lang, "g_ladder", rows=H("\n".join(rows)))
+
+
+def gamify_on_paid(comp):
+    """Everything that happens when a task reward is finally paid: golden-hour bonus, counters, weekly score, level-up, badges."""
+    uid, reward = comp["uid"], int(comp["reward"])
+    extra = 0
+    if golden_active():
+        extra = reward * (GOLDEN_MULT - 1)
+        if extra > 0:
+            add_points(uid, extra, "golden", comp.get("cid"))
+    cur = db.users.find_one({"_id": uid}, {"done_tasks": 1}) or {}
+    if "done_tasks" not in cur:                                # lazy back-fill for users created before v52
+        n = db.completions.count_documents({"uid": uid, "status": "paid"})
+        db.users.update_one({"_id": uid, "done_tasks": {"$exists": False}}, {"$set": {"done_tasks": n}})
+    else:
+        db.users.update_one({"_id": uid}, {"$inc": {"done_tasks": 1}})
+    u = db.users.find_one({"_id": uid}) or {}
+    wk_add(uid, reward + extra)
+    idx, old = level_index(u.get("done_tasks", 0)), int(u.get("level", 0) or 0)
+    if idx > old and db.users.update_one({"_id": uid, "$or": [{"level": {"$lt": idx}}, {"level": {"$exists": False}}]},
+                                         {"$set": {"level": idx}}).modified_count:
+        bonus = sum(LEVELS[i][4] for i in range(old + 1, idx + 1))
+        if bonus:
+            add_points(uid, bonus, "level_up", idx)
+        lang = lang_of(u)
+        lv = level_view(u, lang)
+        send(uid, t(lang, "g_levelup", icon=lv["icon"], level=lv["level"], bonus=bonus, mult=lv["mult"], cap=lv["cap"]),
+             [[B(tb(lang, "b_earn"), "earn", "primary")]])
+    check_achievements(uid)
+    return {"golden": extra}
+
+
+def progress_line(uid, lang):
+    u = db.users.find_one({"_id": uid}) or {}
+    lv = level_view(u, lang)
+    gold = t(lang, "g_golden_line", m=GOLDEN_MULT) if golden_active() else H("")
+    return str(t(lang, "g_progress", icon=lv["icon"], level=lv["level"], bar=lv["bar"], prog=lv["prog"],
+                 today=counter_get(f"d:{uid}:{day()}"), cap=lv["cap"], golden=gold))
+
+
+def growth_menu_extra(u, lang):
+    lv = level_view(u, lang)
+    gift = t(lang, "g_menu_gift") if (u or {}).get("daily_last") != day() else H("")
+    gold = t(lang, "g_golden_menu", m=GOLDEN_MULT, end=GOLDEN_WINDOW[1]) if golden_active() else H("")
+    streak = int(u.get("streak", 0)) if u.get("daily_last") in (day(), utc_date(-1)) else 0
+    return str(t(lang, "g_menu_line", icon=lv["icon"], level=lv["level"], bar=lv["bar"], prog=lv["prog"],
+                 streak=streak, gift=gift, golden=gold))
+
+
+def growth_acc_extra(u, lang):
+    lv = level_view(u, lang)
+    rank, _ = board_rank(week_id(), "score", u["_id"])
+    return str(t(lang, "g_acc_extra", icon=lv["icon"], level=lv["level"], bar=lv["bar"], prog=lv["prog"], mult=lv["mult"], cap=lv["cap"],
+                 streak=int(u.get("streak", 0)) if u.get("daily_last") in (day(), utc_date(-1)) else 0,
+                 best=int(u.get("streak_best", 0)), ach=len(set(u.get("ach", [])) & {a[0] for a in ACH}), total=len(ACH),
+                 rank=f"#{rank}" if rank else tb(lang, "g_rank_none")))
+
+
+# ───────────────────────── channel posts ─────────────────────────
+def post_to_channel(text, kb=None):
+    if not TASKS_CHANNEL:
+        return
+    p = {"chat_id": TASKS_CHANNEL, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if kb:
+        p["reply_markup"] = {"inline_keyboard": kb}
+    r = tg("sendMessage", **p)
+    if not r.get("ok"):
+        log.warning("post_to_channel failed: %s", r.get("description"))
+
+
+def once(key):
+    try:
+        db.meta.insert_one({"_id": key, "t": time.time()})
+        return True
+    except DuplicateKeyError:
+        return False
+
+
+def daily_report():
+    now = time.time()
+    if time.gmtime().tm_hour < REPORT_HOUR or not TASKS_CHANNEL or not once(f"report:{day()}"):
+        return
+    start = now - now % 86400
+    tasks = db.completions.count_documents({"status": "paid", "paid": {"$gte": start}})
+    if tasks < 1:
+        return
+    new = db.users.count_documents({"joined": {"$gte": start}})
+    live = db.campaigns.count_documents({"status": "active", "remaining": {"$gt": 0}})
+    en = (f"<b>📊 Today on TaskPlus</b>\n<blockquote>✅ Tasks completed: <code>{tasks}</code>\n👥 New members: <code>{new}</code>\n"
+          f"📣 Live campaigns: <code>{live}</code></blockquote>\nOpen tasks are waiting in this channel 👆")
+    fa = _rtl(f"<b>📊 امروز در تاسک‌پلاس</b>\n<blockquote>✅ تسک‌های انجام‌شده: <code>{tasks}</code>\n👥 اعضای جدید: <code>{new}</code>\n"
+              f"📣 کمپین‌های فعال: <code>{live}</code></blockquote>\nتسک‌های باز در همین کانال منتظر شما هستند 👆")
+    post_to_channel(fa + "\n────────\n" + en)
+
+
+def golden_announce():
+    if not golden_active() or not TASKS_CHANNEL or not once(f"golden:{day()}"):
+        return
+    en = (f"⚡ <b>Golden hour is LIVE!</b>\nEvery task reward is <b>x{GOLDEN_MULT}</b> until {GOLDEN_WINDOW[1]}:00 UTC. "
+          "Grab the open tasks now 👇")
+    fa = _rtl(f"⚡ <b>ساعت طلایی شروع شد!</b>\nپاداش تمام تسک‌ها تا ساعت {GOLDEN_WINDOW[1]}:00 (UTC) <b>{GOLDEN_MULT} برابر</b> است. "
+              "همین حالا تسک‌های باز را انجام دهید 👇")
+    username = _me.get("username")
+    post_to_channel(fa + "\n────────\n" + en, [[U(bi_btn("b_open_bot"), f"https://t.me/{username}", "primary")]] if username else None)
+
+
+# ───────────────────────── smart reminders ─────────────────────────
+def send_reminders(limit=25):
+    if not REMIND_ON or not in_window(REMIND_WINDOW):
+        return
+    now, today = time.time(), day()
+    q = {"remind_off": {"$ne": True}, "blocked": {"$ne": True}, "banned": {"$ne": True}, "last_remind_day": {"$ne": today},
+         "daily_last": {"$ne": today}, "last_seen": {"$lt": now - 20 * 3600, "$gt": now - 14 * 86400},
+         "$or": [{"remind_miss": {"$exists": False}}, {"remind_miss": {"$lt": 3}}]}
+    open_n = db.campaigns.count_documents({"status": "active", "remaining": {"$gt": 0}, "admin_paused": {"$ne": True}})
+    yesterday = utc_date(-1)
+    for u in list(db.users.find(q).sort("last_seen", -1).limit(limit)):
+        uid, lang = u["_id"], lang_of(u)
+        db.users.update_one({"_id": uid}, {"$set": {"last_remind_day": today}, "$inc": {"remind_miss": 1}})
+        streak = int(u.get("streak", 0))
+        at_risk = u.get("daily_last") == yesterday and streak >= 2
+        reward, _ = gift_reward(streak + 1 if at_risk else 1, u)
+        text = t(lang, "g_rm_risk", streak=streak, reward=reward) if at_risk else t(lang, "g_rm_gift", reward=reward, open=open_n)
+        r = send(uid, text, [[B(tb(lang, "b_collect"), "gift", "success")], [B(tb(lang, "b_rm_stop"), "rm:off")]])
+        if not r.get("ok") and r.get("error_code") == 403:
+            db.users.update_one({"_id": uid}, {"$set": {"blocked": True}})
+        time.sleep(0.05)
+
+
+# ───────────────────────── admin: broadcast queue & analytics ─────────────────────────
+def seg_query(seg):
+    now = time.time()
+    q = {"banned": {"$ne": True}, "blocked": {"$ne": True}}
+    if seg == "active":
+        q["last_seen"] = {"$gte": now - 7 * 86400}
+    elif seg == "inactive":
+        q["last_seen"] = {"$lt": now - 7 * 86400}
+    elif seg == "new":
+        q["joined"] = {"$gte": now - 3 * 86400}
+    return q
+
+
+SEG_LABEL = {"all": ("👥 Everyone", "👥 همه"), "active": ("🟢 Active (7d)", "🟢 فعال (7 روز)"),
+             "inactive": ("😴 Inactive (7d+)", "😴 غیرفعال (بیش از 7 روز)"), "new": ("🆕 New (3d)", "🆕 جدید (3 روز)")}
+
+
+def admin_bc_home(chat, lang, mid=None):
+    fa = lang == "fa"
+    kb = [[B(f"{SEG_LABEL[s][1 if fa else 0]} · {db.users.count_documents(seg_query(s))}", f"ad:bcs:{s}")] for s in SEG_LABEL]
+    last = list(db.broadcasts.find({}).sort("created", -1).limit(3))
+    hist = "\n".join(f"• <code>{b.get('seg')}</code> — {b.get('status')} · {b.get('sent', 0)}/{b.get('total', 0)} (✖ {b.get('failed', 0)})" for b in last)
+    msg = ("<b>📢 همه‌پیامی</b>\nگروه مخاطب را انتخاب کنید. پیام با سرعت ایمن و صف‌بندی‌شده ارسال می‌شود؛ کاربرانی که ربات را بلاک کرده‌اند خودکار حذف می‌شوند."
+           if fa else "<b>📢 Broadcast</b>\nChoose the audience. Messages are sent through a rate-limited queue; users who blocked the bot are skipped automatically.")
+    if hist:
+        msg += "\n\n<b>" + ("آخرین ارسال‌ها" if fa else "Recent broadcasts") + "</b>\n" + hist
+    kb.append([B("↩️ پنل" if fa else "↩️ Panel", "ad:home")])
+    return view(chat, mid, H(_rtl(msg) if fa else msg), kb)
+
+
+def admin_bc_callback(chat, lang, mid, uid, parts):
+    fa, action = lang == "fa", parts[1]
+    if action == "bc":
+        db.states.delete_one({"_id": uid})
+        return admin_bc_home(chat, lang, mid)
+    if action == "bcs" and len(parts) > 2 and parts[2] in SEG_LABEL:
+        set_state(uid, "admin_bc", {"seg": parts[2]})
+        prompt = ("متن پیام را ارسال کنید (تگ‌های HTML تلگرام مجاز است: <code>&lt;b&gt;</code>، <code>&lt;i&gt;</code>، <code>&lt;a href&gt;</code>)."
+                  if fa else "Send the message text (Telegram HTML is allowed: <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;a href&gt;</code>).")
+        return view(chat, mid, H(_rtl(prompt) if fa else prompt), [[B("لغو" if fa else "Cancel", "ad:bc")]])
+    if action == "bcgo":
+        st = db.states.find_one({"_id": uid}) or {}
+        if st.get("step") != "admin_bc_confirm":
+            return admin_bc_home(chat, lang, mid)
+        d = st["d"]
+        db.states.delete_one({"_id": uid})
+        db.broadcasts.insert_one({"seg": d["seg"], "text": d["text"], "status": "queued", "created": time.time(), "by": uid,
+                                  "cursor": 0, "sent": 0, "failed": 0, "total": db.users.count_documents(seg_query(d["seg"]))})
+        return view(chat, mid, admin_text(lang, "✅ Broadcast queued. You will get a report when it finishes.",
+                                          "✅ همه‌پیامی در صف قرار گرفت. پس از پایان، گزارش برایتان ارسال می‌شود."),
+                    [[B("↩️ پنل" if fa else "↩️ Panel", "ad:home")]])
+    return admin_bc_home(chat, lang, mid)
+
+
+def admin_bc_text(uid, chat, lang, text, st):
+    fa, seg = lang == "fa", (st.get("d") or {}).get("seg", "all")
+    r = send(chat, H(text))                                    # preview; also validates the HTML
+    if not r.get("ok"):
+        return send(chat, admin_text(lang, f"Invalid HTML: {html.escape(str(r.get('description')))}\nFix the text and send it again.",
+                                     f"HTML نامعتبر است: {html.escape(str(r.get('description')))}\nمتن را اصلاح و دوباره ارسال کنید."),
+                    [[B("لغو" if fa else "Cancel", "ad:bc")]])
+    set_state(uid, "admin_bc_confirm", {"seg": seg, "text": text})
+    n = db.users.count_documents(seg_query(seg))
+    return send(chat, admin_text(lang, f"Send this message to <b>{n}</b> users ({SEG_LABEL[seg][0]})?",
+                                 f"این پیام برای <b>{n}</b> کاربر ({SEG_LABEL[seg][1]}) ارسال شود؟"),
+                [[B("✅ ارسال" if fa else "✅ Send", "ad:bcgo", "success")], [B("لغو" if fa else "Cancel", "ad:bc", "danger")]])
+
+
+def pump_broadcasts(max_seconds=20):
+    """Send queued broadcasts at ~15 messages/second, resumable (cursor = last user id)."""
+    bc = db.broadcasts.find_one({"status": {"$in": ["queued", "sending"]}}, sort=[("created", 1)])
+    if not bc or not take_lock("bc", max_seconds + 10):
+        return False
+    started = time.time()
+    try:
+        db.broadcasts.update_one({"_id": bc["_id"]}, {"$set": {"status": "sending"}})
+        q = dict(seg_query(bc["seg"]))
+        while time.time() - started < max_seconds:
+            q["_id"] = {"$gt": bc.get("cursor", 0)}
+            batch = list(db.users.find(q).sort("_id", 1).limit(30))
+            if not batch:
+                db.broadcasts.update_one({"_id": bc["_id"]}, {"$set": {"status": "done", "finished": time.time()}})
+                fin = db.broadcasts.find_one({"_id": bc["_id"]})
+                send(bc["by"], H(f"✅ <b>Broadcast finished</b>\nSent: <code>{fin.get('sent', 0)}</code> · Failed: <code>{fin.get('failed', 0)}</code> · "
+                                 f"Audience: <code>{fin.get('total', 0)}</code>"))
+                return False
+            sent = failed = 0
+            for u in batch:
+                r = send(u["_id"], H(bc["text"]))
+                if r.get("ok"):
+                    sent += 1
+                else:
+                    failed += 1
+                    if r.get("error_code") == 403:
+                        db.users.update_one({"_id": u["_id"]}, {"$set": {"blocked": True}})
+                time.sleep(0.065)
+                bc["cursor"] = u["_id"]
+            db.broadcasts.update_one({"_id": bc["_id"]}, {"$set": {"cursor": bc["cursor"]}, "$inc": {"sent": sent, "failed": failed}})
+        return True
+    finally:
+        release_lock("bc")
+
+
+def growth_stats_text(lang):
+    now = time.time()
+    start = now - now % 86400
+    cnt = db.users.count_documents
+    coins = next(iter(db.users.aggregate([{"$group": {"_id": None, "s": {"$sum": "$points"}}}])), {}).get("s", 0)
+
+    def retention(lo, hi, gap):
+        cohort = list(db.users.find({"joined": {"$gte": now - hi, "$lt": now - lo}}, {"joined": 1, "last_seen": 1}).limit(3000))
+        if not cohort:
+            return "—"
+        back = sum(1 for c in cohort if float(c.get("last_seen", 0)) >= float(c["joined"]) + gap)
+        return f"{round(100 * back / len(cohort))}% ({len(cohort)})"
+
+    vals = dict(dau=cnt({"last_seen": {"$gte": now - 86400}}), wau=cnt({"last_seen": {"$gte": now - 7 * 86400}}),
+                new=cnt({"joined": {"$gte": start}}), gifts=cnt({"daily_last": day()}), streak3=cnt({"streak": {"$gte": 3}}),
+                tasks=db.completions.count_documents({"status": "paid", "paid": {"$gte": start}}),
+                coins=int(coins or 0), blocked=cnt({"blocked": True}), refs=cnt({"referred_by": {"$exists": True}}),
+                refs_active=cnt({"ref_active": True}), d1=retention(86400, 2 * 86400, 86400), d7=retention(7 * 86400, 8 * 86400, 7 * 86400))
+    if lang == "fa":
+        msg = ("\n<b>📈 رشد و تعامل</b>\n<blockquote>"
+               "فعال روزانه / هفتگی: <code>{dau}</code> / <code>{wau}</code>\nکاربران جدید امروز: <code>{new}</code>\n"
+               "هدیه‌ی روزانه‌ی دریافت‌شده امروز: <code>{gifts}</code>\nکاربران با استریک 3 روز و بیشتر: <code>{streak3}</code>\n"
+               "تسک‌های پرداخت‌شده‌ی امروز: <code>{tasks}</code>\nمجموع استارز در گردش: <code>{coins}</code>\n"
+               "بازگشت روز 1: {d1}\nبازگشت روز 7: {d7}\nدعوت‌شده‌ها / فعال: <code>{refs}</code> / <code>{refs_active}</code>\n"
+               "بلاک‌کننده‌های ربات: <code>{blocked}</code></blockquote>")
+    else:
+        msg = ("\n<b>📈 Growth & engagement</b>\n<blockquote>"
+               "DAU / WAU: <code>{dau}</code> / <code>{wau}</code>\nNew users today: <code>{new}</code>\n"
+               "Daily gifts collected today: <code>{gifts}</code>\nUsers with a 3+ day streak: <code>{streak3}</code>\n"
+               "Tasks paid today: <code>{tasks}</code>\nStars in circulation: <code>{coins}</code>\n"
+               "Day-1 return: {d1}\nDay-7 return: {d7}\nReferred / active: <code>{refs}</code> / <code>{refs_active}</code>\n"
+               "Blocked the bot: <code>{blocked}</code></blockquote>")
+    return H(_rtl(msg.format(**vals)) if lang == "fa" else msg.format(**vals))
+
+
+# ───────────────────────── background jobs ─────────────────────────
+def growth_tick():
+    for job in (weekly_close, golden_announce, daily_report, send_reminders):
+        try:
+            job()
+        except Exception:
+            log.exception("growth job %s", job.__name__)
+
+
+def worker():
+    last_tick, pending = 0.0, False
+    while True:
+        try:
+            now = time.time()
+            if now - last_tick >= 30:
+                last_tick = now
+                if take_lock("tick", 25):
+                    tick()
+                    growth_tick()
+            pending = pump_broadcasts()
+        except Exception:
+            log.exception("tick")
+        time.sleep(2 if pending else 5)
+
+
+# ───────────────────────── callback router for the new screens ─────────────────────────
+def growth_callback(cq, uid, u, lang, chat, mid, data):
+    """Returns True when the callback belongs to the growth engine."""
+    if data == "gift":
+        text, kb, toast = gift_claim(uid, lang)
+        ans(cq, toast)
+        view(chat, mid, text, kb)
+        return True
+    if data == "wheel":
+        ans(cq)
+        text, kb = wheel_screen(uid, lang)
+        view(chat, mid, text, kb)
+        return True
+    if data == "spin":
+        wheel_spin(cq, uid, lang, chat, mid)
+        return True
+    if data == "top" or data in ("lb:e", "lb:r"):
+        ans(cq)
+        text, kb = lb_screen(uid, lang, "r" if data == "lb:r" else "e")
+        view(chat, mid, text, kb)
+        return True
+    if data == "ach":
+        ans(cq)
+        text, kb = ach_screen(uid, lang)
+        view(chat, mid, text, kb)
+        return True
+    if data in ("rm", "rm:off"):
+        off = True if data == "rm:off" else not u.get("remind_off")
+        db.users.update_one({"_id": uid}, {"$set": {"remind_off": off}})
+        u["remind_off"] = off
+        ans(cq)
+        if data == "rm:off":
+            view(chat, mid, t(lang, "g_rm_off"), [[B(tb(lang, "b_menu"), "home")]])
+        else:
+            view(chat, mid, acc_text(u), acc_kb(lang, uid))
+        return True
+    if data == "rep":
+        last = u.get("last_join")
+        if not last:
+            ans(cq)
+            return True
+        if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
+            ans(cq, tb(lang, "a_max_active", n=MAX_ACTIVE), True)
+            return True
+        ans(cq)
+        set_state(uid, "link", {"type": "join"})
+        on_state_text(uid, chat, "@" + last, db.states.find_one({"_id": uid}), lang)
+        return True
+    if data.startswith("q:"):
+        st = db.states.find_one({"_id": uid})
+        if not st or st.get("step") != "qty":
+            ans(cq, tb(lang, "a_step_expired"), True)
+            return True
+        ans(cq)
+        on_state_text(uid, chat, data[2:], st, lang)
+        return True
+    return False
+
+
+def welcome_screen(u, lang):
+    bonus = t(lang, "g_welcome_bonus", n=u["ref_welcome"]) if u.get("ref_welcome") else H("")
+    text = t(lang, "g_welcome", name=short(u.get("name"), 30) or tb(lang, "friend"), start=START_POINTS, welcome=bonus)
+    kb = [[B(tb(lang, "b_earn"), "earn", "primary")], [B(tb(lang, "b_gift_ready"), "gift", "success")], [B(tb(lang, "b_menu"), "home")]]
+    return text, kb
+
+
 # ═════════════════════════════ Update routing ═════════════════════════════
 def on_message(msg):
     if msg["chat"]["type"] != "private" or "from" not in msg:
@@ -2286,11 +3120,19 @@ def on_message(msg):
             return send(chat, ref_text(u), ref_kb(uid, lang))
         if cmd in ("language", "lang"):
             return send(chat, LANG_PICK, lang_kb())
+        if cmd == "gift":
+            text_, kb_, _ = gift_claim(uid, lang)
+            return send(chat, text_, kb_)
+        if cmd in ("top", "leaderboard"):
+            text_, kb_ = lb_screen(uid, lang)
+            return send(chat, text_, kb_)
         if uid in ADMINS:
             return admin_cmd(uid, chat, cmd, args, lang)
         return send(chat, menu_text(u), main_kb(lang, uid))
 
     st = db.states.find_one({"_id": uid})
+    if st and st.get("step") == "admin_bc" and uid in ADMINS and text:
+        return admin_bc_text(uid, chat, lang, text, st)
     if st and st.get("step") in ("admin_search", "admin_points") and uid in ADMINS and text:
         step = st.get("step")
         db.states.delete_one({"_id": uid})
@@ -2343,6 +3185,10 @@ def on_callback(cq):
         u["lang"] = choice
         ans(cq)
         db.states.delete_one({"_id": uid})
+        if not u.get("onboarded") and time.time() - float(u.get("joined", 0) or 0) < 3600:      # first run: guided welcome
+            db.users.update_one({"_id": uid}, {"$set": {"onboarded": True}})
+            w_text, w_kb = welcome_screen(u, choice)
+            return view(chat, mid, w_text, w_kb)
         return view(chat, mid, menu_text(u), main_kb(choice, uid))
 
     lang = lang_of(u)
@@ -2360,12 +3206,14 @@ def on_callback(cq):
         return view(chat, mid, help_text(lang), home_kb(lang))
     if data == "acc":
         ans(cq)
-        return view(chat, mid, acc_text(u), acc_kb(lang))
+        return view(chat, mid, acc_text(u), acc_kb(lang, uid))
+    if growth_callback(cq, uid, u, lang, chat, mid, data):
+        return
     if data == "campaigns":
         ans(cq)
         return view(chat, mid, "<b>" + ("Campaign management" if lang == "en" else "مدیریت کمپین‌ها") + "</b>\n\n" +
                     ("Create a campaign or review your existing campaigns." if lang == "en" else "کمپین جدید بسازید یا وضعیت کمپین‌های خود را بررسی کنید."),
-                    campaigns_kb(lang))
+                    campaigns_kb(lang, uid))
     if data in ("earn", "earn_check"):
         if not TASKS_CHANNEL or not tasks_channel_url():
             ans(cq)
@@ -2399,7 +3247,7 @@ def on_callback(cq):
             db.states.delete_one({"_id": uid})
             return admin_home(chat, lang, mid)
         if action == "stats":
-            return view(chat, mid, admin_stats_text(lang), [[B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")]])
+            return view(chat, mid, H(str(admin_stats_text(lang)) + str(growth_stats_text(lang))), [[B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")]])
         if action == "users":
             off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
             return admin_users_screen(chat, lang, off, mid)
@@ -2446,6 +3294,8 @@ def on_callback(cq):
         if action == "recent":
             off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
             return admin_events_screen(chat, lang, offset=off, mid=mid)
+        if action in ("bc", "bcs", "bcgo"):
+            return admin_bc_callback(chat, lang, mid, uid, parts)
         if action == "campaigns":
             off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
             return admin_campaigns_screen(chat, lang, off, mid)
@@ -2564,8 +3414,10 @@ def setup():
     r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
            allowed_updates=["message", "callback_query", "message_reaction", "message_reaction_count"])
     commands = {
-        "en": [("start", "Main menu"), ("invite", "Invite friends and earn"), ("language", "Change language"), ("help", "Help")],
-        "fa": [("start", "منوی اصلی"), ("invite", "دعوت از دوستان و دریافت پاداش"), ("language", "تغییر زبان"), ("help", "راهنما")],
+        "en": [("start", "Main menu"), ("gift", "Collect your daily gift"), ("top", "Weekly leaderboard"),
+               ("invite", "Invite friends and earn"), ("language", "Change language"), ("help", "Help")],
+        "fa": [("start", "منوی اصلی"), ("gift", "دریافت هدیه‌ی روزانه"), ("top", "جدول برترین‌های هفته"),
+               ("invite", "دعوت از دوستان و دریافت پاداش"), ("language", "تغییر زبان"), ("help", "راهنما")],
     }
     as_json = lambda items: [{"command": c, "description": d} for c, d in items]
     tg("setMyCommands", commands=as_json(commands["en"]))                       # default (English)
