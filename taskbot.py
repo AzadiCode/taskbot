@@ -689,10 +689,15 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        "<b>{type}</b>{tag} · {target}\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars⭐\n"
         "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}\n{progress}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
+        "<b>{type}</b>{tag} · {target}\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
         "<b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n<b>وضعیت:</b> {state}\n{progress}</blockquote>\n{instruction}"),
+    "tag_repost": ("Reposted", "بازنشر"),
+    "listing_q": (
+        "<b>🌐 English translation · ترجمه انگلیسی</b>\n<b>{type}</b>{tag} · {target}\n<b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}\n{progress}\n{instruction}",
+        ""),
     "ins_done": ("This task is complete 🎉 New tasks are posted in this channel regularly.",
                  "این تسک تکمیل شده است 🎉 تسک‌های جدید به‌طور مرتب در همین کانال منتشر می‌شود."),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
@@ -1258,13 +1263,16 @@ def campaign_listing_text(c):
     done = total - remaining
     pct = round(100 * done / total)
     progress = H(f"<code>{bar(done, total, 12)}</code> <b>{pct}%</b> · <code>{done}/{total}</code>")
-    blocks = []
-    for lang in ("en", "fa"):
-        blocks.append(str(t(lang, "listing", type=tn(lang, typ) if typ in TYPES else tb(lang, "campaign_fallback"),
-                            target=ctitle(c), reward=c.get("reward", 0), remaining=remaining,
-                            state=K(state_key), progress=progress,
-                            instruction=t(lang, ins, window=int(c.get("window_min", 5))))))
-    return blocks[1] + "\n────────\n" + blocks[0]
+    reposted = bool(c.get("reposted"))
+    tag = (lambda lg: H(" · ♻️ <i>" + tb(lg, "tag_repost") + "</i>")) if reposted else H("")
+    state = (lambda lg: tb(lg, state_key) + (" ♻️" if reposted and state_key == "st_active" else ""))
+    ty = lambda lg: tn(lg, typ) if typ in TYPES else tb(lg, "campaign_fallback")
+    common = dict(target=ctitle(c), reward=c.get("reward", 0), remaining=remaining, progress=progress, tag=tag, state=state)
+
+    def block(key, lang):
+        return str(t(lang, key, type=ty(lang), instruction=t(lang, ins, window=int(c.get("window_min", 5))), **common))
+    # Persian first; the English translation sits inside a collapsed (expandable) quote
+    return block("listing", "fa") + "\n<blockquote expandable>" + block("listing_q", "en") + "</blockquote>"
 
 
 def campaign_listing_keyboard(c):
@@ -3034,6 +3042,8 @@ def rp_candidates(cfg):
 def rp_repost_one(c):
     """Publish the task again as a fresh channel post, then retire the old post (delete, or point it to the new one)."""
     old_chat, old_mid = c.get("listing_chat_id"), c.get("listing_message_id")
+    c["reposted"] = True
+    db.campaigns.update_one({"_id": c["_id"]}, {"$set": {"reposted": True}, "$inc": {"repost_n": 1}})
     if not publish_campaign(c):
         return None
     fresh = db.campaigns.find_one({"_id": c["_id"]}) or c
