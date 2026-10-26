@@ -62,13 +62,13 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v52-growth-engine"
+VERSION = "v53-repost"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
     "join":  {"reward": 3, "cost": 4, "wait": 0},
-    "react": {"reward": 2, "cost": 3, "wait": 10},
-    "view":  {"reward": 1, "cost": 2, "wait": 5},
+    "react": {"reward": 2, "cost": 3, "wait": 0},
+    "view":  {"reward": 1, "cost": 2, "wait": 0},
 }
 
 logging.basicConfig(level=logging.INFO)
@@ -284,7 +284,7 @@ S = {
     "b_win2": ("2 minutes", "2 دقیقه"),
     "b_win5": ("5 minutes", "5 دقیقه"),
     "b_cancel_campaign": ("Cancel campaign", "لغو کمپین"),
-    "b_full": ("Capacity reached", "ظرفیت تکمیل شد 🛑"),
+    "b_full": ("Task completed", "تسک تکمیل شد ✅"),
     "b_legacy": ("Retired verification method", "روش تأیید قدیمی غیرفعال"),
     "type_btn": ("{name} — {cost} Stars", "{name} — {cost} استارز"),
 
@@ -296,7 +296,7 @@ S = {
     "st_done": ("Completed", "تکمیل‌شده"),
     "st_cancelled": ("Cancelled", "لغو شده"),
     "st_waiting": ("Awaiting update", "در انتظار به‌روزرسانی"),
-    "st_full": ("Capacity reached", "ظرفیت تکمیل شد 🛑"),
+    "st_full": ("Task completed ✅", "تسک تکمیل شد ✅"),
     "st_legacy": ("Inactive (retired verification)", "غیرفعال (روش تأیید قدیمی)"),
     "st_admin_paused": ("Paused (bot access)", "متوقف موقت (دسترسی ربات)"),
     "friend": ("friend", "کاربر"),
@@ -515,7 +515,6 @@ S = {
     "a_cant": ("You cannot complete this task.", "امکان انجام این تسک برای شما وجود ندارد."),
     "a_dup": ("You have already completed this task.", "این تسک را قبلاً انجام داده‌اید."),
     "a_open_first": ("Open the task from the showcase first.", "ابتدا تسک را از ویترین باز کنید."),
-    "a_wait": ("Please wait {s} more seconds, then try again.", "لطفاً {s} ثانیه دیگر صبر کنید و دوباره تلاش کنید."),
     "a_check_unavail": ("Verification is unavailable right now. Try another task.",
                         "بررسی در حال حاضر ممکن نیست. تسک دیگری را امتحان کنید."),
     "a_not_member": ("Membership not detected. Join first, then try again.",
@@ -533,10 +532,6 @@ S = {
                       "شناسه‌ی این تسک نامعتبر است. از یک پست تازه‌ی کانال استفاده کنید."),
     "a_inactive": ("This task is no longer active.", "این تسک دیگر فعال نیست."),
     "a_no_deeplink": ("The reward page link is unavailable.", "لینک صفحه‌ی دریافت پاداش در دسترس نیست."),
-    "a_wait_first": ("To register the view, wait 5 seconds and make sure you have seen the task, then tap Claim reward again.",
-                     "برای ثبت بازدید، 5 ثانیه صبر کنید و از دیدن تسک مطمئن شوید، سپس دوباره روی «دریافت پاداش» بزنید."),
-    "a_wait_claim": ("Wait {s} more seconds, then tap Claim reward again.",
-                     "{s} ثانیه دیگر صبر کنید و دوباره روی «دریافت پاداش» بزنید."),
     "a_step_expired": ("This step has expired. Start the campaign again.",
                        "این مرحله منقضی شده است. ثبت کمپین را دوباره شروع کنید."),
     "a_window_bad": ("Invalid time limit.", "مهلت نامعتبر است."),
@@ -694,18 +689,20 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b> · {target}\n<blockquote> <b>Reward:</b> <code>{reward}</code> Stars⭐\n"
-        " <b>Remaining spots:</b> <code>{remaining}</code>\n <b>Status:</b> {state}</blockquote>\n{instruction}",
-        "<b>{type}</b> · {target}\n<blockquote> <b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
-        " <b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n <b>وضعیت:</b> {state}</blockquote>\n{instruction}"),
+        "<b>{type}</b> · {target}\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}\n{progress}</blockquote>\n{instruction}",
+        "<b>{type}</b> · {target}\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
+        "<b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n<b>وضعیت:</b> {state}\n{progress}</blockquote>\n{instruction}"),
+    "ins_done": ("This task is complete 🎉 New tasks are posted in this channel regularly.",
+                 "این تسک تکمیل شده است 🎉 تسک‌های جدید به‌طور مرتب در همین کانال منتشر می‌شود."),
     "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
                   "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
     "ins_react": ("React to the destination message, then tap <b>Claim reward</b>.",
                   "روی پیام مقصد واکنش بزنید، سپس روی «دریافت پاداش» بزنید."),
     "ins_join": ("Join the destination, then tap <b>Claim reward</b>.",
                  "در مقصد عضو شوید، سپس روی «دریافت پاداش» بزنید."),
-    "ins_view": ("Open the destination post, wait a few seconds, then tap <b>Claim reward</b>.",
-                 "پست مقصد را مشاهده کنید، چند ثانیه صبر نمایید و سپس روی «دریافت پاداش» بزنید."),
+    "ins_view": ("Open the destination post, then tap <b>Claim reward</b>.",
+                 "پست مقصد را مشاهده کنید، سپس روی «دریافت پاداش» بزنید."),
     "ins_other": ("Complete the task at the destination, then tap <b>Claim reward</b>.",
                   "تسک را در مقصد انجام دهید، سپس روی «دریافت پاداش» بزنید."),
 
@@ -784,7 +781,7 @@ def admin_home_keyboard(lang):
         [B("📊 آمار کلی" if fa else "📊 Overview", "ad:stats", "primary")],
         [B("👥 کاربران" if fa else "👥 Users", "ad:users:0"), B("🔎 جست‌وجو" if fa else "🔎 Search", "ad:search")],
         [B("📣 کمپین‌ها" if fa else "📣 Campaigns", "ad:campaigns:0"), B("📢 همه‌پیامی" if fa else "📢 Broadcast", "ad:bc")],
-        [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0")],
+        [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0"), B("♻️ بازنشر تسک‌ها" if fa else "♻️ Re-post tasks", "ad:rp")],
         [B("↩️ بازگشت به منو" if fa else "↩️ Main menu", "home")],
     ]
 
@@ -1254,11 +1251,18 @@ def campaign_listing_text(c):
         ins = "ins_view"
     else:
         ins = "ins_other"
+    state_key = campaign_state_key(c)
+    if state_key == "st_full":
+        ins = "ins_done"
+    total = max(int(c.get("target") or 0), remaining, 1)
+    done = total - remaining
+    pct = round(100 * done / total)
+    progress = H(f"<code>{bar(done, total, 12)}</code> <b>{pct}%</b> · <code>{done}/{total}</code>")
     blocks = []
     for lang in ("en", "fa"):
         blocks.append(str(t(lang, "listing", type=tn(lang, typ) if typ in TYPES else tb(lang, "campaign_fallback"),
                             target=ctitle(c), reward=c.get("reward", 0), remaining=remaining,
-                            state=K(campaign_state_key(c)),
+                            state=K(state_key), progress=progress,
                             instruction=t(lang, ins, window=int(c.get("window_min", 5))))))
     return blocks[1] + "\n────────\n" + blocks[0]
 
@@ -1497,9 +1501,6 @@ def on_claim(cq, uid, chat, mid, cid_s):
         ans(cq, tb(lang, "a_open_first"), True)
         return show_task(lang, chat, mid)
     is_count = c.get("type") == "react" and c.get("mode") == "count"
-    wait = 0 if is_count else TYPES[c["type"]]["wait"] - (time.time() - ses["t"])
-    if wait > 0:
-        return ans(cq, tb(lang, "a_wait", s=int(wait) + 1), True)
 
     if c["type"] == "join":
         r = tg("getChatMember", chat_id=c["chat_id"], user_id=uid)
@@ -2996,9 +2997,245 @@ def growth_stats_text(lang):
     return H(_rtl(msg.format(**vals)) if lang == "fa" else msg.format(**vals))
 
 
+# ───────────────────────── admin: automatic re-posting of older channel tasks ─────────────────────────
+RP_DEFAULT = {"on": False, "hours": 6, "keep": 5, "per": 3, "notify": True, "last_run": 0.0, "last_n": 0}
+RP_HOURS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72]            # steps of the "every X hours" setting
+RP_LIMITS = {"keep": (0, 50), "per": (1, 10)}
+RP_NOTICE_DAYS = 30                                      # notices go only to users seen within this many days
+
+S.update({
+    "b_rp_moved": ("Moved — open the new post", "منتقل شد — مشاهده پست جدید"),
+    "rp_notice": (
+        "<b>♻️ Open tasks are back in the channel!</b>\n<blockquote>{tasks}</blockquote>\n"
+        "Spots are limited — complete them and collect your ⭐ Stars 👇",
+        "<b>♻️ تسک‌های باز دوباره در کانال!</b>\n<blockquote>{tasks}</blockquote>\n"
+        "ظرفیت محدود است؛ انجام دهید و استارز خود را دریافت کنید ⭐👇"),
+})
+
+
+def rp_cfg():
+    cfg = dict(RP_DEFAULT)
+    cfg.update({k: v for k, v in (db.settings.find_one({"_id": "repost"}) or {}).items() if k in RP_DEFAULT})
+    return cfg
+
+
+def rp_set(**kw):
+    db.settings.update_one({"_id": "repost"}, {"$set": kw}, upsert=True)
+
+
+def rp_candidates(cfg):
+    """Open tasks that are older than the N most recent open channel posts; the oldest listing comes first."""
+    q = {"status": "active", "remaining": {"$gt": 0}, "listing_message_id": {"$exists": True, "$ne": None}}
+    rows = [c for c in db.campaigns.find(q).sort("listed_at", -1).limit(500)
+            if not is_legacy(c) and not (c.get("admin_paused") and campaign_needs_admin(c))]
+    return list(reversed(rows[int(cfg["keep"]):]))
+
+
+def rp_repost_one(c):
+    """Publish the task again as a fresh channel post, then retire the old post (delete, or point it to the new one)."""
+    old_chat, old_mid = c.get("listing_chat_id"), c.get("listing_message_id")
+    if not publish_campaign(c):
+        return None
+    fresh = db.campaigns.find_one({"_id": c["_id"]}) or c
+    if old_chat and old_mid:
+        r = tg("deleteMessage", chat_id=old_chat, message_id=old_mid)
+        if not r.get("ok"):
+            new_url = post_url_of(fresh)
+            kb = [[U("📌 " + bi_btn("b_rp_moved"), new_url, "primary")]] if new_url else []
+            tg("editMessageReplyMarkup", chat_id=old_chat, message_id=old_mid, reply_markup={"inline_keyboard": kb})
+    return fresh
+
+
+def run_repost(cfg=None):
+    """Re-post up to `per` older open tasks and queue the user notice. Returns how many were re-posted."""
+    cfg = cfg or rp_cfg()
+    if not TASKS_CHANNEL:
+        return 0
+    done = []
+    for c in rp_candidates(cfg)[:int(cfg["per"])]:
+        try:
+            fresh = rp_repost_one(c)
+        except Exception:
+            log.exception("repost %s", c.get("_id"))
+            fresh = None
+        if fresh:
+            done.append(fresh)
+        time.sleep(0.4)
+    rp_set(last_run=time.time(), last_n=len(done))
+    if done and cfg["notify"]:
+        tasks = [{"cid": c["_id"], "url": post_url_of(c) or tasks_channel_url()} for c in done]
+        tasks = [x for x in tasks if x["url"]]
+        if tasks:
+            db.repost_jobs.insert_one({"tasks": tasks, "status": "queued", "created": time.time(),
+                                       "cursor": 0, "sent": 0, "failed": 0})
+    return len(done)
+
+
+def repost_tick():
+    cfg = rp_cfg()
+    if not cfg["on"] or not TASKS_CHANNEL or time.time() - float(cfg["last_run"]) < float(cfg["hours"]) * 3600:
+        return
+    if not take_lock("repost", 300):
+        return
+    try:
+        cfg = rp_cfg()
+        if cfg["on"] and time.time() - float(cfg["last_run"]) >= float(cfg["hours"]) * 3600:
+            run_repost(cfg)
+    finally:
+        release_lock("repost")
+
+
+def rp_notice_view(lang, items, camps):
+    fa = lang == "fa"
+    lines, kb = [], []
+    for x in items:
+        c = camps[x["cid"]]
+        label = tn(lang, c["type"]) if c.get("type") in TYPES else tb(lang, "campaign_fallback")
+        lines.append(f"{label} · {html.escape(ctitle(c))}\n🎁 <code>{c.get('reward', 0)}</code> ⭐ · "
+                     f"{'ظرفیت' if fa else 'spots'} <code>{int(c.get('remaining', 0))}</code>")
+        kb.append([U(f"{label} · +{c.get('reward', 0)} ⭐", x["url"], "success")])
+    return t(lang, "rp_notice", tasks=H("\n\n".join(lines))), kb
+
+
+def pump_repost_notices(max_seconds=15):
+    """Send the «tasks are back» notice, only to users who have not done a task yet; one message per user."""
+    job = db.repost_jobs.find_one({"status": {"$in": ["queued", "sending"]}}, sort=[("created", 1)])
+    if not job or not take_lock("rpn", max_seconds + 10):
+        return False
+    started = time.time()
+    try:
+        db.repost_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "sending"}})
+        camps = {c["_id"]: c for c in db.campaigns.find({"_id": {"$in": [x["cid"] for x in job["tasks"]]}})}
+        live = [x for x in job["tasks"] if camps.get(x["cid"]) and camps[x["cid"]].get("status") == "active"
+                and int(camps[x["cid"]].get("remaining", 0)) > 0]
+        since = time.time() - RP_NOTICE_DAYS * 86400
+        q = dict(seg_query("all"))
+        q["$or"] = [{"last_seen": {"$gte": since}}, {"joined": {"$gte": since}}]
+        cursor = job.get("cursor", 0)
+        while live and time.time() - started < max_seconds:
+            q["_id"] = {"$gt": cursor}
+            batch = list(db.users.find(q).sort("_id", 1).limit(30))
+            if not batch:
+                break
+            sent = failed = 0
+            for u in batch:
+                cursor = u["_id"]
+                if int(u.get("strikes", 0)) >= STRIKE_LIMIT:
+                    continue
+                did = {d["cid"] for d in db.completions.find({"uid": u["_id"], "cid": {"$in": [x["cid"] for x in live]}}, {"cid": 1})}
+                items = [x for x in live if x["cid"] not in did and camps[x["cid"]].get("owner") != u["_id"]]
+                if not items:
+                    continue
+                text, kb = rp_notice_view(lang_of(u), items, camps)
+                r = send(u["_id"], text, kb)
+                if r.get("ok"):
+                    sent += 1
+                else:
+                    failed += 1
+                    if r.get("error_code") == 403:
+                        db.users.update_one({"_id": u["_id"]}, {"$set": {"blocked": True}})
+                time.sleep(0.065)
+            db.repost_jobs.update_one({"_id": job["_id"]}, {"$set": {"cursor": cursor}, "$inc": {"sent": sent, "failed": failed}})
+        else:
+            if live:
+                return True                                    # time slice used up: continue on the next pass
+        db.repost_jobs.update_one({"_id": job["_id"]}, {"$set": {"status": "done", "finished": time.time()}})
+        return False
+    finally:
+        release_lock("rpn")
+
+
+def _rp_span(sec, fa):
+    sec = max(0, int(sec))
+    if sec < 3600:
+        m = max(1, sec // 60)
+        return f"{m} دقیقه" if fa else f"{m} min"
+    h = round(sec / 3600, 1)
+    h = int(h) if h == int(h) else h
+    return f"{h} ساعت" if fa else f"{h} h"
+
+
+def admin_repost_screen(chat, lang, mid=None, note=""):
+    fa = lang == "fa"
+    cfg, now = rp_cfg(), time.time()
+    on, notify = bool(cfg["on"]), bool(cfg["notify"])
+    pool = len(rp_candidates(cfg))
+    last = (f"{_rp_span(now - float(cfg['last_run']), fa)} {'پیش' if fa else 'ago'} · {int(cfg.get('last_n', 0))} {'تسک' if fa else 'task(s)'}"
+            if cfg["last_run"] else ("—"))
+    if on:
+        left = float(cfg["last_run"]) + float(cfg["hours"]) * 3600 - now
+        nxt = (f"حدود {_rp_span(left, True)} دیگر" if left > 60 else "همین چند لحظه‌ی دیگر") if fa else \
+              (f"in about {_rp_span(left, False)}" if left > 60 else "within moments")
+    else:
+        nxt = "—"
+    if fa:
+        msg = (f"<b>♻️ بازنشر خودکار تسک‌ها</b>\n<blockquote>"
+               f"وضعیت: {'✅ فعال' if on else '⛔ غیرفعال'}\n"
+               f"هر <code>{cfg['hours']}</code> ساعت یک‌بار\n"
+               f"نادیده‌گرفتن <code>{cfg['keep']}</code> تسک اخیر\n"
+               f"حداکثر در هر نوبت: <code>{cfg['per']}</code> تسک\n"
+               f"اطلاع‌رسانی به کاربران: {'✅ روشن' if notify else '⛔ خاموش'}\n"
+               f"قابل بازنشر اکنون: <code>{pool}</code> تسک\n"
+               f"آخرین اجرا: {last}\nاجرای بعدی: {nxt}</blockquote>\n"
+               "تسک‌های بازِ قدیمی‌تر از «اخیرها» با ظرفیت باقی‌مانده دوباره در کانال پست می‌شوند و فقط کاربرانی که آن را انجام نداده‌اند اطلاعیه می‌گیرند.")
+    else:
+        msg = (f"<b>♻️ Auto re-post tasks</b>\n<blockquote>"
+               f"Status: {'✅ On' if on else '⛔ Off'}\n"
+               f"Every <code>{cfg['hours']}</code> h\n"
+               f"Skip the <code>{cfg['keep']}</code> most recent tasks\n"
+               f"Max per round: <code>{cfg['per']}</code> tasks\n"
+               f"User notice: {'✅ On' if notify else '⛔ Off'}\n"
+               f"Eligible now: <code>{pool}</code> tasks\n"
+               f"Last run: {last}\nNext run: {nxt}</blockquote>\n"
+               "Open tasks older than the recent ones are posted again with their remaining capacity; only users who have not done a task get the notice.")
+    if note:
+        msg += f"\n\n{note}"
+    kb = [[B(("⛔ خاموش کردن" if fa else "⛔ Turn off") if on else ("✅ روشن کردن" if fa else "✅ Turn on"), "ad:rpt:on", "danger" if on else "success")],
+          [B("➖", "ad:rpv:hours:-1"), B(f"⏱ {cfg['hours']} {'ساعت' if fa else 'h'}", "noop"), B("➕", "ad:rpv:hours:1")],
+          [B("➖", "ad:rpv:keep:-1"), B(f"📌 {'اخیرها' if fa else 'Recent'}: {cfg['keep']}", "noop"), B("➕", "ad:rpv:keep:1")],
+          [B("➖", "ad:rpv:per:-1"), B(f"🔢 {'هر نوبت' if fa else 'Per round'}: {cfg['per']}", "noop"), B("➕", "ad:rpv:per:1")],
+          [B(f"🔔 {'اطلاع‌رسانی' if fa else 'User notice'}: {'✅' if notify else '⛔'}", "ad:rpt:nt")],
+          [B("▶️ اجرای همین حالا" if fa else "▶️ Run now", "ad:rprun", "primary")],
+          [B("↩️ پنل" if fa else "↩️ Panel", "ad:home")]]
+    return view(chat, mid, H(_rtl(msg) if fa else msg), kb)
+
+
+def admin_repost_callback(chat, lang, mid, uid, parts):
+    fa, action, note = lang == "fa", parts[1], ""
+    cfg = rp_cfg()
+    if action == "rpt" and len(parts) > 2:
+        if parts[2] == "on":
+            now_on = not cfg["on"]
+            rp_set(on=now_on, **({"last_run": time.time()} if now_on else {}))      # first automatic run comes one interval later
+        elif parts[2] == "nt":
+            rp_set(notify=not cfg["notify"])
+    elif action == "rpv" and len(parts) > 3 and parts[2] in ("hours", "keep", "per") and parts[3] in ("1", "-1"):
+        step, key = int(parts[3]), parts[2]
+        if key == "hours":
+            cur = min(RP_HOURS, key=lambda h: abs(h - float(cfg["hours"])))
+            val = RP_HOURS[min(max(RP_HOURS.index(cur) + step, 0), len(RP_HOURS) - 1)]
+        else:
+            lo, hi = RP_LIMITS[key]
+            val = min(max(int(cfg[key]) + step, lo), hi)
+        rp_set(**{key: val})
+    elif action == "rprun":
+        if not TASKS_CHANNEL:
+            note = "⚠️ TASKS_CHANNEL تنظیم نشده است." if fa else "⚠️ TASKS_CHANNEL is not set."
+        elif not take_lock("repost", 300):
+            note = "⏳ یک اجرا در حال انجام است." if fa else "⏳ A run is already in progress."
+        else:
+            try:
+                n = run_repost(rp_cfg())
+            finally:
+                release_lock("repost")
+            note = (f"✅ {n} تسک دوباره پست شد." if n else "ℹ️ تسکی برای بازنشر پیدا نشد.") if fa else \
+                   (f"✅ {n} task(s) re-posted." if n else "ℹ️ No task to re-post right now.")
+    return admin_repost_screen(chat, lang, mid, note)
+
+
 # ───────────────────────── background jobs ─────────────────────────
 def growth_tick():
-    for job in (weekly_close, golden_announce, daily_report, send_reminders):
+    for job in (weekly_close, golden_announce, daily_report, send_reminders, repost_tick):
         try:
             job()
         except Exception:
@@ -3016,6 +3253,7 @@ def worker():
                     tick()
                     growth_tick()
             pending = pump_broadcasts()
+            pending = pump_repost_notices() or pending
         except Exception:
             log.exception("tick")
         time.sleep(2 if pending else 5)
@@ -3296,6 +3534,8 @@ def on_callback(cq):
             return admin_events_screen(chat, lang, offset=off, mid=mid)
         if action in ("bc", "bcs", "bcgo"):
             return admin_bc_callback(chat, lang, mid, uid, parts)
+        if action in ("rp", "rpt", "rpv", "rprun"):
+            return admin_repost_callback(chat, lang, mid, uid, parts)
         if action == "campaigns":
             off = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
             return admin_campaigns_screen(chat, lang, off, mid)
@@ -3347,16 +3587,6 @@ def on_callback(cq):
         deep = bot_deep_link(cid)
         if not deep:
             return ans(cq, tb(lang, "a_no_deeplink"), True)
-        # The delay is per user and per task, and applies only to the claim button.
-        click_id = f"reward:{cid}:{uid}"
-        now = time.time()
-        click = db.campaign_clicks.find_one({"_id": click_id})
-        if not click:
-            db.campaign_clicks.update_one({"_id": click_id}, {"$set": {"first_click_at": now}}, upsert=True)
-            return ans(cq, tb(lang, "a_wait_first"), True)
-        remaining_wait = 5 - (now - float(click.get("first_click_at", now)))
-        if remaining_wait > 0:
-            return ans(cq, tb(lang, "a_wait_claim", s=int(remaining_wait + 0.999)), True)
         return ans(cq, url=deep)                                 # opens the bot deep link directly in Telegram
 
     if data.startswith("c:"):
