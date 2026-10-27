@@ -8,7 +8,7 @@ Run   : gunicorn taskbot:app
 Deps  : flask pymongo requests gunicorn  (mongomock فقط برای اجرای آزمایشی بدون MongoDB)
 
 مدل کار / How it works
-- کاربر با انجام تسک «کوین» می‌گیرد و با کوین، کمپین خودش را ثبت می‌کند (هزینه‌ی ثبت > پاداش؛ اقتصاد تورم نمی‌کند).
+- کاربر با انجام تسک «کوین» می‌گیرد و با کوین، سفارش خودش را ثبت می‌کند (هزینه‌ی ثبت > پاداش؛ اقتصاد تورم نمی‌کند).
 - عضویت  : getChatMember (ربات باید ادمین مقصد باشد) + بازبینی در پایان دوره‌ی معلق (خروج = برگشت کوین + اخطار)
 - واکنش  : گروه → تأیید فردی با message_reaction | کانال → تأیید تجمیعی با message_reaction_count
            (هر واحد افزایش شمارش حداکثر یک ادعا را تأیید می‌کند؛ هویت واکنش‌دهنده اثبات نمی‌شود)
@@ -260,9 +260,9 @@ S = {
     "b_back": ("↩️ Back", "↩️ بازگشت"),
     "b_cancel": ("Cancel", "⭕️ انصراف"),
     "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
-    "b_new": ("➕ Create campaign", "➕ ایجاد کمپین"),
-    "b_my": ("📣 Grow my channel", "📣 رشد کانال من"),
-    "b_mine": ("📋 My campaigns", "📋 کمپین‌های من"),
+    "b_new": ("➕ New order", "➕ سفارش جدید"),
+    "b_my": ("🛒 Place an order", "🛒 ثبت سفارش"),
+    "b_mine": ("📋 My orders", "📋 سفارش‌های من"),
     "b_ref": ("🎁 Compound Rewards+", "🎁 پاداش مرکب+"),
     "b_acc": ("👤 Account", "👤 حساب کاربری"),
     "b_help": ("📘 Help", "📘 راهنما"),
@@ -277,13 +277,13 @@ S = {
     "b_target": ("🎯 Target", "مقصد"),
     "b_claim": ("🎁 Claim", "پاداش"),
     "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
-    "b_yes_cancel": ("Yes, cancel campaign", "بله، کمپین لغو شود"),
+    "b_yes_cancel": ("Yes, cancel order", "بله، سفارش لغو شود"),
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
     "b_next": ("Next task", "تسک بعدی"),
     "b_watch": ("Reaction monitor", "پایش واکنش‌ها"),
     "b_win2": ("2 minutes", "2 دقیقه"),
     "b_win5": ("5 minutes", "5 دقیقه"),
-    "b_cancel_campaign": ("Cancel campaign", "لغو کمپین"),
+    "b_cancel_campaign": ("Cancel order", "لغو سفارش"),
     "b_full": ("Task completed", "تسک تکمیل شد ✅"),
     "b_legacy": ("Retired verification method", "روش تأیید قدیمی غیرفعال"),
     "type_btn": ("{name} — {cost} Stars", "{name} — {cost} استارز"),
@@ -304,14 +304,14 @@ S = {
     "lbl_custom": ("Custom emoji", "ایموجی اختصاصی"),
     "lbl_paid": ("Paid reaction", "واکنش پولی"),
     "user_fallback": ("A user", "یک کاربر"),
-    "campaign_fallback": ("Campaign", "کمپین"),
+    "campaign_fallback": ("Order", "سفارش"),
     "share_text": ("🎁 Free Stars every day! Complete easy tasks, collect daily gifts and grow your channel on autopilot with TaskPlus.",
                    "🎁 هر روز استارز رایگان! با انجام تسک‌های ساده و هدیه‌ی روزانه، کانال خود را در تاسک‌پلاس به‌صورت خودکار رشد دهید."),
 
     # ───────── Failure reasons (used inside notifications) ─────────
-    "r_stopped": ("The campaign was stopped before verification and the spot was returned.",
-                  "کمپین پیش از تأیید متوقف شد و ظرفیت آن بازگردانده شد."),
-    "r_paused": ("The campaign has been stopped.", "کمپین متوقف شده است."),
+    "r_stopped": ("The order was stopped before verification and the spot was returned.",
+                  "سفارش پیش از تأیید متوقف شد و ظرفیت آن بازگردانده شد."),
+    "r_paused": ("The order has been stopped.", "سفارش متوقف شده است."),
     "r_no_increase": ("No verifiable increase in the count was received within the time limit.",
                       "در مهلت تعیین‌شده، افزایش قابل‌تأییدی در شمارش دریافت نشد."),
     "r_left": ("You left the channel or removed your reaction, so the Stars for this task were reversed.",
@@ -323,7 +323,7 @@ S = {
     "menu": (
         "<b>Grameeting👁‍🗨</b>\n<i>Task exchange for Telegram channels and groups</i>\n"
         "<blockquote><b>Balance:</b> <code>{points}</code> Stars⭐{hold}</blockquote>\n"
-        "Welcome, {name}. Complete tasks to earn Stars, then spend them on campaigns that grow your own channel.",
+        "Welcome, {name}. Complete tasks to earn Stars, then spend them on orders for your own channel.",
         "<b>Grameeting👁‍🗨</b>\nپلتفرم نوین عضوگیری، ریکشن پست و ویو سریع؛ حرفه‌ای و رایگان برای تمامی کانال‌ها و گروه‌های تلگرام\n"
         "<blockquote><b>موجودی:</b> <code>{points}</code> استارز⭐{hold}</blockquote>\n"
         "{name} گرامی، خوش آمدید. با انجام تسک و روش های مختلف میتوانید استارز رایگان کسب کنید و از آن برای رشد کانال و یا گروه و ربات و.. خود استفاده نمایید."),
@@ -336,7 +336,7 @@ S = {
         "<b>Join</b> — {r_join} Stars. Membership is verified and paid instantly.\n"
         "<b>Reaction</b> — {r_react} Stars. Verified per user in groups and by count increase in channels.\n"
         "<b>View</b> — {r_view} Stars. Paid after the required waiting time.</blockquote>\n"
-        "<b>Create a campaign</b>\n"
+        "<b>Place an order</b>\n"
         "<blockquote>Choose a task type, then send the destination link and the quantity. The cost is shown before you confirm. "
         "For join and group-reaction tasks the bot must be an administrator of the destination.</blockquote>\n"
         "<b>Invite friends</b>\n"
@@ -346,7 +346,7 @@ S = {
         "<blockquote>🎁 Collect the daily gift every day — streaks pay more. 🎰 Finish one task to unlock a free lucky-wheel spin. "
         "🏆 Top earners and top inviters win weekly prizes, and levels unlock bigger gifts and higher daily limits.</blockquote>\n"
         "<b>Rules</b>\n"
-        "<blockquote>Each campaign counts once per person. Leaving a channel or removing a reaction during the "
+        "<blockquote>Each order counts once per person. Leaving a channel or removing a reaction during the "
         "{hold_h}-hour review period reverses the reward and adds one warning. After {strike_limit} warnings, "
         "task completion is disabled.</blockquote>\n"
         "<blockquote expandable><b>About channel reactions</b>\n"
@@ -358,7 +358,7 @@ S = {
         "<b>عضویت</b> — {r_join} استارز. عضویت بررسی و پاداش بلافاصله واریز می‌شود.\n"
         "<b>واکنش</b> — {r_react} استارز. در گروه به‌صورت فردی و در کانال بر اساس افزایش شمارش تأیید می‌شود.\n"
         "<b>بازدید</b> — {r_view} استارز. پس از رعایت زمان انتظار پرداخت می‌شود.</blockquote>\n"
-        "<b>ایجاد کمپین</b>\n"
+        "<b>ثبت سفارش</b>\n"
         "<blockquote>نوع تسک را انتخاب کنید و سپس لینک مقصد و تعداد را ارسال نمایید. هزینه پیش از تأیید نمایش داده می‌شود. "
         "برای تسک‌های عضویت و واکنش در گروه، ربات باید در مقصد ادمین باشد.</blockquote>\n"
         "<b>دعوت از دوستان</b>\n"
@@ -368,7 +368,7 @@ S = {
         "<blockquote>🎁 هر روز هدیه‌ی روزانه را بگیرید؛ استریک بلندتر، پاداش بیشتر. 🎰 با انجام یک تسک، چرخش رایگان گردونه‌ی شانس باز می‌شود. "
         "🏆 برترین‌های هفته در درآمد و دعوت جایزه می‌گیرند و سطح‌های بالاتر هدیه‌ی بزرگ‌تر و سقف تسک بیشتری دارند.</blockquote>\n"
         "<b>قوانین</b>\n"
-        "<blockquote>هر کمپین برای هر نفر فقط یک بار محاسبه می‌شود. خروج از کانال یا حذف واکنش در دوره‌ی بررسی "
+        "<blockquote>هر سفارش برای هر نفر فقط یک بار محاسبه می‌شود. خروج از کانال یا حذف واکنش در دوره‌ی بررسی "
         "({hold_h} ساعت) موجب برگشت پاداش و ثبت یک اخطار می‌شود. پس از {strike_limit} اخطار، انجام تسک غیرفعال خواهد شد.</blockquote>\n"
         "<blockquote expandable><b>درباره‌ی واکنش در کانال</b>\n"
         "واکنش‌های کانال بر اساس افزایش شمارش کل واکنش‌های پست تأیید می‌شوند. این روش تعداد واکنش‌های افزوده‌شده را "
@@ -379,13 +379,13 @@ S = {
         "<blockquote><b>Balance:</b> <code>{points}</code> Stars{hold}\n"
         "<b>Total earned:</b> <code>{earned}</code> Stars</blockquote>\n"
         "<blockquote><b>Invited:</b> <code>{refs}</code> ({ref_active} active)\n"
-        "<b>Active campaigns:</b> <code>{active}</code> / {max_active}\n"
+        "<b>Active orders:</b> <code>{active}</code> / {max_active}\n"
         "<b>Warnings:</b> <code>{strikes}</code> / {strike_limit}</blockquote>",
         "<b>حساب کاربری</b>\n<i>خلاصه‌ی موجودی و فعالیت</i>\n"
         "<blockquote><b>موجودی:</b> <code>{points}</code> استارز{hold}\n"
         "<b>مجموع درآمد:</b> <code>{earned}</code> استارز</blockquote>\n"
         "<blockquote><b>دعوت‌شده‌ها:</b> <code>{refs}</code> ({ref_active} فعال)\n"
-        "<b>کمپین‌های فعال:</b> <code>{active}</code> از {max_active}\n"
+        "<b>سفارش‌های فعال:</b> <code>{active}</code> از {max_active}\n"
         "<b>اخطارها:</b> <code>{strikes}</code> از {strike_limit}</blockquote>"),
 
     "earn": (
@@ -476,16 +476,16 @@ S = {
                        "این لینک تسک نامعتبر یا ناقص است. یک تسک فعال را از ویترین انتخاب کنید."),
     "e_no_capacity": ("This task has no remaining capacity. Choose another task from the showcase.",
                       "این تسک دیگر ظرفیت ندارد. تسک دیگری را از ویترین انتخاب کنید."),
-    "e_legacy": ("This campaign used a retired verification method and can no longer be completed. Please choose another task.",
-                 "این کمپین از روش تأیید قدیمی استفاده می‌کرد و دیگر قابل انجام نیست. لطفاً تسک دیگری انتخاب کنید."),
-    "e_paused": ("This campaign is temporarily paused while the bot's access is restored.",
-                 "این کمپین موقتاً متوقف شده است؛ دسترسی ربات در حال بازیابی است."),
+    "e_legacy": ("This order used a retired verification method and can no longer be completed. Please choose another task.",
+                 "این سفارش از روش تأیید قدیمی استفاده می‌کرد و دیگر قابل انجام نیست. لطفاً تسک دیگری انتخاب کنید."),
+    "e_paused": ("This order is temporarily paused while the bot's access is restored.",
+                 "این سفارش موقتاً متوقف شده است؛ دسترسی ربات در حال بازیابی است."),
     "e_admin_unavail": ("Destination access cannot be checked right now. Please try again shortly.",
                         "بررسی دسترسی مقصد در حال حاضر ممکن نیست. لطفاً کمی بعد دوباره تلاش کنید."),
-    "e_paused_now": ("This campaign is temporarily paused. Please try again later.",
-                     "این کمپین موقتاً متوقف است. لطفاً بعداً دوباره تلاش کنید."),
-    "e_own": ("This campaign belongs to you, so you cannot complete it.",
-              "این کمپین متعلق به شماست و نمی‌توانید آن را انجام دهید."),
+    "e_paused_now": ("This order is temporarily paused. Please try again later.",
+                     "این سفارش موقتاً متوقف است. لطفاً بعداً دوباره تلاش کنید."),
+    "e_own": ("This order belongs to you, so you cannot complete it.",
+              "این سفارش متعلق به شماست و نمی‌توانید آن را انجام دهید."),
     "e_done_before": ("This task is already recorded for your account. Return to the showcase for more tasks.",
                       "این تسک قبلاً برای حساب شما ثبت شده است. برای تسک‌های دیگر به ویترین بازگردید."),
     "e_strikes": ("Task completion is currently disabled for your account because the warning limit was reached.",
@@ -506,12 +506,12 @@ S = {
     "a_no_capacity": ("This task no longer has capacity.", "این تسک دیگر ظرفیت ندارد."),
     "a_legacy": ("The retired verification method is no longer supported.",
                  "روش تأیید قدیمی دیگر پشتیبانی نمی‌شود."),
-    "a_paused": ("This campaign is paused while bot access is restored.",
-                 "این کمپین تا بازیابی دسترسی ربات متوقف است."),
+    "a_paused": ("This order is paused while bot access is restored.",
+                 "این سفارش تا بازیابی دسترسی ربات متوقف است."),
     "a_admin_unavail": ("Destination access cannot be checked now. Try again shortly.",
                         "بررسی دسترسی مقصد اکنون ممکن نیست. کمی بعد تلاش کنید."),
-    "a_paused_now": ("Campaign paused: bot access was lost. Try again later.",
-                     "کمپین متوقف شد: دسترسی ربات از دست رفته است. بعداً تلاش کنید."),
+    "a_paused_now": ("Order paused: bot access was lost. Try again later.",
+                     "سفارش متوقف شد: دسترسی ربات از دست رفته است. بعداً تلاش کنید."),
     "a_cant": ("You cannot complete this task.", "امکان انجام این تسک برای شما وجود ندارد."),
     "a_dup": ("You have already completed this task.", "این تسک را قبلاً انجام داده‌اید."),
     "a_open_first": ("Open the task from the showcase first.", "ابتدا تسک را از ویترین باز کنید."),
@@ -532,31 +532,31 @@ S = {
                       "شناسه‌ی این تسک نامعتبر است. از یک پست تازه‌ی کانال استفاده کنید."),
     "a_inactive": ("This task is no longer active.", "این تسک دیگر فعال نیست."),
     "a_no_deeplink": ("The reward page link is unavailable.", "لینک صفحه‌ی دریافت پاداش در دسترس نیست."),
-    "a_step_expired": ("This step has expired. Start the campaign again.",
-                       "این مرحله منقضی شده است. ثبت کمپین را دوباره شروع کنید."),
+    "a_step_expired": ("This step has expired. Place the order again.",
+                       "این مرحله منقضی شده است. ثبت سفارش را دوباره شروع کنید."),
     "a_window_bad": ("Invalid time limit.", "مهلت نامعتبر است."),
     "a_window_only": ("Only 2 or 5 minutes can be selected.", "فقط 2 یا 5 دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
                       "شمارش قدیمی است. برای به‌روزرسانی، یک واکنش اضافه یا حذف کنید."),
     "a_window_set": ("Time limit set to {window} minutes.", "مهلت روی {window} دقیقه تنظیم شد."),
-    "a_max_active": ("You can have at most {n} active campaigns.", "حداکثر {n} کمپین فعال می‌توانید داشته باشید."),
+    "a_max_active": ("You can have at most {n} active orders.", "حداکثر {n} سفارش فعال می‌توانید داشته باشید."),
     "a_no_funds": ("Insufficient balance.", "موجودی کافی نیست."),
     "a_admin_check_pre": ("The destination check is temporarily unavailable. No Stars were charged. Try again.",
                           "بررسی ادمین مقصد موقتاً ممکن نیست و استارزی کسر نشد. دوباره تلاش کنید."),
-    "a_admin_needed": ("The bot must be an administrator of the destination until the campaign ends. No Stars were charged.",
-                       "ربات باید تا پایان کمپین در مقصد ادمین باشد. استارزی کسر نشد."),
+    "a_admin_needed": ("The bot must be an administrator of the destination until the order ends. No Stars were charged.",
+                       "ربات باید تا پایان سفارش در مقصد ادمین باشد. استارزی کسر نشد."),
     "a_baseline_stale": ("The baseline count is outdated. Send the post link again to refresh monitoring.",
                          "شمارش پایه قدیمی است. برای تازه‌سازی پایش، لینک پست را دوباره ارسال کنید."),
     "a_showcase_down": ("The showcase is unavailable.", "ویترین در دسترس نیست."),
-    "a_my_empty": ("You have not created any campaign yet.", "هنوز کمپینی ایجاد نکرده‌اید."),
-    "a_published": ("Campaign published.", "کمپین منتشر شد."),
-    "a_cancel_inactive": ("This campaign is not active.", "این کمپین فعال نیست."),
+    "a_my_empty": ("You have not placed any order yet.", "هنوز سفارشی ثبت نکرده‌اید."),
+    "a_published": ("Order placed.", "سفارش ثبت شد."),
+    "a_cancel_inactive": ("This order is not active.", "این سفارش فعال نیست."),
     "a_cancelled": ("Cancelled. {n} Stars refunded.", "لغو شد. {n} استارز بازگردانده شد."),
 
     # ───────── Create-campaign flow ─────────
     "new": (
-        "<b>New campaign</b>\n<i>Choose what you want to promote</i>\n\nThe price per unit is shown on each button.",
-        "<b>ایجاد کمپین</b>\n<i>فعالیت موردنظر برای ترویج را انتخاب کنید</i>\n\nهزینه‌ی هر واحد روی دکمه‌ها درج شده است."),
+        "<b>New order</b>\n<i>Choose what you want to promote</i>\n\nThe price per unit is shown on each button.",
+        "<b>ثبت سفارش</b>\n<i>فعالیت موردنظر برای ترویج را انتخاب کنید</i>\n\nهزینه‌ی هر واحد روی دکمه‌ها درج شده است."),
     "prompt_join": (
         "<b>Join destination</b>\n\nSend the public username or link of the channel or group, for example <code>@mychannel</code>.\n"
         "<blockquote>First add <code>@{bot}</code> as an administrator of the destination so memberships can be verified.</blockquote>",
@@ -611,8 +611,8 @@ S = {
                          "به‌روزرسانی شمارش هنوز نرسیده است. یک واکنش روی همان پست اضافه یا حذف کنید و کمی صبر نمایید."),
     "baseline_need_action": ("<b>Fresh count required</b>\nAdd or remove a reaction on the same post and wait for the update.",
                              "<b>شمارش تازه لازم است</b>\nیک واکنش به همان پست اضافه یا حذف کنید و منتظر به‌روزرسانی بمانید."),
-    "baseline_restart": ("<b>Fresh count required</b>\nStart the reaction campaign again from the menu.",
-                         "<b>شمارش تازه لازم است</b>\nثبت کمپین واکنش را دوباره از منو آغاز کنید."),
+    "baseline_restart": ("<b>Fresh count required</b>\nPlace the reaction order again from the menu.",
+                         "<b>شمارش تازه لازم است</b>\nثبت سفارش واکنش را دوباره از منو آغاز کنید."),
     "window_ready": (
         "<b>Monitoring ready</b>\n<blockquote><b>Latest count:</b> <code>{total}</code> reactions</blockquote>\n"
         "Choose the time limit each user has to complete the task. Telegram may deliver count updates with some delay.",
@@ -633,56 +633,56 @@ S = {
     "qty_nan": ("Please send a number only.", "لطفاً فقط یک عدد ارسال کنید."),
     "qty_range": ("The number must be between 1 and {max}.", "عدد باید بین 1 تا {max} باشد."),
     "summary": (
-        "<b>Campaign summary</b>\n<blockquote><b>Type:</b> {type}\n<b>Target:</b> {title}\n"
+        "<b>Order summary</b>\n<blockquote><b>Type:</b> {type}\n<b>Target:</b> {title}\n"
         "<b>Quantity:</b> <code>{qty}</code>\n<b>Cost:</b> <code>{total}</code> Stars\n<b>Verification:</b> {how}</blockquote>"
-        "{admin_note}\n\nConfirm to publish this campaign.",
-        "<b>خلاصه‌ی کمپین</b>\n<blockquote><b>نوع:</b> {type}\n<b>مقصد:</b> {title}\n"
+        "{admin_note}\n\nConfirm to place this order.",
+        "<b>خلاصه‌ی سفارش</b>\n<blockquote><b>نوع:</b> {type}\n<b>مقصد:</b> {title}\n"
         "<b>تعداد:</b> <code>{qty}</code>\n<b>هزینه:</b> <code>{total}</code> استارز\n<b>روش تأیید:</b> {how}</blockquote>"
-        "{admin_note}\n\nبرای انتشار کمپین، تأیید کنید."),
-    "summary_admin": ("\n<i>The bot must remain an administrator of the destination until the campaign ends; otherwise the campaign pauses temporarily.</i>",
-                      "\n<i>ربات باید تا پایان کمپین در مقصد ادمین بماند؛ در غیر این صورت کمپین موقتاً متوقف می‌شود.</i>"),
+        "{admin_note}\n\nبرای ثبت نهایی سفارش، تأیید کنید."),
+    "summary_admin": ("\n<i>The bot must remain an administrator of the destination until the order ends; otherwise the order pauses temporarily.</i>",
+                      "\n<i>ربات باید تا پایان سفارش در مقصد ادمین بماند؛ در غیر این صورت سفارش موقتاً متوقف می‌شود.</i>"),
     "how_join": ("Automatic membership check, re-checked at the end of the review period",
                  "بررسی خودکار عضویت و بازبینی در پایان دوره‌ی بررسی"),
     "how_view": ("Time-based (views cannot be verified precisely)", "زمانی (بازدید دقیقاً قابل راستی‌آزمایی نیست)"),
     "how_react_auto": ("Per-user reaction check (group)", "بررسی فردی واکنش (گروه)"),
     "how_react_count": ("Channel count check, {window}-minute limit", "بررسی شمارشی کانال، مهلت {window} دقیقه"),
     "published": (
-        "<b>Campaign published</b>\n\nYour task is live in the showcase channel. Rewards are paid automatically after each verified completion. "
-        "Track progress under <b>My campaigns</b>.",
-        "<b>کمپین منتشر شد</b>\n\nتسک شما در کانال ویترین قرار گرفت. پاداش پس از تأیید هر انجام، به‌صورت خودکار واریز می‌شود. "
-        "پیشرفت کمپین را از بخش «کمپین‌های من» دنبال کنید."),
+        "<b>Order placed</b>\n\nYour task is live in the showcase channel. Rewards are paid automatically after each verified completion. "
+        "Track progress under <b>My orders</b>.",
+        "<b>سفارش ثبت شد</b>\n\nتسک شما در کانال ویترین قرار گرفت. پاداش پس از تأیید هر انجام، به‌صورت خودکار واریز می‌شود. "
+        "پیشرفت سفارش را از بخش «سفارش‌های من» دنبال کنید."),
     "publish_failed": (
-        "<b>Campaign not published — cost refunded</b>\n\nThe bot administrator must set <code>TASKS_CHANNEL</code>, "
+        "<b>Order not placed — cost refunded</b>\n\nThe bot administrator must set <code>TASKS_CHANNEL</code>, "
         "add the bot to the showcase channel as an administrator and allow it to post and edit messages.\n\n"
-        "You can create the campaign again once the showcase is ready. Your Stars have been returned.",
-        "<b>کمپین منتشر نشد — هزینه بازگردانده شد</b>\n\nمدیر ربات باید متغیر <code>TASKS_CHANNEL</code> را تنظیم کند، "
+        "You can place the order again once the showcase is ready. Your Stars have been returned.",
+        "<b>سفارش ثبت نشد — هزینه بازگردانده شد</b>\n\nمدیر ربات باید متغیر <code>TASKS_CHANNEL</code> را تنظیم کند، "
         "ربات را در کانال ویترین ادمین نماید و دسترسی ارسال و ویرایش پیام را فعال کند.\n\n"
-        "پس از آماده شدن ویترین می‌توانید کمپین را دوباره ثبت کنید. استارز‌های شما بازگردانده شده است."),
+        "پس از آماده شدن ویترین می‌توانید سفارش را دوباره ثبت کنید. استارز‌های شما بازگردانده شده است."),
 
     # ───────── My campaigns ─────────
-    "my": ("<b>My campaigns</b>\n<i>Your latest 10 campaigns</i>\n\n{rows}",
-           "<b>کمپین‌های من</b>\n<i>10 کمپین آخر شما</i>\n\n{rows}"),
-    "my_empty": ("<b>My campaigns</b>\n\nYou have not created any campaign yet.",
-                 "<b>کمپین‌های من</b>\n\nهنوز کمپینی ایجاد نکرده‌اید."),
+    "my": ("<b>My orders</b>\n<i>Your latest 10 orders</i>\n\n{rows}",
+           "<b>سفارش‌های من</b>\n<i>10 سفارش آخر شما</i>\n\n{rows}"),
+    "my_empty": ("<b>My orders</b>\n\nYou have not placed any order yet.",
+                 "<b>سفارش‌های من</b>\n\nهنوز سفارشی ثبت نکرده‌اید."),
     "my_row": ("<b>{n}.</b> {type} — {title}\n{bar} <code>{done}/{target}</code> · {state}{pending}",
                "<b>{n}.</b> {type} — {title}\n{bar} <code>{done}/{target}</code> · {state}{pending}"),
     "my_pending": (" · {p} pending", " · {p} در انتظار"),
-    "cancel_ask": ("<b>Cancel campaign</b>\n\nThe remaining capacity will be cancelled and its cost refunded. Continue?",
-                   "<b>لغو کمپین</b>\n\nظرفیت باقی‌مانده لغو و هزینه‌ی آن بازگردانده می‌شود. ادامه می‌دهید؟"),
+    "cancel_ask": ("<b>Cancel order</b>\n\nThe remaining capacity will be cancelled and its cost refunded. Continue?",
+                   "<b>لغو سفارش</b>\n\nظرفیت باقی‌مانده لغو و هزینه‌ی آن بازگردانده می‌شود. ادامه می‌دهید؟"),
 
     # ───────── Reaction monitor ─────────
     "rw_head": ("<b>Reaction monitor</b>\n<i>Updates arrive only when a count changes. Telegram may group or delay them by a few minutes.</i>\n\n{rows}",
                 "<b>پایش واکنش‌ها</b>\n<i>به‌روزرسانی‌ها فقط هنگام تغییر شمارش می‌رسند و ممکن است تلگرام آن‌ها را گروهی یا با چند دقیقه تأخیر ارسال کند.</i>\n\n{rows}"),
-    "rw_empty": ("<b>Reaction monitor</b>\n\nNo posts are monitored yet. A channel post is added here when you create a reaction campaign.",
-                 "<b>پایش واکنش‌ها</b>\n\nهنوز پستی برای پایش ثبت نشده است. با ایجاد کمپین واکنش، پست کانال به این فهرست افزوده می‌شود."),
+    "rw_empty": ("<b>Reaction monitor</b>\n\nNo posts are monitored yet. A channel post is added here when you place a reaction order.",
+                 "<b>پایش واکنش‌ها</b>\n\nهنوز پستی برای پایش ثبت نشده است. با ثبت سفارش واکنش، پست کانال به این فهرست افزوده می‌شود."),
     "rw_row": ("<b>{title}</b> — post <code>{mid}</code>\n<blockquote><b>Count:</b> <code>{total}</code>\n"
                "<b>Last update:</b> {age}\n<b>Delivery delay:</b> {delay}{extra}</blockquote>",
                "<b>{title}</b> — پست <code>{mid}</code>\n<blockquote><b>شمارش:</b> <code>{total}</code>\n"
                "<b>آخرین به‌روزرسانی:</b> {age}\n<b>تأخیر دریافت:</b> {delay}{extra}</blockquote>"),
     "rw_top": ("\n<b>Top reactions:</b> {list}", "\n<b>پرتکرارترین واکنش‌ها:</b> {list}"),
-    "rw_camp": ("\n<b>Active campaign:</b> {target} ordered · {remaining} left · {window} min{delta}",
-                "\n<b>کمپین فعال:</b> {target} سفارش · {remaining} باقی‌مانده · {window} دقیقه{delta}"),
-    "rw_delta": (" · change since start {delta}", " · تغییر از شروع کمپین {delta}"),
+    "rw_camp": ("\n<b>Active order:</b> {target} requested · {remaining} left · {window} min{delta}",
+                "\n<b>سفارش فعال:</b> {target} عدد · {remaining} باقی‌مانده · {window} دقیقه{delta}"),
+    "rw_delta": (" · change since start {delta}", " · تغییر از شروع سفارش {delta}"),
     "rw_age": ("{m} min {s} s ago", "{m} دقیقه و {s} ثانیه پیش"),
     "rw_age_none": ("no update yet", "هنوز به‌روزرسانی نرسیده"),
     "rw_delay": ("about {d} s", "حدود {d} ثانیه"),
@@ -713,37 +713,37 @@ S = {
 
     # ───────── Notifications to campaign owners ─────────
     "n_full": (
-        "<b>Campaign completed</b>\n<blockquote>{type} — {title}</blockquote>\n"
+        "<b>Order completed</b>\n<blockquote>{type} — {title}</blockquote>\n"
         "Final verification runs within {hold_h} hours. If a participant breaks the rules, their spot reopens.",
-        "<b>کمپین تکمیل شد</b>\n<blockquote>{type} — {title}</blockquote>\n"
+        "<b>سفارش تکمیل شد</b>\n<blockquote>{type} — {title}</blockquote>\n"
         "تأیید نهایی طی {hold_h} ساعت انجام می‌شود و در صورت تخلف هر شرکت‌کننده، ظرفیت او دوباره باز می‌شود."),
     "n_full_count": (
-        "<b>Campaign completed</b>\n<blockquote>{type} — {title}</blockquote>\nThe reaction increases were verified.",
-        "<b>کمپین تکمیل شد</b>\n<blockquote>{type} — {title}</blockquote>\nافزایش واکنش‌ها تأیید شد."),
+        "<b>Order completed</b>\n<blockquote>{type} — {title}</blockquote>\nThe reaction increases were verified.",
+        "<b>سفارش تکمیل شد</b>\n<blockquote>{type} — {title}</blockquote>\nافزایش واکنش‌ها تأیید شد."),
     "n_admin_restored": (
-        "<b>Access restored</b>\n\nThe bot's access to <b>{title}</b> is back and the campaign is active again.",
-        "<b>دسترسی بازیابی شد</b>\n\nدسترسی ربات در «{title}» برگشت و کمپین دوباره فعال است."),
+        "<b>Access restored</b>\n\nThe bot's access to <b>{title}</b> is back and the order is active again.",
+        "<b>دسترسی بازیابی شد</b>\n\nدسترسی ربات در «{title}» برگشت و سفارش دوباره فعال است."),
     "n_admin_lost": (
-        "<b>Campaign paused</b>\n\nThe bot lost administrator access to <b>{title}</b>. The campaign is paused and resumes once access is restored.",
-        "<b>کمپین متوقف شد</b>\n\nربات دسترسی ادمین «{title}» را از دست داده است. کمپین موقتاً متوقف شد و پس از بازیابی دسترسی ادامه می‌یابد."),
+        "<b>Order paused</b>\n\nThe bot lost administrator access to <b>{title}</b>. The order is paused and resumes once access is restored.",
+        "<b>سفارش متوقف شد</b>\n\nربات دسترسی ادمین «{title}» را از دست داده است. سفارش موقتاً متوقف شد و پس از بازیابی دسترسی ادامه می‌یابد."),
 
     # ───────── Admin ─────────
     "ad_stats": (
-        "<b>Statistics</b>\n<blockquote><b>Users:</b> <code>{users}</code>\n<b>Active campaigns:</b> <code>{active}</code>\n"
+        "<b>Statistics</b>\n<blockquote><b>Users:</b> <code>{users}</code>\n<b>Active orders:</b> <code>{active}</code>\n"
         "<b>Pending:</b> <code>{pending}</code>\n<b>Paid:</b> <code>{paid}</code>\n<b>Reversed:</b> <code>{rev}</code>\n"
         "<b>Referred:</b> <code>{refs}</code> ({refs_active} active)</blockquote>",
-        "<b>آمار</b>\n<blockquote><b>کاربران:</b> <code>{users}</code>\n<b>کمپین‌های فعال:</b> <code>{active}</code>\n"
+        "<b>آمار</b>\n<blockquote><b>کاربران:</b> <code>{users}</code>\n<b>سفارش‌های فعال:</b> <code>{active}</code>\n"
         "<b>در انتظار:</b> <code>{pending}</code>\n<b>پرداخت‌شده:</b> <code>{paid}</code>\n<b>برگشتی:</b> <code>{rev}</code>\n"
         "<b>دعوت‌شده‌ها:</b> <code>{refs}</code> ({refs_active} فعال)</blockquote>"),
     "ad_done": ("Done.", "انجام شد."),
     "ad_unbanned": ("Warnings reset to zero.", "اخطارها صفر شد."),
-    "ad_stopped": ("Campaign stopped and the remaining balance refunded.", "کمپین متوقف و باقی‌مانده بازگردانده شد."),
-    "ad_not_found": ("No active campaign found.", "کمپین فعالی پیدا نشد."),
+    "ad_stopped": ("Order stopped and the remaining balance refunded.", "سفارش متوقف و باقی‌مانده بازگردانده شد."),
+    "ad_not_found": ("No active order found.", "سفارش فعالی پیدا نشد."),
     "ad_usage": (
         "<b>Admin commands</b>\n\n<code>/stats</code>\n<code>/reactwatch</code>\n<code>/give &lt;uid&gt; &lt;n&gt;</code>\n"
-        "<code>/unban &lt;uid&gt;</code>\n<code>/stop &lt;campaign_id&gt;</code>",
+        "<code>/unban &lt;uid&gt;</code>\n<code>/stop &lt;order_id&gt;</code>",
         "<b>دستورهای مدیر</b>\n\n<code>/stats</code>\n<code>/reactwatch</code>\n<code>/give &lt;uid&gt; &lt;n&gt;</code>\n"
-        "<code>/unban &lt;uid&gt;</code>\n<code>/stop &lt;campaign_id&gt;</code>"),
+        "<code>/unban &lt;uid&gt;</code>\n<code>/stop &lt;order_id&gt;</code>"),
 }
 
 # Shown to every new user, before a language is chosen: English first, then Persian.
@@ -785,7 +785,7 @@ def admin_home_keyboard(lang):
     return [
         [B("📊 آمار کلی" if fa else "📊 Overview", "ad:stats", "primary")],
         [B("👥 کاربران" if fa else "👥 Users", "ad:users:0"), B("🔎 جست‌وجو" if fa else "🔎 Search", "ad:search")],
-        [B("📣 کمپین‌ها" if fa else "📣 Campaigns", "ad:campaigns:0"), B("📢 همه‌پیامی" if fa else "📢 Broadcast", "ad:bc")],
+        [B("📣 سفارش‌ها" if fa else "📣 Orders", "ad:campaigns:0"), B("📢 همه‌پیامی" if fa else "📢 Broadcast", "ad:bc")],
         [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0"), B("♻️ بازنشر تسک‌ها" if fa else "♻️ Re-post tasks", "ad:rp")],
         [B("↩️ بازگشت به منو" if fa else "↩️ Main menu", "home")],
     ]
@@ -793,9 +793,9 @@ def admin_home_keyboard(lang):
 
 def admin_home(chat, lang, mid=None):
     if lang == "fa":
-        msg = "<b>🛡 پنل مدیریت</b>\n\nاز این بخش می‌توانید آمار، کاربران، گردش امتیازها، تعاملات و کمپین‌ها را مدیریت کنید. این پنل فقط برای شناسه‌های تنظیم‌شده در <code>ADMIN_IDS</code> فعال است."
+        msg = "<b>🛡 پنل مدیریت</b>\n\nاز این بخش می‌توانید آمار، کاربران، گردش امتیازها، تعاملات و سفارش‌ها را مدیریت کنید. این پنل فقط برای شناسه‌های تنظیم‌شده در <code>ADMIN_IDS</code> فعال است."
     else:
-        msg = "<b>🛡 Admin panel</b>\n\nManage statistics, users, point history, interactions and campaigns here. Access is restricted to IDs configured in <code>ADMIN_IDS</code>."
+        msg = "<b>🛡 Admin panel</b>\n\nManage statistics, users, point history, interactions and orders here. Access is restricted to IDs configured in <code>ADMIN_IDS</code>."
     return view(chat, mid, H(_rtl(msg) if lang == "fa" else msg), admin_home_keyboard(lang))
 
 
@@ -815,14 +815,14 @@ def admin_stats_text(lang):
         msg = ("<b>📊 آمار کلی</b>\n<blockquote>"
                f"کل کاربران: <code>{users}</code>\nکاربران جدید در ۲۴ ساعت: <code>{new_24h}</code>\n"
                f"فعال در ۲۴ ساعت: <code>{active_24h}</code>\nمسدودشده‌ها: <code>{banned}</code>\n"
-               f"کمپین فعال / کل: <code>{active_c} / {all_c}</code>\n"
+               f"سفارش فعال / کل: <code>{active_c} / {all_c}</code>\n"
                f"تسک‌های در انتظار: <code>{pending}</code>\nتسک‌های پرداخت‌شده: <code>{paid}</code>\n"
                f"تسک‌های برگشتی: <code>{reversed_n}</code>\nرویدادهای ثبت‌شده: <code>{interactions}</code></blockquote>")
     else:
         msg = ("<b>📊 Overview</b>\n<blockquote>"
                f"Total users: <code>{users}</code>\nNew users (24h): <code>{new_24h}</code>\n"
                f"Active (24h): <code>{active_24h}</code>\nBanned: <code>{banned}</code>\n"
-               f"Active / total campaigns: <code>{active_c} / {all_c}</code>\n"
+               f"Active / total orders: <code>{active_c} / {all_c}</code>\n"
                f"Pending tasks: <code>{pending}</code>\nPaid tasks: <code>{paid}</code>\n"
                f"Reversed tasks: <code>{reversed_n}</code>\nRecorded events: <code>{interactions}</code></blockquote>")
     return H(_rtl(msg) if lang == "fa" else msg)
@@ -891,7 +891,7 @@ def admin_user_detail(chat, lang, target_uid, mid=None):
                f"امتیاز: <code>{u.get('points',0)}</code> · امتیاز معلق: <code>{u.get('hold',0)}</code>\n"
                f"کل کسب‌شده: <code>{u.get('earned',0)}</code> · اخطار: <code>{u.get('strikes',0)}</code>\n"
                f"عضویت: <code>{joined}</code>\nآخرین فعالیت: <code>{last_seen}</code>\n"
-               f"کمپین‌ها: <code>{active_campaigns}/{campaigns}</code> (فعال/کل)\n"
+               f"سفارش‌ها: <code>{active_campaigns}/{campaigns}</code> (فعال/کل)\n"
                f"تسک‌ها — در انتظار: <code>{comp_counts['pending']+comp_counts['count_pending']}</code>، پرداخت‌شده: <code>{comp_counts['paid']}</code>، برگشتی: <code>{comp_counts['reversed']}</code>\n"
                f"گردش امتیاز: <code>{ledger_count}</code> · تعاملات: <code>{event_count}</code></blockquote>")
     else:
@@ -900,7 +900,7 @@ def admin_user_detail(chat, lang, target_uid, mid=None):
                f"Balance: <code>{u.get('points',0)}</code> · On hold: <code>{u.get('hold',0)}</code>\n"
                f"Total earned: <code>{u.get('earned',0)}</code> · Strikes: <code>{u.get('strikes',0)}</code>\n"
                f"Joined: <code>{joined}</code>\nLast activity: <code>{last_seen}</code>\n"
-               f"Campaigns: <code>{active_campaigns}/{campaigns}</code> (active/total)\n"
+               f"Orders: <code>{active_campaigns}/{campaigns}</code> (active/total)\n"
                f"Tasks — pending: <code>{comp_counts['pending']+comp_counts['count_pending']}</code>, paid: <code>{comp_counts['paid']}</code>, reversed: <code>{comp_counts['reversed']}</code>\n"
                f"Point records: <code>{ledger_count}</code> · interactions: <code>{event_count}</code></blockquote>")
     kb = [[B("➕➖ امتیاز" if lang == "fa" else "➕➖ Adjust points", f"ad:points:{target_uid}")],
@@ -972,7 +972,7 @@ def admin_campaigns_screen(chat, lang, offset=0, mid=None):
     offset = max(0, int(offset))
     docs = list(db.campaigns.find({}).sort("created", -1).skip(offset).limit(8))
     total = db.campaigns.count_documents({})
-    lines = ["<b>📣 کمپین‌ها</b>\n\n" if lang == "fa" else "<b>📣 Campaigns</b>\n\n"]
+    lines = ["<b>📣 سفارش‌ها</b>\n\n" if lang == "fa" else "<b>📣 Orders</b>\n\n"]
     kb = []
     for c in docs:
         owner = db.users.find_one({"_id": c.get("owner")}, {"name": 1}) or {}
@@ -2296,8 +2296,8 @@ def admin_cmd(uid, chat, cmd, args, lang):
             refresh_campaign_listing(r["_id"])
         return send(chat, t(lang, "ad_stopped" if r else "ad_not_found"))
     return send(chat, admin_text(lang,
-        "<b>Admin panel</b>\n\n<code>/admin</code> · open panel\n<code>/stats</code> · statistics\n<code>/users</code> · user list\n<code>/user ID</code> · user profile\n<code>/events</code> · recent interactions\n<code>/give ID +/-N</code> · adjust points\n<code>/ban ID</code> · block user\n<code>/unban ID</code> · unblock/reset strikes\n<code>/stop CAMPAIGN_ID</code> · stop campaign\n<code>/reactwatch</code> · reaction diagnostics",
-        "<b>پنل مدیریت</b>\n\n<code>/admin</code> · پنل\n<code>/stats</code> · آمار\n<code>/users</code> · فهرست کاربران\n<code>/user ID</code> · مشخصات کاربر\n<code>/events</code> · تعاملات اخیر\n<code>/give ID +/-N</code> · تغییر امتیاز\n<code>/ban ID</code> · مسدودسازی\n<code>/unban ID</code> · رفع مسدودی/صفرکردن اخطار\n<code>/stop CAMPAIGN_ID</code> · توقف کمپین\n<code>/reactwatch</code> · عیب‌یابی واکنش‌ها"))
+        "<b>Admin panel</b>\n\n<code>/admin</code> · open panel\n<code>/stats</code> · statistics\n<code>/users</code> · user list\n<code>/user ID</code> · user profile\n<code>/events</code> · recent interactions\n<code>/give ID +/-N</code> · adjust points\n<code>/ban ID</code> · block user\n<code>/unban ID</code> · unblock/reset strikes\n<code>/stop ORDER_ID</code> · stop order\n<code>/reactwatch</code> · reaction diagnostics",
+        "<b>پنل مدیریت</b>\n\n<code>/admin</code> · پنل\n<code>/stats</code> · آمار\n<code>/users</code> · فهرست کاربران\n<code>/user ID</code> · مشخصات کاربر\n<code>/events</code> · تعاملات اخیر\n<code>/give ID +/-N</code> · تغییر امتیاز\n<code>/ban ID</code> · مسدودسازی\n<code>/unban ID</code> · رفع مسدودی/صفرکردن اخطار\n<code>/stop ORDER_ID</code> · توقف سفارش\n<code>/reactwatch</code> · عیب‌یابی واکنش‌ها"))
 
 # ═════════════════════════════ Growth engine (v52) ═════════════════════════════
 # Daily gift + streak · lucky wheel · levels · achievements/referral ladder · weekly leaderboard with prizes
@@ -2345,8 +2345,8 @@ ACH = [
     ("s3",   "🔥", "3-day streak",        "استریک 3 روزه",       2,   "streak_best", 3),
     ("s7",   "🔥", "7-day streak",        "استریک 7 روزه",       5,   "streak_best", 7),
     ("s30",  "🌋", "30-day streak",       "استریک 30 روزه",      25,  "streak_best", 30),
-    ("c1",   "📣", "First campaign",      "اولین کمپین",         3,   "campaigns_made", 1),
-    ("c10",  "📢", "10 campaigns",        "10 کمپین",            10,  "campaigns_made", 10),
+    ("c1",   "📣", "First order",      "اولین سفارش",         3,   "campaigns_made", 1),
+    ("c10",  "📢", "10 orders",        "10 سفارش",            10,  "campaigns_made", 10),
 ]
 WHEEL = [(1, 40), (2, 30), (3, 15), (4, 8), (6, 4), (10, 2), (20, 1)]      # (Stars, weight) — average ≈ 2.4
 
@@ -2468,15 +2468,6 @@ S.update({
         "<b>🎁 هدیه‌ی روزانه‌ی شما آماده است</b>\n<code>+{reward}</code> ⭐ استارز و <code>{open}</code> تسک باز منتظر شماست."),
     "g_rm_off": ("<b>🔕 Reminders turned off</b>\nYou can turn them back on from Account.",
                  "<b>🔕 یادآور خاموش شد</b>\nهر زمان خواستید از بخش «حساب کاربری» دوباره روشنش کنید."),
-    "g_welcome": (
-        "<b>Welcome, {name}! 🎉</b>\n<blockquote>🎁 <b>Starting balance:</b> <code>{start}</code> ⭐ Stars{welcome}</blockquote>\n"
-        "<b>Start in 3 steps</b>\n<blockquote><b>1.</b> Tap <b>Earn Stars</b> and open a task.\n"
-        "<b>2.</b> Complete it and tap <b>Claim reward</b>.\n<b>3.</b> Spend Stars on <b>Grow my channel</b>.</blockquote>\n"
-        "<i>Collect your 🎁 daily gift every day — longer streaks pay more!</i>",
-        "<b>{name} عزیز، خوش آمدید! 🎉</b>\n<blockquote>🎁 <b>موجودی اولیه:</b> <code>{start}</code> ⭐ استارز{welcome}</blockquote>\n"
-        "<b>شروع در 3 قدم</b>\n<blockquote><b>1.</b> روی «کسب استارز» بزنید و یک تسک را باز کنید.\n"
-        "<b>2.</b> تسک را انجام دهید و روی «دریافت پاداش» بزنید.\n<b>3.</b> استارز را برای «رشد کانال من» خرج کنید.</blockquote>\n"
-        "<i>هر روز 🎁 هدیه‌ی روزانه را بگیرید؛ استریک بلندتر، پاداش بیشتر!</i>"),
     "g_welcome_bonus": ("\n🤝 <b>Invite bonus:</b> <code>+{n}</code> ⭐", "\n🤝 <b>جایزه‌ی دعوت:</b> <code>+{n}</code> ⭐"),
 })
 
@@ -2827,9 +2818,9 @@ def daily_report():
     new = db.users.count_documents({"joined": {"$gte": start}})
     live = db.campaigns.count_documents({"status": "active", "remaining": {"$gt": 0}})
     en = (f"<b>📊 Today on TaskPlus</b>\n<blockquote>✅ Tasks completed: <code>{tasks}</code>\n👥 New members: <code>{new}</code>\n"
-          f"📣 Live campaigns: <code>{live}</code></blockquote>\nOpen tasks are waiting in this channel 👆")
+          f"📣 Live orders: <code>{live}</code></blockquote>\nOpen tasks are waiting in this channel 👆")
     fa = _rtl(f"<b>📊 امروز در تاسک‌پلاس</b>\n<blockquote>✅ تسک‌های انجام‌شده: <code>{tasks}</code>\n👥 اعضای جدید: <code>{new}</code>\n"
-              f"📣 کمپین‌های فعال: <code>{live}</code></blockquote>\nتسک‌های باز در همین کانال منتظر شما هستند 👆")
+              f"📣 سفارش‌های فعال: <code>{live}</code></blockquote>\nتسک‌های باز در همین کانال منتظر شما هستند 👆")
     post_to_channel(fa + "\n────────\n" + en)
 
 
@@ -3328,13 +3319,6 @@ def growth_callback(cq, uid, u, lang, chat, mid, data):
     return False
 
 
-def welcome_screen(u, lang):
-    bonus = t(lang, "g_welcome_bonus", n=u["ref_welcome"]) if u.get("ref_welcome") else H("")
-    text = t(lang, "g_welcome", name=short(u.get("name"), 30) or tb(lang, "friend"), start=START_POINTS, welcome=bonus)
-    kb = [[B(tb(lang, "b_earn"), "earn", "primary")], [B(tb(lang, "b_gift_ready"), "gift", "success")], [B(tb(lang, "b_menu"), "home")]]
-    return text, kb
-
-
 # ═════════════════════════════ Update routing ═════════════════════════════
 def on_message(msg):
     if msg["chat"]["type"] != "private" or "from" not in msg:
@@ -3435,8 +3419,8 @@ def on_callback(cq):
         db.states.delete_one({"_id": uid})
         if not u.get("onboarded") and time.time() - float(u.get("joined", 0) or 0) < 3600:      # first run: guided welcome
             db.users.update_one({"_id": uid}, {"$set": {"onboarded": True}})
-            w_text, w_kb = welcome_screen(u, choice)
-            return view(chat, mid, w_text, w_kb)
+            bonus = t(choice, "g_welcome_bonus", n=u["ref_welcome"]) if u.get("ref_welcome") else H("")
+            return view(chat, mid, H(str(menu_text(u)) + str(bonus)), main_kb(choice, uid))
         return view(chat, mid, menu_text(u), main_kb(choice, uid))
 
     lang = lang_of(u)
@@ -3459,8 +3443,8 @@ def on_callback(cq):
         return
     if data == "campaigns":
         ans(cq)
-        return view(chat, mid, "<b>" + ("Campaign management" if lang == "en" else "مدیریت کمپین‌ها") + "</b>\n\n" +
-                    ("Create a campaign or review your existing campaigns." if lang == "en" else "کمپین جدید بسازید یا وضعیت کمپین‌های خود را بررسی کنید."),
+        return view(chat, mid, "<b>" + ("Order management" if lang == "en" else "مدیریت سفارش‌ها") + "</b>\n\n" +
+                    ("Place a new order or check the status of your orders." if lang == "en" else "سفارش جدید ثبت کنید یا وضعیت سفارش‌های خود را بررسی کنید."),
                     campaigns_kb(lang, uid))
     if data in ("earn", "earn_check"):
         if not TASKS_CHANNEL or not tasks_channel_url():
@@ -3556,10 +3540,10 @@ def on_callback(cq):
                 cid = None
             camp = db.campaigns.find_one({"_id": cid, "status": "active"}) if cid else None
             if not camp:
-                return view(chat, mid, admin_text(lang, "Active campaign not found.", "کمپین فعال پیدا نشد."), [[B("↩️ کمپین‌ها" if lang == "fa" else "↩️ Campaigns", "ad:campaigns:0")]])
+                return view(chat, mid, admin_text(lang, "Active order not found.", "سفارش فعال پیدا نشد."), [[B("↩️ سفارش‌ها" if lang == "fa" else "↩️ Orders", "ad:campaigns:0")]])
             title = html.escape(str(camp.get("title") or camp.get("uname") or camp.get("type") or cid))[:70]
-            prompt = (f"<b>توقف کمپین؟</b>\n\n{title}\nشناسه: <code>{cid}</code>\nامتیاز باقی‌مانده به مالک بازگردانده می‌شود." if lang == "fa" else
-                      f"<b>Stop this campaign?</b>\n\n{title}\nID: <code>{cid}</code>\nUnused points will be refunded to its owner.")
+            prompt = (f"<b>توقف سفارش؟</b>\n\n{title}\nشناسه: <code>{cid}</code>\nامتیاز باقی‌مانده به مالک بازگردانده می‌شود." if lang == "fa" else
+                      f"<b>Stop this order?</b>\n\n{title}\nID: <code>{cid}</code>\nUnused points will be refunded to its owner.")
             return view(chat, mid, H(_rtl(prompt) if lang == "fa" else prompt),
                         [[B("بله، توقف" if lang == "fa" else "Yes, stop", f"ad:confirmstop:{cid}", "danger")],
                          [B("لغو" if lang == "fa" else "Cancel", "ad:campaigns:0")]])
@@ -3570,7 +3554,7 @@ def on_callback(cq):
                 cid = None
             camp = db.campaigns.find_one({"_id": cid, "status": "active"}) if cid else None
             if not camp:
-                return view(chat, mid, admin_text(lang, "Active campaign not found.", "کمپین فعال پیدا نشد."), [[B("↩️ کمپین‌ها" if lang == "fa" else "↩️ Campaigns", "ad:campaigns:0")]])
+                return view(chat, mid, admin_text(lang, "Active order not found.", "سفارش فعال پیدا نشد."), [[B("↩️ سفارش‌ها" if lang == "fa" else "↩️ Orders", "ad:campaigns:0")]])
             changed = db.campaigns.update_one({"_id": cid, "status": "active"}, {"$set": {"status": "cancelled"}})
             if changed.modified_count:
                 refund = int(camp.get("remaining", 0)) * int(camp.get("cost", 0))
