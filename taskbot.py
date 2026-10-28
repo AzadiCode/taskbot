@@ -30,11 +30,11 @@ Growth engine (v52) — optional env / متغیرهای اختیاری رشد:
 DAILY_REWARDS="1,1,2,2,3,3,5"  WEEKLY_PRIZES="30,20,10"  REF_WELCOME_BONUS=5  REF_HOURLY_MAX=12
 GOLDEN_HOUR="17-19" (UTC, خالی = غیرفعال)  GOLDEN_MULT=2  REMINDERS=1  REMIND_HOURS="5-18" (UTC)  DAILY_REPORT_HOUR=17
 """
-import os, re, time, html, hashlib, random, logging, threading
+import os, re, time, html, hashlib, hmac, json, random, logging, threading
 
 import requests
-from urllib.parse import quote
-from flask import Flask, request
+from urllib.parse import quote, parse_qsl
+from flask import Flask, request, jsonify, send_from_directory
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
@@ -62,7 +62,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v53-repost"
+VERSION = "v54-miniapp"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -3609,6 +3609,329 @@ def on_callback(cq):
     ans(cq)
 
 
+
+# ═════════════════════════════ Telegram Mini App API ═════════════════════════════
+# The Mini App is an additional client over the same business logic and MongoDB.
+# It never writes balances or completion records directly from JavaScript.
+WEBAPP_INITDATA_MAX_AGE = int(os.environ.get("WEBAPP_INITDATA_MAX_AGE", "86400"))
+
+
+def validate_webapp_init_data(raw):
+    """Validate Telegram WebApp initData using the bot-token HMAC scheme."""
+    if not raw or len(raw) > 16384:
+        return None
+    try:
+        pairs = parse_qsl(raw, keep_blank_values=True, strict_parsing=True)
+        data = dict(pairs)
+        supplied_hash = data.pop("hash", "")
+        if not supplied_hash or not re.fullmatch(r"[a-fA-F0-9]{64}", supplied_hash):
+            return None
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+        expected = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, supplied_hash.lower()):
+            return None
+        auth_date = int(data.get("auth_date", "0"))
+        now = int(time.time())
+        if auth_date <= 0 or auth_date > now + 30 or now - auth_date > WEBAPP_INITDATA_MAX_AGE:
+            return None
+        user = json.loads(data.get("user", "{}"))
+        if not isinstance(user, dict) or not isinstance(user.get("id"), int):
+            return None
+        return user
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def miniapp_identity():
+    """Return the verified and upserted user document, or a JSON error response."""
+    raw = request.headers.get("X-Telegram-Init-Data", "")
+    tg_user = validate_webapp_init_data(raw)
+    if not tg_user:
+        return None, (jsonify(error="auth_required", message="Open this Mini App inside Telegram to authenticate."), 401)
+    user = ensure_user(tg_user)
+    if user.get("banned") and int(user.get("_id", 0)) not in ADMINS:
+        return None, (jsonify(error="forbidden", message="This account is disabled."), 403)
+    return user, None
+
+
+def miniapp_type_name(typ, lang):
+    try:
+        return tn(lang, typ)
+    except Exception:
+        return {"join": "Membership" if lang != "fa" else "عضویت",
+                "react": "Reaction" if lang != "fa" else "واکنش",
+                "view": "View" if lang != "fa" else "بازدید"}.get(typ, str(typ))
+
+
+def miniapp_campaign_payload(c, uid, lang, include_actions=False):
+    target = max(1, int(c.get("target", 1) or 1))
+    remaining = max(0, int(c.get("remaining", 0) or 0))
+    if c.get("type") == "react" and c.get("mode") == "count":
+        done = db.completions.count_documents({"cid": c["_id"], "status": "paid"})
+        pending = db.completions.count_documents({"cid": c["_id"], "status": "count_pending"})
+    else:
+        done = max(0, target - remaining)
+        pending = db.completions.count_documents({"cid": c["_id"], "status": {"$in": ["pending", "settling"]}}) if include_actions else 0
+    state = "active" if c.get("status") == "active" and remaining > 0 else ("cancelled" if c.get("status") == "cancelled" else "completed")
+    if c.get("admin_paused") and campaign_needs_admin(c):
+        state = "paused"
+    out = {
+        "id": str(c.get("_id")), "title": ctitle(c), "type": c.get("type"),
+        "typeLabel": miniapp_type_name(c.get("type"), lang), "target": target,
+        "remaining": remaining, "done": min(done, target), "progress": min(100, round(done * 100 / target)),
+        "reward": int(c.get("reward", 0) or 0), "cost": int(c.get("cost", 0) or 0),
+        "status": state, "pending": pending, "created": int(c.get("created", 0) or 0),
+        "postUrl": post_url_of(c), "targetUrl": link_of(c),
+    }
+    if include_actions:
+        out["canStop"] = c.get("status") == "active" and remaining > 0
+    return out
+
+
+def miniapp_dashboard_data(u):
+    uid = int(u["_id"])
+    lang = lang_of(u)
+    active_campaigns = db.campaigns.count_documents({"owner": uid, "status": "active"})
+    completed_tasks = db.completions.count_documents({"uid": uid, "status": "paid"})
+    available = 0
+    q = {"status": "active", "remaining": {"$gt": 0}, "admin_paused": {"$ne": True},
+         "listing_message_id": {"$exists": True, "$ne": None}}
+    for c in db.campaigns.find(q).sort("listed_at", -1).limit(100):
+        if is_legacy(c) or c.get("owner") == uid:
+            continue
+        if campaign_needs_admin(c) and c.get("admin_paused"):
+            continue
+        if not db.completions.find_one({"uid": uid, "cid": c["_id"]}):
+            available += 1
+    return {
+        "user": {"id": uid, "name": short(u.get("name") or "", 40), "username": u.get("username") or "",
+                  "language": lang, "points": int(u.get("points", 0) or 0), "hold": int(u.get("hold", 0) or 0),
+                  "earned": int(u.get("earned", 0) or 0), "strikes": int(u.get("strikes", 0) or 0),
+                  "referrals": int(u.get("ref_count", 0) or 0), "remindersOff": bool(u.get("remind_off"))},
+        "stats": {"availableTasks": available, "activeCampaigns": active_campaigns,
+                  "completedTasks": completed_tasks},
+        "tasksChannelUrl": tasks_channel_url(),
+    }
+
+
+@app.get("/miniapp")
+def miniapp_index():
+    # Keep the HTML beside taskbot.py in the same Render service.
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "miniapp.html")
+
+
+@app.post("/api/miniapp/auth")
+def miniapp_auth():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    return jsonify(ok=True, **miniapp_dashboard_data(u))
+
+
+@app.get("/api/miniapp/dashboard")
+def miniapp_dashboard():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    return jsonify(ok=True, **miniapp_dashboard_data(u))
+
+
+@app.get("/api/miniapp/tasks")
+def miniapp_tasks():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid, lang = int(u["_id"]), lang_of(u)
+    # Preserve the existing task-channel membership gate before exposing actionable tasks.
+    if TASKS_CHANNEL:
+        member = required_channel_member(uid)
+        if member is None:
+            return jsonify(ok=True, tasks=[], membershipCheckUnavailable=True, channelRequired=False)
+        if not member:
+            return jsonify(ok=True, tasks=[], membershipCheckUnavailable=False, channelRequired=True)
+    q = {"status": "active", "remaining": {"$gt": 0}, "admin_paused": {"$ne": True},
+         "listing_message_id": {"$exists": True, "$ne": None}}
+    out = []
+    for c in db.campaigns.find(q).sort("listed_at", -1).limit(100):
+        if is_legacy(c) or c.get("owner") == uid:
+            continue
+        if campaign_needs_admin(c) and c.get("admin_paused"):
+            continue
+        if db.completions.find_one({"uid": uid, "cid": c["_id"]}):
+            continue
+        post_url = post_url_of(c)
+        bot_url = bot_deep_link(c["_id"])
+        if not bot_url:
+            continue
+        out.append({"id": str(c["_id"]), "title": ctitle(c), "type": c.get("type"),
+                    "typeLabel": miniapp_type_name(c.get("type"), lang), "reward": int(c.get("reward", 0) or 0),
+                    "remaining": int(c.get("remaining", 0) or 0), "targetUrl": link_of(c),
+                    "postUrl": post_url, "taskUrl": bot_url,
+                    "mode": c.get("mode") or "", "windowMin": int(c.get("window_min", 0) or 0)})
+        if len(out) >= 60:
+            break
+    return jsonify(ok=True, tasks=out)
+
+
+@app.get("/api/miniapp/campaigns")
+def miniapp_campaigns():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid, lang = int(u["_id"]), lang_of(u)
+    cs = list(db.campaigns.find({"owner": uid}, sort=[("created", -1)], limit=30))
+    return jsonify(ok=True, campaigns=[miniapp_campaign_payload(c, uid, lang, True) for c in cs])
+
+
+@app.post("/api/miniapp/campaigns")
+def miniapp_create_campaign():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid, lang = int(u["_id"]), lang_of(u)
+    body = request.get_json(silent=True) or {}
+    typ = str(body.get("type", "")).lower().strip()
+    link = str(body.get("link", "")).strip()
+    raw_qty = body.get("quantity", 0)
+    try:
+        if isinstance(raw_qty, bool) or (isinstance(raw_qty, float) and not raw_qty.is_integer()):
+            raise ValueError("quantity must be an integer")
+        qty = int(raw_qty)
+    except (TypeError, ValueError, OverflowError):
+        return jsonify(error="quantity", message="Enter a valid whole-number quantity."), 400
+    if typ not in TYPES:
+        return jsonify(error="type", message="Choose a supported task type."), 400
+    if len(link) > 2048 or not link:
+        return jsonify(error="link", message="Enter a valid Telegram link."), 400
+    if db.campaigns.count_documents({"owner": uid, "status": "active"}) >= MAX_ACTIVE:
+        return jsonify(error="max_active", message=f"You can have up to {MAX_ACTIVE} active campaigns."), 409
+    if u.get("strikes", 0) >= STRIKE_LIMIT:
+        return jsonify(error="restricted", message="Your account cannot create campaigns right now."), 403
+    fresh_user = db.users.find_one({"_id": uid}) or {}
+    max_qty = min(MAX_QTY, int(fresh_user.get("points", 0) or 0) // TYPES[typ]["cost"])
+    if qty < 1 or qty > max_qty:
+        return jsonify(error="quantity_range", message=f"Quantity must be between 1 and {max_qty}."), 400
+
+    if typ == "join":
+        m = CHAN_RE.match(link)
+        uname, post_id = (m[1], None) if m else (None, None)
+    else:
+        m = POST_RE.search(link)
+        uname, post_id = (m[1], int(m[2])) if m else (None, None)
+    if not uname:
+        return jsonify(error="link_format", message=("For membership, enter a channel link. For reactions/views, enter a specific post link.")), 400
+    ch = resolve_chat(uname)
+    if not ch:
+        return jsonify(error="chat_not_found", message="Telegram could not resolve this channel or post."), 400
+    d = {"type": typ, "uname": ch.get("username") or uname, "chat_id": ch["id"],
+         "title": (ch.get("title") or uname)[:60], "mid": post_id, "mode": None}
+    snap = None
+    if typ == "join":
+        if not bot_is_admin(ch["id"]):
+            return jsonify(error="bot_admin_required", message="The bot must be an administrator in the destination channel."), 409
+    elif typ == "react":
+        if ch["type"] in ("group", "supergroup") and bot_is_admin(ch["id"]):
+            d["mode"] = "auto"
+        elif ch["type"] == "channel":
+            if not bot_is_admin(ch["id"]):
+                return jsonify(error="bot_admin_required", message="The bot must be an administrator in the destination channel."), 409
+            d["mode"] = "count"
+            key = post_key(d["chat_id"], d["mid"])
+            db.reaction_watch.update_one({"_id": key}, {
+                "$set": {"chat_id": d["chat_id"], "mid": d["mid"], "uname": d["uname"],
+                         "title": d["title"], "owner": uid, "registered_at": time.time()},
+                "$addToSet": {"owners": uid}}, upsert=True)
+            snap = fresh_reaction_snapshot(d["chat_id"], d["mid"])
+            if not snap:
+                db.reaction_watch.update_one({"_id": key}, {"$set": {"calibrating_owner": uid, "calibrating_at": time.time()}})
+                return jsonify(error="baseline_pending", message="The reaction counter is being calibrated. Wait briefly and try again."), 409
+        else:
+            return jsonify(error="reaction_destination", message="Use a group or channel post that the bot can inspect."), 400
+    total_cost = qty * TYPES[typ]["cost"]
+    admin_required = needs_admin_mode(typ, d.get("mode"))
+    if admin_required:
+        status = bot_admin_status(d["chat_id"])
+        if status is None:
+            return jsonify(error="admin_check_unavailable", message="Could not verify bot permissions. Try again shortly."), 503
+        if not status:
+            return jsonify(error="bot_admin_required", message="The bot must be an administrator in the destination channel."), 409
+    if not spend(uid, total_cost, "campaign", d["uname"]):
+        return jsonify(error="insufficient_points", message="Your point balance changed. Refresh and try again."), 409
+
+    campaign = {"owner": uid, "type": typ, "chat_id": d["chat_id"], "uname": d["uname"], "title": d["title"],
+                "mid": d.get("mid"), "mode": d.get("mode"), "target": qty, "remaining": qty,
+                "cost": TYPES[typ]["cost"], "reward": TYPES[typ]["reward"], "status": "active",
+                "created": time.time(), "admin_required": admin_required, "admin_paused": False,
+                "admin_checked_at": time.time() if admin_required else None}
+    if typ == "react" and d.get("mode") == "count":
+        try:
+            requested_window = int(body.get("windowMin", 5))
+        except (TypeError, ValueError):
+            requested_window = 5
+        window_min = requested_window if requested_window in (2, 5) else 5
+        campaign.update(window_min=window_min,
+                        base_count=int(snap.get("total", 0)),
+                        base_updated_at=float(snap.get("updated_at", time.time())),
+                        post_key=post_key(d["chat_id"], d["mid"]))
+    campaign["_id"] = db.campaigns.insert_one(campaign).inserted_id
+    if not publish_campaign(campaign):
+        db.campaigns.update_one({"_id": campaign["_id"], "status": "active"}, {"$set": {"status": "cancelled"}})
+        add_points(uid, total_cost, "refund", campaign["_id"])
+        return jsonify(error="publish_failed", message="The campaign could not be published. The points were refunded."), 503
+    if typ == "join":
+        db.users.update_one({"_id": uid}, {"$set": {"last_join": d["uname"]}})
+    db.users.update_one({"_id": uid}, {"$inc": {"campaigns_made": 1}})
+    try:
+        check_achievements(uid)
+    except Exception:
+        log.exception("Mini App campaign achievement update")
+    return jsonify(ok=True, campaign=miniapp_campaign_payload(db.campaigns.find_one({"_id": campaign["_id"]}), uid, lang, True)), 201
+
+
+@app.post("/api/miniapp/campaigns/<cid_s>/stop")
+def miniapp_stop_campaign(cid_s):
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    try:
+        cid = ObjectId(cid_s)
+    except (InvalidId, TypeError):
+        return jsonify(error="invalid_id", message="Invalid campaign ID."), 400
+    c = db.campaigns.find_one_and_update({"_id": cid, "owner": uid, "status": "active"},
+                                         {"$set": {"status": "cancelled"}})
+    if not c:
+        return jsonify(error="not_active", message="This campaign is not active."), 409
+    refund = int(c.get("remaining", 0) or 0) * int(c.get("cost", 0) or 0)
+    if refund:
+        add_points(uid, refund, "refund", cid)
+    refresh_campaign_listing(cid)
+    return jsonify(ok=True, refunded=refund, message="Campaign stopped and unused points refunded.")
+
+
+@app.patch("/api/miniapp/profile")
+def miniapp_update_profile():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    body = request.get_json(silent=True) or {}
+    update = {}
+    lang = body.get("language")
+    if lang is not None:
+        if lang not in ("en", "fa"):
+            return jsonify(error="language", message="Language must be en or fa."), 400
+        update["lang"] = lang
+    if "remindersOff" in body:
+        update["remind_off"] = bool(body.get("remindersOff"))
+    if not update:
+        return jsonify(error="empty", message="No valid profile updates were supplied."), 400
+    db.users.update_one({"_id": uid}, {"$set": update})
+    fresh = db.users.find_one({"_id": uid}) or u
+    return jsonify(ok=True, **miniapp_dashboard_data(fresh))
+
+
 @app.post("/hook")
 def hook():
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != HOOK_SECRET:
@@ -3646,6 +3969,10 @@ def setup():
     as_json = lambda items: [{"command": c, "description": d} for c, d in items]
     tg("setMyCommands", commands=as_json(commands["en"]))                       # default (English)
     tg("setMyCommands", commands=as_json(commands["fa"]), language_code="fa")   # Persian clients
+    menu_url = f"{BASE_URL}/miniapp"
+    menu_result = tg("setChatMenuButton", menu_button={"type": "web_app", "text": "Open Mini App", "web_app": {"url": menu_url}})
+    if not menu_result.get("ok"):
+        log.warning("setChatMenuButton failed: %s", menu_result.get("description"))
     log.info("webhook: %s | version %s", r, VERSION)
     if TASKS_CHANNEL:
         log.info("TASKS_CHANNEL configured: %s", TASKS_CHANNEL)
