@@ -3758,20 +3758,196 @@ def miniapp_tasks():
             continue
         if campaign_needs_admin(c) and c.get("admin_paused"):
             continue
-        if db.completions.find_one({"uid": uid, "cid": c["_id"]}):
+        completion = db.completions.find_one({"uid": uid, "cid": c["_id"]})
+        if completion and completion.get("status") == "paid":
             continue
-        post_url = post_url_of(c)
-        bot_url = bot_deep_link(c["_id"])
-        if not bot_url:
+        # The task card opens the actual destination directly. It never deep-links to /start.
+        target_url = link_of(c)
+        if not target_url:
             continue
+        status = completion.get("status") if completion else ""
         out.append({"id": str(c["_id"]), "title": ctitle(c), "type": c.get("type"),
                     "typeLabel": miniapp_type_name(c.get("type"), lang), "reward": int(c.get("reward", 0) or 0),
-                    "remaining": int(c.get("remaining", 0) or 0), "targetUrl": link_of(c),
-                    "postUrl": post_url, "taskUrl": bot_url,
-                    "mode": c.get("mode") or "", "windowMin": int(c.get("window_min", 0) or 0)})
+                    "remaining": int(c.get("remaining", 0) or 0), "targetUrl": target_url,
+                    "postUrl": post_url_of(c), "started": bool(db.sessions.find_one({"_id": f"{uid}:{c['_id']}"})),
+                    "completionStatus": status, "mode": c.get("mode") or "",
+                    "windowMin": int(c.get("window_min", 0) or 0)})
         if len(out) >= 60:
             break
-    return jsonify(ok=True, tasks=out)
+    # Keep count-based reactions visible while their aggregate reaction increment is still pending.
+    known_ids = {item["id"] for item in out}
+    for comp in db.completions.find({"uid": uid, "status": "count_pending"}).sort("t", -1).limit(20):
+        cid = comp.get("cid")
+        if not cid or str(cid) in known_ids:
+            continue
+        c = db.campaigns.find_one({"_id": cid})
+        if not c or is_legacy(c) or c.get("owner") == uid:
+            continue
+        target_url = link_of(c)
+        if not target_url:
+            continue
+        out.insert(0, {"id": str(cid), "title": ctitle(c), "type": c.get("type"),
+                       "typeLabel": miniapp_type_name(c.get("type"), lang),
+                       "reward": int(comp.get("reward", c.get("reward", 0)) or 0),
+                       "remaining": max(0, int(c.get("remaining", 0) or 0)), "targetUrl": target_url,
+                       "postUrl": post_url_of(c), "started": True, "completionStatus": "count_pending",
+                       "mode": c.get("mode") or "", "windowMin": int(c.get("window_min", 0) or 0)})
+        known_ids.add(str(cid))
+    return jsonify(ok=True, tasks=out[:60])
+
+
+@app.post("/api/miniapp/tasks/<cid_s>/start")
+def miniapp_start_task(cid_s):
+    """Prepare the same verification session as the bot, then return the real task destination."""
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    try:
+        cid = ObjectId(cid_s)
+    except (InvalidId, TypeError):
+        return jsonify(error="invalid_id"), 400
+
+    # Keep the existing task-channel membership requirement.
+    if TASKS_CHANNEL:
+        member = required_channel_member(uid)
+        if member is None:
+            return jsonify(error="membership_check_unavailable"), 503
+        if not member:
+            return jsonify(error="task_channel_required"), 403
+
+    c = db.campaigns.find_one({"_id": cid})
+    if not c or c.get("status") != "active" or int(c.get("remaining", 0) or 0) < 1:
+        return jsonify(error="task_unavailable"), 409
+    if is_legacy(c):
+        return jsonify(error="task_unavailable"), 409
+    if c.get("owner") == uid:
+        return jsonify(error="own_task"), 403
+    if db.completions.find_one({"uid": uid, "cid": cid}):
+        return jsonify(error="already_done"), 409
+    if int(u.get("strikes", 0) or 0) >= STRIKE_LIMIT:
+        return jsonify(error="account_restricted"), 403
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            return jsonify(error="task_paused"), 409
+        admin_status = bot_admin_status(c.get("chat_id"))
+        if admin_status is None:
+            return jsonify(error="admin_check_unavailable"), 503
+        if not admin_status:
+            pause_for_admin_loss(c)
+            return jsonify(error="task_paused"), 409
+
+    target_url = link_of(c)
+    if not target_url:
+        return jsonify(error="target_unavailable"), 409
+
+    session_id = f"{uid}:{cid}"
+    existing = db.sessions.find_one({"_id": session_id})
+    now = time.time()
+    # Do not reset a reaction window on repeated taps. Create a session only when needed.
+    session_valid = bool(existing and now - float(existing.get("t", 0) or 0) < 86400)
+    if c.get("type") == "react" and c.get("mode") == "count" and existing:
+        session_valid = session_valid and now <= float(existing.get("task_deadline", 0) or 0)
+    if not session_valid:
+        if c.get("type") == "react" and c.get("mode") == "count":
+            snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
+            if not snap:
+                return jsonify(error="reaction_data_unavailable"), 409
+            window_min = int(c.get("window_min", 5))
+            session = {"t": now, "task_started": now - window_min * 60,
+                       "task_deadline": now + REACTION_UPDATE_GRACE,
+                       "baseline_total": int(c.get("base_count", snap.get("total", 0))),
+                       "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
+                       "post_key": post_key(c["chat_id"], c["mid"])}
+        else:
+            session = {"t": now}
+        db.sessions.update_one({"_id": session_id}, {"$set": session}, upsert=True)
+    return jsonify(ok=True, started=True, targetUrl=target_url,
+                   message="Task opened. Return to this Mini App and verify when finished.")
+
+
+@app.post("/api/miniapp/tasks/<cid_s>/claim")
+def miniapp_claim_task(cid_s):
+    """Verify and claim from the Mini App using the existing task engine and Telegram checks."""
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid, lang = int(u["_id"]), lang_of(u)
+    try:
+        cid = ObjectId(cid_s)
+    except (InvalidId, TypeError):
+        return jsonify(error="invalid_id"), 400
+
+    c = db.campaigns.find_one({"_id": cid})
+    if not c:
+        return jsonify(error="task_unavailable"), 409
+    prior = db.completions.find_one({"uid": uid, "cid": cid}) or {}
+    if prior:
+        if prior.get("status") == "count_pending":
+            return jsonify(ok=True, status="pending", message="Reaction count is still being verified."), 202
+        return jsonify(error="already_done"), 409
+    if c.get("status") != "active" or int(c.get("remaining", 0) or 0) < 1:
+        return jsonify(error="task_unavailable"), 409
+    if is_legacy(c):
+        return jsonify(error="task_unavailable"), 409
+    if c.get("owner") == uid:
+        return jsonify(error="own_task"), 403
+    if int(u.get("strikes", 0) or 0) >= STRIKE_LIMIT:
+        return jsonify(error="account_restricted"), 403
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            return jsonify(error="task_paused"), 409
+        admin_status = bot_admin_status(c.get("chat_id"))
+        if admin_status is None:
+            return jsonify(error="admin_check_unavailable"), 503
+        if not admin_status:
+            pause_for_admin_loss(c)
+            return jsonify(error="task_paused"), 409
+
+    session_id = f"{uid}:{cid}"
+    ses = db.sessions.find_one({"_id": session_id})
+    if not ses:
+        return jsonify(error="open_task_first"), 409
+
+    is_count = c.get("type") == "react" and c.get("mode") == "count"
+    if c.get("type") == "join":
+        check = tg("getChatMember", chat_id=c["chat_id"], user_id=uid)
+        if not check.get("ok") or not isinstance(check.get("result"), dict):
+            return jsonify(error="membership_check_unavailable"), 503
+        if not member_ok(check["result"]):
+            return jsonify(error="not_member"), 409
+    elif c.get("type") == "react" and c.get("mode") == "auto":
+        reaction = db.reacts.find_one({"_id": f"{c['chat_id']}:{c['mid']}:{uid}"})
+        if not (reaction and reaction.get("on")):
+            return jsonify(error="not_reacted"), 409
+    elif is_count:
+        now = time.time()
+        window_min = int(c.get("window_min", 5))
+        started = float(ses.get("task_started", float(ses.get("t", now)) - window_min * 60))
+        deadline = float(ses.get("task_deadline", now))
+        if now > deadline:
+            return jsonify(error="reaction_window_expired"), 409
+        if ses.get("baseline_total") is None or not ses.get("post_key"):
+            return jsonify(error="reaction_data_unavailable"), 409
+        extra = {"post_key": ses["post_key"], "baseline_total": int(ses["baseline_total"]),
+                 "baseline_at": float(ses.get("baseline_at", 0)), "task_started": started,
+                 "task_deadline": deadline, "claim_expires": deadline, "day_key": f"d:{uid}:{day()}"}
+        code, comp = grant(uid, c, "count_pending", extra=extra)
+        if code != "ok":
+            return jsonify(error=code, message=claim_alert(lang, code, uid)), 409
+        if consume_credit_for_claim(comp):
+            fresh = db.users.find_one({"_id": uid}) or u
+            payload = miniapp_dashboard_data(fresh)
+            return jsonify(ok=True, status="paid", reward=int(c.get("reward", 0) or 0), **payload)
+        return jsonify(ok=True, status="pending", message=("در انتظار تأیید افزایش واکنش‌ها" if lang == "fa" else "Waiting for reaction-count verification.")), 202
+
+    code, comp = grant(uid, c, "pending")
+    if code != "ok":
+        return jsonify(error=code, message=claim_alert(lang, code, uid)), 409
+    settle_instantly(comp, **({"verified_at": time.time(), "due": time.time()} if c.get("type") == "view" else {}))
+    fresh = db.users.find_one({"_id": uid}) or u
+    payload = miniapp_dashboard_data(fresh)
+    return jsonify(ok=True, status="paid", reward=int(c.get("reward", 0) or 0), **payload)
 
 
 @app.get("/api/miniapp/campaigns")
