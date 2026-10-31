@@ -62,7 +62,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v54-miniapp"
+VERSION = "v55-miniapp-rewards"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -3708,7 +3708,10 @@ def miniapp_dashboard_data(u):
         "user": {"id": uid, "name": short(u.get("name") or "", 40), "username": u.get("username") or "",
                   "language": lang, "points": int(u.get("points", 0) or 0), "hold": int(u.get("hold", 0) or 0),
                   "earned": int(u.get("earned", 0) or 0), "strikes": int(u.get("strikes", 0) or 0),
-                  "referrals": int(u.get("ref_count", 0) or 0), "remindersOff": bool(u.get("remind_off"))},
+                  "referrals": int(u.get("ref_count", 0) or 0), "remindersOff": bool(u.get("remind_off")),
+                  "doneTasks": int(u.get("done_tasks", completed_tasks) or 0), "level": level_index(u.get("done_tasks", completed_tasks)),
+                  "streak": int(u.get("streak", 0) or 0) if u.get("daily_last") in (day(), utc_date(-1)) else 0,
+                  "giftReady": u.get("daily_last") != day()},
         "stats": {"availableTasks": available, "activeCampaigns": active_campaigns,
                   "completedTasks": completed_tasks},
         "tasksChannelUrl": tasks_channel_url(),
@@ -4106,6 +4109,145 @@ def miniapp_update_profile():
     db.users.update_one({"_id": uid}, {"$set": update})
     fresh = db.users.find_one({"_id": uid}) or u
     return jsonify(ok=True, **miniapp_dashboard_data(fresh))
+
+
+# ═════════════════════════ Mini App · rewards, levels & growth (v55) ═════════════════════════
+# Display names for the 5 levels (thresholds, bonuses, multipliers and caps stay in LEVELS above).
+MA_LEVEL_NAMES = [("Spark", "جرقه"), ("Comet", "شهاب"), ("Nova", "نواختر"), ("Quasar", "اختروش"), ("Galaxy", "کهکشان")]
+# Perks shown on the level path. soon=True items are teasers only (nothing is gated behind them yet).
+MA_UNLOCKS = {
+    0: [("Create campaigns and earn Stars", "ساخت کمپین و کسب استارز", False)],
+    1: [("Higher daily gift", "هدیه‌ی روزانه‌ی بیشتر", False)],
+    2: [("Channel growth report", "گزارش رشد کانال", True)],
+    3: [("Member-retention bot for channel owners", "ربات نگهداشت ممبر برای صاحبان کانال", True)],
+    4: [("Partner programme", "برنامه‌ی همکاری ویژه", True)],
+}
+
+
+def miniapp_growth_data(u):
+    uid, lang = int(u["_id"]), lang_of(u)
+    done = int(u.get("done_tasks", 0) or 0)
+    if "done_tasks" not in u:
+        done = db.completions.count_documents({"uid": uid, "status": "paid"})
+    idx = level_index(done)
+    levels = []
+    for i, lv in enumerate(LEVELS):
+        levels.append({"idx": i, "need": lv[0], "bonus": lv[4], "mult": lv[5], "cap": DAILY_TASKS + lv[6],
+                       "name": MA_LEVEL_NAMES[i][1 if lang == "fa" else 0],
+                       "unlocks": [{"text": e[1 if lang == "fa" else 0], "soon": e[2]} for e in MA_UNLOCKS.get(i, [])]})
+    nxt = LEVELS[idx + 1] if idx + 1 < len(LEVELS) else None
+    level = {"idx": idx, "done": done, "from": LEVELS[idx][0], "to": nxt[0] if nxt else None,
+             "progress": 100 if not nxt else min(100, round((done - LEVELS[idx][0]) * 100 / max(1, nxt[0] - LEVELS[idx][0]))),
+             "toGo": 0 if not nxt else max(0, nxt[0] - done), "levels": levels}
+
+    today = day()
+    streak_alive = u.get("daily_last") in (today, utc_date(-1))
+    streak = int(u.get("streak", 0) or 0) if streak_alive else 0
+    claimed = u.get("daily_last") == today
+    upcoming = streak if claimed else streak + 1
+    reward_now, milestone_now = gift_reward(upcoming, u)
+    n = len(DAILY_REWARDS)
+    pos = ((streak - 1) % n) + 1 if streak > 0 else 0
+    gift = {"claimed": claimed, "streak": streak, "best": int(u.get("streak_best", 0) or 0),
+            "reward": reward_now, "milestone": milestone_now,
+            "days": [{"n": i, "reward": gift_reward(i, u)[0], "done": i <= pos, "today": (i == pos + 1 and not claimed) or (i == pos and claimed)}
+                     for i in range(1, n + 1)],
+            "secondsToNext": 86400 - int(time.time() % 86400)}
+
+    wstate = wheel_state(uid)
+    wheel = {"state": wstate, "prizes": [p for p, _ in WHEEL]}
+
+    ach = []
+    have = set(u.get("ach", []))
+    for a in ACH:
+        cur = int(u.get(a[5], 0) or 0)
+        if a[5] == "done_tasks":
+            cur = max(cur, done)
+        ach.append({"key": a[0], "name": a[3] if lang == "fa" else a[2], "reward": a[4], "group": a[5],
+                    "need": a[6], "current": min(cur, a[6]), "have": a[0] in have})
+
+    wk = week_id()
+    now = time.time()
+    to_monday = (7 - time.gmtime().tm_wday) * 86400 - int(now % 86400)
+
+    def rows(field):
+        out = []
+        for i, r in enumerate(board_rows(wk, field), 1):
+            out.append({"rank": i, "name": short(r.get("name"), 20), "score": int(r.get(field, 0) or 0), "me": r.get("uid") == uid})
+        return out
+    r_e, s_e = board_rank(wk, "score", uid)
+    r_r, s_r = board_rank(wk, "refs", uid)
+    board = {"earners": rows("score"), "inviters": rows("refs"), "myEarnRank": r_e, "myEarnScore": s_e,
+             "myInviteRank": r_r, "myInviteScore": s_r, "prizes": WEEKLY_PRIZES, "secondsLeft": to_monday}
+
+    ladder = [{"need": a[6], "reward": a[4], "have": a[0] in have} for a in ACH if a[5] == "ref_active_count"]
+    invite = {"link": ref_link(uid), "total": int(u.get("ref_count", 0) or 0),
+              "active": int(u.get("ref_active_count", 0) or 0), "earned": int(u.get("ref_earned", 0) or 0),
+              "welcomeBonus": REF_WELCOME_BONUS, "activeBonus": REF_ACTIVE_BONUS, "activeTasks": REF_ACTIVE_TASKS, "ladder": ladder}
+
+    today_done = counter_get(f"d:{uid}:{today}")
+    cap = DAILY_TASKS + LEVELS[idx][6]
+    golden = {"active": golden_active(), "mult": GOLDEN_MULT, "endHour": GOLDEN_WINDOW[1] if GOLDEN_WINDOW else None}
+    return {"level": level, "gift": gift, "wheel": wheel, "achievements": ach, "board": board, "invite": invite,
+            "daily": {"done": today_done, "cap": cap}, "golden": golden,
+            "rewards": {k: TYPES[k]["reward"] for k in TYPES}, "costs": {k: TYPES[k]["cost"] for k in TYPES},
+            "limits": {"maxQty": MAX_QTY, "maxActive": MAX_ACTIVE}}
+
+
+@app.get("/api/miniapp/growth")
+def miniapp_growth():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    return jsonify(ok=True, **miniapp_growth_data(u))
+
+
+@app.post("/api/miniapp/gift/claim")
+def miniapp_gift_claim():
+    """Structured twin of gift_claim(): same atomic once-per-day rule, streak and milestone logic."""
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    today = day()
+    if u.get("daily_last") == today:
+        return jsonify(error="already_claimed"), 409
+    if required_channel_member(uid) is False:
+        return jsonify(error="task_channel_required"), 403
+    old = db.users.find_one_and_update({"_id": uid, "daily_last": {"$ne": today}}, {"$set": {"daily_last": today}})
+    if not old:
+        return jsonify(error="already_claimed"), 409
+    streak = int(old.get("streak", 0)) + 1 if old.get("daily_last") == utc_date(-1) else 1
+    amount, milestone = gift_reward(streak, old)
+    db.users.update_one({"_id": uid}, {"$set": {"streak": streak, "streak_best": max(int(old.get("streak_best", 0)), streak)}})
+    add_points(uid, amount + milestone, "daily", f"s{streak}")
+    try:
+        check_achievements(uid)
+    except Exception:
+        log.exception("Mini App gift achievements")
+    fresh = db.users.find_one({"_id": uid}) or u
+    return jsonify(ok=True, reward=amount, milestone=milestone, streak=streak,
+                   **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
+
+
+@app.post("/api/miniapp/wheel/spin")
+def miniapp_wheel_spin():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    st = wheel_state(uid)
+    if st == "locked":
+        return jsonify(error="wheel_locked"), 409
+    if st != "ready" or not counter_take(f"wheel:{uid}:{day()}", 1):
+        return jsonify(error="wheel_used"), 409
+    prizes = [p for p, _ in WHEEL]
+    prize = random.choices(prizes, weights=[w for _, w in WHEEL])[0]
+    add_points(uid, prize, "wheel", day())
+    fresh = db.users.find_one({"_id": uid}) or u
+    return jsonify(ok=True, prize=prize, index=prizes.index(prize),
+                   **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
+
 
 
 @app.post("/hook")

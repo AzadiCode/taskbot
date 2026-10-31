@@ -3,105 +3,736 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#090814">
-<title>TaskPlus Mini App</title>
+<meta name="theme-color" content="#0c1024">
+<title>TaskPlus</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
 <style>
-:root{color-scheme:dark;--bg:#0c0b1b;--panel:#17152d;--panel2:#211d3b;--line:rgba(185,169,255,.14);--text:#f6f4ff;--muted:#a7a0c6;--cyan:#49e8e0;--purple:#9470ff;--pink:#f26fda;--green:#6fffc2;--danger:#ff788e;--radius:22px;--shadow:0 18px 55px rgba(0,0,0,.25)}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -18%,rgba(96,62,188,.35),transparent 52%),var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{padding:0 0 calc(88px + env(safe-area-inset-bottom));}button,input,select{font:inherit}button{cursor:pointer;border:0;color:inherit}a{color:inherit;text-decoration:none}.app{width:min(100%,560px);margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 16px 24px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:21px}.brand{display:flex;align-items:center;gap:10px}.logo{display:grid;place-items:center;width:42px;height:42px;border-radius:15px;background:linear-gradient(140deg,#a56bff,#5b4df4 55%,#35deda);box-shadow:0 7px 26px #744fff44;font-weight:900;color:#100e24;letter-spacing:-1px}.brandname{font-weight:800;letter-spacing:.2px;font-size:16px}.eyebrow{font-size:11px;color:var(--muted);letter-spacing:1.3px;text-transform:uppercase;margin-top:3px}.avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:14px;background:#292443;border:1px solid var(--line);color:var(--cyan);font-weight:800}.hello{color:var(--muted);font-size:13px;margin:0 0 5px}.hero-title{font-size:26px;font-weight:850;letter-spacing:-.8px;line-height:1.14;margin:0 0 16px}.hero-title .accent{background:linear-gradient(90deg,var(--cyan),#a89bff 85%);-webkit-background-clip:text;background-clip:text;color:transparent}.balance{position:relative;overflow:hidden;border:1px solid rgba(161,130,255,.35);border-radius:27px;padding:22px;background:linear-gradient(125deg,#2a1c55 0%,#201d4a 52%,#12313f 115%);box-shadow:var(--shadow);margin-bottom:17px}.balance:after{content:"";position:absolute;width:205px;height:205px;border:1px solid #ffffff12;border-radius:50%;right:-70px;top:-105px;box-shadow:0 0 0 19px #ffffff06,0 0 0 40px #ffffff04}.balance-head{display:flex;justify-content:space-between;align-items:center;color:#d4c9ff;font-size:12px;position:relative;z-index:1}.balance-amount{font-size:36px;line-height:1.2;font-weight:850;letter-spacing:-1.4px;margin:10px 0 3px;position:relative;z-index:1}.balance-amount small{font-size:13px;font-weight:650;color:var(--cyan);letter-spacing:0}.balance-sub{font-size:12px;color:#b7b0d9;position:relative;z-index:1}.pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:6px 9px;border-radius:100px;background:#ffffff12;color:#dffdf7;border:1px solid #ffffff12}.dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}.balance-actions{display:flex;gap:9px;margin-top:20px;position:relative;z-index:1}.btn{min-height:43px;border-radius:14px;padding:11px 14px;font-weight:750;font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:transform .12s ease,opacity .12s ease}.btn:active{transform:scale(.98)}.btn-primary{background:linear-gradient(100deg,#59e5dc,#8eebed);color:#10172b;box-shadow:0 8px 24px #4ae8de25}.btn-secondary{background:#ffffff0e;border:1px solid #ffffff18;color:#f4f0ff}.btn-danger{background:#ff788e20;border:1px solid #ff788e50;color:#ffa9b6}.btn-wide{flex:1}.section-head{display:flex;align-items:center;justify-content:space-between;margin:24px 1px 12px;gap:10px}.section-title{font-size:16px;font-weight:800;letter-spacing:-.25px;margin:0}.text-button{background:none;color:var(--cyan);font-size:12px;font-weight:750;padding:7px 0}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.stat{padding:15px 12px;background:linear-gradient(150deg,#1b1932,#151429);border:1px solid var(--line);border-radius:19px;min-width:0}.stat-icon{width:31px;height:31px;border-radius:11px;display:grid;place-items:center;background:#6f5de722;color:var(--cyan);margin-bottom:14px;font-size:15px}.stat-num{font-size:21px;font-weight:850;letter-spacing:-.6px}.stat-label{font-size:10px;color:var(--muted);margin-top:5px;white-space:normal;line-height:1.3}.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.quick{background:var(--panel);border:1px solid var(--line);border-radius:19px;padding:16px;text-align:left;display:flex;flex-direction:column;gap:10px;min-height:100px}.quick-icon{font-size:20px}.quick-title{font-size:13px;font-weight:800}.quick-sub{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4}.card-list{display:flex;flex-direction:column;gap:10px}.item{background:linear-gradient(150deg,#1d1a36,#151429);border:1px solid var(--line);border-radius:19px;padding:15px;display:flex;flex-direction:column;gap:12px}.item-top{display:flex;align-items:flex-start;gap:12px}.item-icon{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;background:linear-gradient(140deg,#4d3a8a,#242345);border:1px solid #a895ff20;border-radius:14px;font-size:18px}.item-main{min-width:0;flex:1}.item-title{font-size:13px;font-weight:800;line-height:1.4;overflow-wrap:anywhere}.item-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}.tag{display:inline-flex;align-items:center;border-radius:9px;padding:5px 8px;font-size:10px;background:#ffffff0a;color:#bbb4d7;border:1px solid #ffffff0b}.tag.cyan{color:var(--cyan);background:#49e8e00e;border-color:#49e8e01c}.reward{font-weight:850;color:var(--green);white-space:nowrap;font-size:13px}.item-actions{display:flex;gap:8px}.item-actions .btn{flex:1;min-height:39px;font-size:12px;padding:9px}.progress{height:5px;background:#ffffff12;border-radius:8px;overflow:hidden}.progress>span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,var(--purple),var(--cyan))}.progress-row{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:9px}.status{font-size:10px;padding:5px 8px;border-radius:8px;background:#ffffff0a;color:#c7c0dc}.status.active{color:var(--green);background:#6fffc20d}.status.paused{color:#ffcf7a;background:#ffcf7a14}.empty{border:1px dashed #a59ad333;border-radius:19px;padding:26px 18px;text-align:center;color:var(--muted);font-size:12px;line-height:1.6}.empty strong{display:block;color:var(--text);font-size:14px;margin-bottom:5px}.page-title{font-size:25px;font-weight:850;letter-spacing:-.7px;margin:0 0 5px}.page-sub{font-size:12px;color:var(--muted);margin:0 0 20px;line-height:1.5}.filters{display:flex;gap:7px;overflow:auto;padding:2px 1px 12px;margin-bottom:3px;scrollbar-width:none}.filters::-webkit-scrollbar{display:none}.filter{background:#ffffff09;border:1px solid var(--line);border-radius:100px;padding:8px 12px;color:var(--muted);font-size:11px;white-space:nowrap}.filter.selected{background:#49e8e018;border-color:#49e8e044;color:var(--cyan)}.profile-card{display:flex;align-items:center;gap:13px;padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:22px;margin-bottom:15px}.profile-avatar{display:grid;place-items:center;width:55px;height:55px;border-radius:18px;background:linear-gradient(140deg,#9d68ff,#3ce0d6);color:#130f2b;font-size:20px;font-weight:900}.profile-name{font-weight:850;font-size:16px}.profile-id{font-size:11px;color:var(--muted);margin-top:5px}.setting{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 0;border-bottom:1px solid var(--line)}.setting:last-child{border-bottom:0}.setting-label{font-size:13px;font-weight:750}.setting-help{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4}.select{background:#25213f;color:var(--text);border:1px solid #ffffff20;border-radius:12px;padding:10px;font-size:12px;max-width:135px}.toggle{width:43px;height:25px;border-radius:100px;background:#44405f;position:relative;flex:0 0 auto}.toggle:after{content:"";position:absolute;left:3px;top:3px;width:19px;height:19px;border-radius:50%;background:#fff;transition:left .15s}.toggle.on{background:#3bbeb9}.toggle.on:after{left:21px}.bottom{position:fixed;z-index:20;left:0;right:0;bottom:0;padding:10px 12px calc(9px + env(safe-area-inset-bottom));background:rgba(13,12,29,.91);border-top:1px solid #ffffff12;backdrop-filter:blur(22px)}.nav{width:min(100%,530px);margin:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.nav-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:none;color:#8e88ad;padding:6px 2px;font-size:9px;font-weight:700;border-radius:13px}.nav-btn .nav-icon{font-size:19px;line-height:1.2}.nav-btn.active{color:var(--cyan);background:#49e8e00c}.nav-btn.active .nav-icon{filter:drop-shadow(0 0 7px #49e8e055)}.toast{position:fixed;z-index:50;left:16px;right:16px;bottom:calc(88px + env(safe-area-inset-bottom));margin:auto;width:min(500px,calc(100% - 32px));background:#292542;border:1px solid #ffffff20;box-shadow:var(--shadow);border-radius:15px;padding:13px 15px;font-size:12px;line-height:1.4;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}.toast.show{opacity:1;transform:translateY(0)}.modal-backdrop{position:fixed;z-index:30;inset:0;background:#05040bd9;display:none;align-items:flex-end;justify-content:center;padding:0}.modal-backdrop.show{display:flex}.modal{width:min(560px,100%);max-height:88vh;overflow:auto;background:linear-gradient(160deg,#242043,#100f20 85%);border:1px solid #a991ff25;border-bottom:0;border-radius:26px 26px 0 0;padding:22px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -20px 70px #0008}.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modal-title{font-size:19px;font-weight:850}.close{width:32px;height:32px;border-radius:11px;background:#ffffff10;color:#cfc9e8;font-size:20px}.field{display:flex;flex-direction:column;gap:8px;margin:14px 0}.field label{font-size:12px;font-weight:750;color:#ded8f8}.field input,.field select{width:100%;padding:13px 14px;border-radius:13px;background:#100f22;color:var(--text);border:1px solid #ffffff1e;outline:none;font-size:13px}.field input:focus,.field select:focus{border-color:#49e8e088}.hint{font-size:10px;color:var(--muted);line-height:1.5}.cost-box{padding:14px;border-radius:14px;background:#49e8e00d;border:1px solid #49e8e025;display:flex;justify-content:space-between;align-items:center;margin:16px 0;font-size:12px;color:var(--muted)}.cost-box strong{font-size:18px;color:var(--cyan)}.modal .btn{width:100%}.loader{width:24px;height:24px;border:2px solid #ffffff22;border-top-color:var(--cyan);border-radius:50%;animation:spin .75s linear infinite;margin:30px auto}@keyframes spin{to{transform:rotate(360deg)}}[hidden]{display:none!important}
-[dir=rtl] body{text-align:right}[dir=rtl] .item-actions,[dir=rtl] .balance-actions{flex-direction:row}[dir=rtl] .toggle:after{left:auto;right:3px}[dir=rtl] .toggle.on:after{left:auto;right:21px}[dir=rtl] .quick{text-align:right}@media(min-width:520px){.app{padding-left:22px;padding-right:22px}.modal-backdrop{align-items:center;padding:18px}.modal{border:1px solid #a991ff25;border-radius:26px;padding-bottom:22px}.hero-title{font-size:30px}}
+:root{
+  color-scheme:dark;
+  --ink:#0c1024;--panel:#151a38;--panel-2:#1c2248;--raise:#252c5c;
+  --line:rgba(158,172,255,.13);--line-2:rgba(158,172,255,.26);
+  --text:#f2f4ff;--muted:#98a1cb;--faint:#6d77a6;
+  --brand:#7b8cff;--on-brand:#0c1024;
+  --gold:#ffc759;--gold-soft:rgba(255,199,89,.14);
+  --mint:#3ee0b0;--mint-soft:rgba(62,224,176,.14);
+  --rose:#ff7a90;--pink:#ff6fc8;--cyan:#4fd6ff;
+  --lv:#ff9f4a;
+  --nav-h:68px;
+  --font:"Vazirmatn",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;background:var(--ink);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+body{background:radial-gradient(120% 60% at 50% -10%,color-mix(in srgb,var(--lv) 16%,transparent),transparent 62%),var(--ink);padding-bottom:calc(var(--nav-h) + 28px + env(safe-area-inset-bottom))}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+button:disabled{cursor:default}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:10px}
+svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.i.sm{width:16px;height:16px}
+svg.i.fill{fill:currentColor;stroke:none}
+[dir=rtl] .flip{transform:scaleX(-1)}
+.num{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;display:inline-block}
 
-/* Premium interface pass: stronger hierarchy, cinematic lighting and more deliberate spacing. */
-:root{color-scheme:dark;--bg:#090814;--panel:#141326;--panel2:#1d1935;--line:rgba(184,166,255,.16);--text:#fbf9ff;--muted:#a19abf;--cyan:#67f4e7;--purple:#a58cff;--pink:#f184df;--green:#81ffd0;--radius:24px;--shadow:0 24px 75px rgba(0,0,0,.34)}
-html,body{background:radial-gradient(ellipse at 18% -12%,rgba(122,72,255,.25),transparent 36%),radial-gradient(ellipse at 100% 18%,rgba(52,218,213,.09),transparent 29%),#090814;letter-spacing:-.12px}
-body{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
-.app{width:min(100%,660px);padding:calc(18px + env(safe-area-inset-top)) 17px 30px}
-.top{margin-bottom:25px}.brand{gap:12px}.logo{width:46px;height:46px;border-radius:16px;position:relative;background:linear-gradient(145deg,#9c73ff 0%,#6251ed 48%,#39e5dc 100%);box-shadow:0 8px 30px #7654ff42, inset 0 1px #ffffffaa;letter-spacing:-1.5px}.logo:after{content:"";position:absolute;inset:4px;border:1px solid #ffffff65;border-radius:12px}.brandname{font-size:17px;letter-spacing:-.4px}.eyebrow{font-size:9px;letter-spacing:1.9px;color:#9690b5}.avatar{width:43px;height:43px;border-radius:16px;background:linear-gradient(145deg,#26213f,#141326);border:1px solid #b5a4ff35;box-shadow:inset 0 1px #ffffff12}
-.hero-shell{position:relative;overflow:hidden;display:grid;grid-template-columns:1.12fr .88fr;gap:8px;min-height:240px;padding:23px 20px;border:1px solid #aa8cff38;border-radius:29px;background:linear-gradient(122deg,rgba(40,28,80,.97),rgba(23,22,52,.98) 58%,rgba(14,38,49,.95));box-shadow:0 24px 70px #0005,inset 0 1px #ffffff12;margin-bottom:14px}
-.hero-shell:before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 15%,#ffffff04 48%,transparent 72%),repeating-linear-gradient(135deg,transparent 0 26px,#ffffff03 27px 28px);pointer-events:none}
-.hero-copy{position:relative;z-index:2;align-self:center;min-width:0}.hero-kicker{display:flex;align-items:center;gap:7px;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#c7bfff;font-weight:850;margin-bottom:13px}.hero-kicker i{width:6px;height:6px;background:var(--cyan);border-radius:50%;box-shadow:0 0 13px var(--cyan)}.hero-headline{font-size:clamp(25px,6.5vw,34px);font-weight:900;line-height:1.03;letter-spacing:-1.45px;margin:0 0 10px}.hero-headline span{color:var(--cyan);text-shadow:0 0 26px #57eadd2c}.hero-desc{font-size:11px;line-height:1.65;color:#c1badf;max-width:260px;margin:0 0 17px}.hero-actions{display:flex;flex-wrap:wrap;gap:8px}.hero-actions .btn{min-height:39px;font-size:11px;padding:10px 12px;border-radius:13px}.hero-art{position:relative;min-height:185px;align-self:stretch;display:grid;place-items:center}.hero-art svg{width:125%;max-width:250px;height:auto;overflow:visible;filter:drop-shadow(0 7px 32px #9c79ff26)}.art-orbit{fill:none;stroke:#c5b7ff;stroke-opacity:.25;stroke-width:1}.art-line{stroke:#78f4e7;stroke-opacity:.6;stroke-width:1.5;fill:none}.art-chip{position:absolute;padding:9px 11px;border:1px solid #ffffff1e;background:linear-gradient(135deg,#2b2549dd,#101b2add);box-shadow:0 8px 25px #0004;backdrop-filter:blur(14px);border-radius:13px;min-width:94px}.art-chip small{display:block;font-size:8px;letter-spacing:1.1px;color:#b4acd4;margin-bottom:4px}.art-chip strong{display:block;font-size:15px;letter-spacing:-.4px}.art-chip.one{top:14px;right:-2px}.art-chip.two{bottom:10px;left:-12px}.art-chip.two strong{color:var(--cyan)}
-.balance{border-radius:25px;padding:20px 21px;margin-bottom:13px;background:radial-gradient(circle at 98% 0%,#43cfc519,transparent 32%),linear-gradient(115deg,#1d1a36,#151429);border:1px solid #b5a2ff22;box-shadow:inset 0 1px #ffffff09,0 15px 45px #0002}.balance:after{width:170px;height:170px;right:-78px;top:-100px;box-shadow:0 0 0 17px #ffffff05,0 0 0 37px #ffffff03}.balance-head{color:#c3badf;font-size:11px;font-weight:750}.balance-amount{font-size:33px;letter-spacing:-1.3px}.balance-sub{font-size:11px;color:#aaa3c8}.balance-actions{margin-top:15px}.btn{border-radius:13px;letter-spacing:-.15px;box-shadow:none}.btn-primary{background:linear-gradient(105deg,#62eade,#94f3e9);color:#091b24;box-shadow:0 7px 24px #46e2d51c}.btn-secondary{background:#ffffff08;border:1px solid #ffffff17;color:#e6e0fa}.btn-danger{background:#ff718b14;border:1px solid #ff718b3b}.pill{background:#0d342e72;color:#b8fff0;border-color:#6ef4d21c}
-.stats{gap:9px;margin:14px 0 4px}.stat{position:relative;overflow:hidden;border-radius:19px;padding:14px 13px;background:linear-gradient(150deg,#19172e,#111020);border-color:#c0adff17;box-shadow:inset 0 1px #ffffff07}.stat:after{content:"";position:absolute;width:55px;height:55px;right:-25px;top:-25px;border:1px solid #a58cff18;border-radius:50%;box-shadow:0 0 0 9px #ffffff02}.stat-icon{background:linear-gradient(140deg,#4b347d60,#39e2d716);border:1px solid #bba5ff13;color:#9dfaf0}.stat-num{font-size:22px}.stat-label{font-size:10px;color:#a9a2c5}.section-head{margin:24px 2px 12px}.section-title{font-size:15px;font-weight:850;letter-spacing:-.4px}.text-button{color:var(--cyan)}.quick{position:relative;overflow:hidden;min-height:104px;padding:15px;border-radius:20px;background:linear-gradient(145deg,#1d1a37,#121121);border-color:#c4b0ff17;box-shadow:inset 0 1px #ffffff07;transition:transform .18s,border-color .18s}.quick:active{transform:scale(.985)}.quick-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:12px;color:var(--cyan);background:#54e9df10;border:1px solid #54e9df1a}.quick-title{font-size:12px}.quick-sub{font-size:10px;line-height:1.5}.item{position:relative;overflow:hidden;padding:15px;border-radius:20px;gap:13px;background:linear-gradient(145deg,rgba(30,27,54,.96),rgba(17,16,32,.99));border:1px solid #bba8ff1b;box-shadow:inset 0 1px #ffffff07;transition:border-color .18s,transform .18s}.item:active{transform:scale(.995)}.item-icon{border-radius:15px;background:linear-gradient(145deg,#45346f,#23213b);border-color:#c7adff1e;color:#b3fff4}.item-title{font-size:13px;line-height:1.45}.item-meta{margin-top:8px}.tag{border-radius:8px;background:#ffffff07;border-color:#ffffff0a}.tag.cyan{color:#78f3e7;background:#49e8e00d;border-color:#49e8e01e}.reward{font-size:12px;color:#8ef9ce}.item-actions{gap:8px}.item-actions .btn{min-height:41px;border-radius:12px;font-size:11px}.task-mission{border-color:#7d6aff35;background:radial-gradient(circle at 100% 0%,#52eadf0c,transparent 34%),linear-gradient(145deg,#1d1a39,#111020)}.mission-label{display:flex;align-items:center;gap:6px;font-size:9px;letter-spacing:1.3px;color:#aaa2ce;font-weight:850;text-transform:uppercase}.mission-label i{width:5px;height:5px;border-radius:50%;background:#9d82ff;box-shadow:0 0 9px #9d82ff}.mission-state{font-size:10px;color:#ffc777;border:1px solid #ffc7772b;background:#ffc7770c;border-radius:9px;padding:5px 8px;white-space:nowrap}.mission-state.pending{color:#bdb1ff;background:#a48cff0d;border-color:#a48cff30}.mission-state.done{color:#8dffd2;background:#6dffc30c;border-color:#6dffc321}.item-main{padding-top:1px}
-.page-title{font-size:27px;letter-spacing:-.9px;margin-bottom:6px}.page-sub{font-size:12px;line-height:1.65;color:#aca5c9}.filters{padding-bottom:13px}.filter{padding:9px 14px;background:#ffffff06;border-color:#ffffff0e}.filter.selected{background:#51e8df13;border-color:#51e8df44;box-shadow:inset 0 0 0 1px #51e8df08}.profile-card{border-radius:22px;background:linear-gradient(135deg,#292148,#151429 80%);border-color:#b9a5ff20}.profile-avatar{border-radius:18px;box-shadow:0 8px 25px #8b66ff23}.setting{border-color:#ffffff0d}.bottom{padding:9px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(8,7,20,.88);border-top:1px solid #b8a4ff18;box-shadow:0 -8px 32px #0002}.nav{max-width:600px}.nav-btn{font-size:9px;gap:5px;padding:7px 2px;border-radius:15px}.nav-btn.active{background:linear-gradient(180deg,#4ce7dd10,#a48cff0c);box-shadow:inset 0 0 0 1px #8f7cff14}.nav-btn.active .nav-icon{filter:drop-shadow(0 0 7px #49e8e055)}.modal{background:linear-gradient(160deg,#211d3c,#100f20 85%);border-color:#b7a1ff28}.field input,.field select{border-radius:13px;background:#100f20;border-color:#ffffff18}.cost-box{border-radius:14px;background:#49e8e00a;border-color:#49e8e01a}.toast{border-radius:16px;background:#211d3a;border-color:#bba8ff29;box-shadow:0 18px 55px #0008}
-[dir=rtl] .hero-shell{grid-template-columns:1.12fr .88fr}[dir=rtl] .hero-art{transform:scaleX(-1)}[dir=rtl] .hero-copy{direction:rtl}[dir=rtl] .art-chip{direction:ltr;text-align:left}[dir=rtl] .item-actions{flex-direction:row}[dir=rtl] .hero-kicker{letter-spacing:0}
-@media(max-width:420px){.app{padding-left:13px;padding-right:13px}.hero-shell{grid-template-columns:1fr .65fr;min-height:218px;padding:18px 14px;gap:0}.hero-headline{font-size:25px}.hero-desc{font-size:10px;max-width:205px}.hero-art svg{width:155%;margin-left:-12px}.art-chip{min-width:78px;padding:7px 8px}.art-chip small{font-size:7px}.art-chip strong{font-size:13px}.art-chip.one{right:-8px}.art-chip.two{left:-10px}.balance{padding:18px}.balance-amount{font-size:31px}.stats{gap:7px}.stat{padding:12px 10px}.stat-num{font-size:20px}.item-actions .btn{padding:9px 8px}.hero-actions .btn{font-size:10px;padding:9px 10px}}
-@media(min-width:620px){.app{padding-left:22px;padding-right:22px}.hero-shell{min-height:264px;padding:28px}.hero-art svg{max-width:280px}.hero-headline{font-size:37px}}
+/* ---------- shell ---------- */
+.app{width:min(100%,560px);margin:0 auto;padding:0 16px}
+.bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 -16px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:color-mix(in srgb,var(--ink) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.bar-id{display:flex;align-items:center;gap:10px;min-width:0}
+.bar-id .emb{width:38px;height:38px}
+.bar-name{font-weight:700;font-size:15px;line-height:1.2}
+.bar-sub{font-size:11px;color:var(--muted);line-height:1.3}
+.bal{display:flex;align-items:center;gap:7px;padding:7px 13px 7px 11px;border-radius:999px;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 34%,transparent);color:var(--gold);font-weight:800;font-size:16px}
+[dir=rtl] .bal{padding:7px 11px 7px 13px}
+.bal.bump{animation:bump .5s ease}
+@keyframes bump{40%{transform:scale(1.14)}}
+main{padding-top:6px}
+.page-title{font-size:22px;font-weight:800;margin:10px 0 2px;letter-spacing:-.2px}
+.page-sub{color:var(--muted);font-size:13px;margin:0 0 14px;max-width:46ch}
+.sec{display:flex;align-items:center;justify-content:space-between;margin:22px 0 10px}
+.sec h2{font-size:15px;font-weight:800;margin:0}
+.link-btn{color:var(--brand);font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:3px}
 
+/* ---------- surfaces ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px}
+.card+.card{margin-top:10px}
+.muted{color:var(--muted)}
+.row{display:flex;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:var(--panel-2);color:var(--muted);white-space:nowrap}
+.chip.gold{background:var(--gold-soft);color:var(--gold)}
+.chip.mint{background:var(--mint-soft);color:var(--mint)}
+.chip.brand{background:rgba(123,140,255,.16);color:var(--brand)}
+.chip.rose{background:rgba(255,122,144,.14);color:var(--rose)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 20px;border-radius:14px;font-weight:800;font-size:14px;transition:transform .12s ease,opacity .2s}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn.primary{background:var(--brand);color:var(--on-brand)}
+.btn.gold{background:var(--gold);color:#2b1d00}
+.btn.ghost{background:var(--panel-2);border:1px solid var(--line-2)}
+.btn.block{width:100%}
+.btn.icon{flex:0 0 48px;padding:0}
+.t-act .btn.icon{flex:0 0 48px}
+.btn.sm{min-height:38px;padding:0 14px;font-size:13px;border-radius:12px}
+.btn:disabled{opacity:.45}
+
+.seg{display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.seg button{flex:1;min-height:36px;padding:0 8px;border-radius:10px;color:var(--muted);font-weight:700;font-size:12.5px;white-space:nowrap}
+.seg button.on{background:var(--raise);color:var(--text)}
+
+.bar-track{height:8px;border-radius:99px;background:var(--panel-2);overflow:hidden}
+.bar-fill{height:100%;border-radius:99px;background:var(--brand);transition:width .7s cubic-bezier(.2,.8,.2,1)}
+.bar-fill.gold{background:var(--gold)}
+.bar-fill.mint{background:var(--mint)}
+
+.empty{padding:34px 18px;text-align:center;border:1px dashed var(--line-2);border-radius:20px;color:var(--muted)}
+.empty strong{display:block;color:var(--text);font-size:15px;margin-bottom:4px}
+.loader{width:30px;height:30px;margin:90px auto;border-radius:50%;border:3px solid var(--panel-2);border-top-color:var(--brand);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- orbit (home hero) ---------- */
+.orbit-card{position:relative;overflow:hidden;padding:20px 18px 18px;border-radius:26px;background:var(--panel);border:1px solid color-mix(in srgb,var(--lv) 30%,var(--line))}
+.orbit-wrap{position:relative;width:208px;height:208px;margin:0 auto 6px}
+.orbit-wrap svg.ring{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+.ring .trk{fill:none;stroke:rgba(158,172,255,.2);stroke-width:7}
+.ring .arc{fill:none;stroke:var(--lv);stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--lv) 70%,transparent))}
+.ring .sat{fill:#fff;filter:drop-shadow(0 0 7px var(--lv));transition:transform 1.4s cubic-bezier(.2,.8,.2,1);transform-origin:104px 104px}
+.orbit-core{position:absolute;inset:34px;display:grid;place-items:center}
+.orbit-core .emb{width:100%;height:100%}
+.orbit-lvl{position:absolute;inset-inline:0;bottom:-2px;text-align:center}
+.orbit-lvl span{display:inline-block;padding:2px 12px;border-radius:99px;background:var(--ink);border:1px solid color-mix(in srgb,var(--lv) 55%,transparent);color:var(--lv);font-weight:800;font-size:12px}
+.orbit-title{text-align:center;font-size:19px;font-weight:800;margin:16px 0 4px}
+.orbit-sub{text-align:center;color:var(--muted);font-size:12.5px;margin:0 auto 14px;max-width:34ch}
+.emb{display:block;filter:drop-shadow(0 0 9px color-mix(in srgb,var(--c,var(--lv)) 55%,transparent))}
+
+/* ---------- home blocks ---------- */
+.gold-banner{display:flex;align-items:center;gap:10px;margin-top:12px;padding:11px 14px;border-radius:16px;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 38%,transparent);color:var(--gold);font-weight:700;font-size:13px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.duo .card+.card{margin-top:0}
+.mini-k{font-size:11.5px;color:var(--muted);margin-bottom:6px}
+.mini-v{font-size:26px;font-weight:800;line-height:1.1}
+.mini-v small{font-size:13px;color:var(--muted);font-weight:600}
+.streak{display:flex;gap:5px;margin-top:10px}
+.streak i{flex:1;height:6px;border-radius:9px;background:var(--panel-2)}
+.streak i.on{background:var(--gold)}
+.stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.stat{padding:12px 10px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
+.stat b{display:block;font-size:20px;font-weight:800}
+.stat span{font-size:11px;color:var(--muted)}
+.next-lock{display:flex;align-items:center;gap:12px;margin-top:10px;padding:13px 14px;background:var(--panel);border:1px dashed var(--line-2);border-radius:18px}
+.next-lock .emb{width:40px;height:40px;opacity:.55}
+.next-lock b{display:block;font-size:13.5px}
+.next-lock span{font-size:12px;color:var(--muted)}
+
+/* ---------- tasks ---------- */
+.filters{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.filters button{flex:none;padding:8px 15px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-weight:700;font-size:12.5px}
+.filters button.on{background:var(--raise);border-color:var(--line-2);color:var(--text)}
+.day-line{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:16px;font-size:12.5px}
+.day-line .bar-track{flex:1}
+.task{padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:20px}
+.task+.task{margin-top:10px}
+.task.live{border-color:color-mix(in srgb,var(--brand) 50%,transparent)}
+.t-top{display:flex;gap:12px;align-items:flex-start}
+.t-ico{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex:none;background:rgba(123,140,255,.16);color:var(--brand)}
+.t-ico.react{background:rgba(255,111,200,.14);color:var(--pink)}
+.t-ico.view{background:var(--mint-soft);color:var(--mint)}
+.t-title{font-weight:800;font-size:14.5px;line-height:1.4;overflow-wrap:anywhere}
+.t-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.t-reward{margin-inline-start:auto;flex:none;text-align:center;color:var(--gold);font-weight:800;font-size:17px;line-height:1.1}
+.t-reward small{display:block;font-size:10px;color:var(--muted);font-weight:600}
+.t-act{display:flex;gap:8px;margin-top:12px}
+.t-act .btn{flex:1}
+
+/* ---------- campaigns ---------- */
+.fund{display:flex;align-items:center;gap:14px;padding:16px;border-radius:20px;background:var(--panel);border:1px solid var(--line);margin-bottom:12px}
+.fund b{font-size:24px;font-weight:800;color:var(--gold)}
+.camp{padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:20px}
+.camp+.camp{margin-top:10px}
+.camp .bar-track{margin:12px 0 8px}
+.camp-foot{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+
+/* ---------- rewards ---------- */
+.lv-path{position:relative}
+.lv{display:flex;gap:14px;position:relative;padding-bottom:18px}
+.lv:last-child{padding-bottom:0}
+.lv:not(:last-child)::before{content:"";position:absolute;inset-inline-start:25px;top:54px;bottom:-2px;width:2px;background:var(--line-2)}
+.lv.past:not(:last-child)::before{background:var(--mint)}
+.lv .emb{width:52px;height:52px;flex:none}
+.lv.future .emb{opacity:.4;filter:grayscale(.6)}
+.lv-body{flex:1;min-width:0;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:18px}
+.lv.now .lv-body{border-color:color-mix(in srgb,var(--lv) 60%,transparent);background:color-mix(in srgb,var(--lv) 8%,var(--panel))}
+.lv-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lv-head b{font-size:15px}
+.perks{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:5px;font-size:12.5px;color:var(--muted)}
+.perks li{display:flex;gap:7px;align-items:flex-start}
+.perks li svg{margin-top:3px;color:var(--mint)}
+.perks li.soon svg{color:var(--faint)}
+.perks li.soon{color:var(--faint)}
+.perks.fut li svg{color:var(--faint)}
+.gift-days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:14px 0}
+.gd{padding:8px 0 7px;border-radius:12px;background:var(--panel-2);text-align:center;border:1px solid transparent}
+.gd small{display:block;font-size:10px;color:var(--faint)}
+.gd b{font-size:15px}
+.gd.done{background:var(--gold-soft);color:var(--gold)}
+.gd.today{border-color:var(--gold)}
+.gd.today b{color:var(--gold)}
+.wheel-box{position:relative;width:min(280px,76vw);margin:6px auto 16px}
+.wheel-box svg{width:100%;display:block}
+.wheel-rot{transform-origin:150px 150px;transition:transform 4.2s cubic-bezier(.12,.7,.1,1)}
+.wheel-pin{position:absolute;top:-6px;inset-inline:0;margin:auto;width:26px;height:30px;color:var(--gold);filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+.ach-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ach{padding:12px;border-radius:18px;background:var(--panel);border:1px solid var(--line)}
+.ach.have{border-color:color-mix(in srgb,var(--gold) 45%,transparent)}
+.ach-top{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.ach-ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--panel-2);color:var(--faint)}
+.ach.have .ach-ico{background:var(--gold-soft);color:var(--gold)}
+.ach b{font-size:12.5px;line-height:1.35;display:block}
+.ach .meta{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--muted)}
+.ach-group{margin:18px 0 8px;font-size:12.5px;color:var(--muted);font-weight:700}
+.prizes{display:flex;gap:8px;margin:12px 0}
+.prize{flex:1;padding:10px 6px;text-align:center;border-radius:14px;background:var(--panel);border:1px solid var(--line)}
+.prize b{display:block;color:var(--gold);font-size:17px}
+.prize span{font-size:11px;color:var(--muted)}
+.rank-row{display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--panel);border:1px solid var(--line);border-radius:15px}
+.rank-row+.rank-row{margin-top:6px}
+.rank-row.me{border-color:var(--brand);background:rgba(123,140,255,.1)}
+.rk{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--panel-2);flex:none}
+.rk.r1{background:var(--gold);color:#2b1d00}.rk.r2{background:#c7cde8;color:#1b2140}.rk.r3{background:#d58f5c;color:#2a1405}
+.rank-row .sc{margin-inline-start:auto;font-weight:800;color:var(--gold)}
+
+/* ---------- profile ---------- */
+.me-card{display:flex;align-items:center;gap:14px}
+.me-card .emb{width:64px;height:64px}
+.me-name{font-size:18px;font-weight:800}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.invite-link{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;background:var(--ink);border:1px solid var(--line);direction:ltr;font-size:12px;color:var(--muted);overflow:hidden}
+.invite-link span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.ladder{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.ladder div{padding:9px 4px;text-align:center;border-radius:12px;background:var(--panel-2);font-size:11px;color:var(--muted)}
+.ladder b{display:block;font-size:15px;color:var(--text)}
+.ladder .have{background:var(--mint-soft);color:var(--mint)}.ladder .have b{color:var(--mint)}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0}
+.set-row+.set-row{border-top:1px solid var(--line)}
+.toggle{position:relative;width:46px;height:28px;border-radius:99px;background:var(--panel-2);border:1px solid var(--line-2);flex:none;transition:background .2s}
+.toggle::after{content:"";position:absolute;top:3px;inset-inline-start:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:inset-inline-start .2s}
+.toggle.on{background:var(--mint)}
+.toggle.on::after{inset-inline-start:21px}
+
+/* ---------- nav ---------- */
+.nav{position:fixed;inset-inline:0;bottom:0;z-index:30;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
+.nav-in{pointer-events:auto;width:min(100%,540px);margin:0 auto;height:var(--nav-h);display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:6px;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--line-2);border-radius:24px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.nav button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:18px;color:var(--faint);font-size:10.5px;font-weight:700}
+.nav button.on{background:var(--raise);color:var(--text)}
+.nav button.on svg{color:var(--lv)}
+.nav .dot{position:absolute;top:8px;inset-inline-end:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--rose);box-shadow:0 0 0 2px var(--panel)}
+
+/* ---------- sheets, toast, celebrate ---------- */
+.veil{position:fixed;inset:0;z-index:50;background:rgba(5,7,20,.66);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center}
+.veil.show{display:flex}
+.sheet{width:min(100%,560px);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line-2);border-radius:28px 28px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom));animation:up .28s cubic-bezier(.2,.8,.2,1)}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+.sheet-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.sheet-h b{font-size:18px}
+.x{width:36px;height:36px;border-radius:12px;background:var(--panel-2);display:grid;place-items:center;color:var(--muted)}
+.types{display:grid;gap:8px}
+.type-opt{display:flex;align-items:center;gap:12px;padding:12px;text-align:start;border-radius:16px;background:var(--panel-2);border:1.5px solid transparent}
+.type-opt.on{border-color:var(--brand);background:rgba(123,140,255,.1)}
+.type-opt b{display:block;font-size:14px}
+.type-opt span{font-size:12px;color:var(--muted)}
+.type-opt .chip{font-size:11px}
+.field{margin-top:14px}
+.field label{display:block;font-weight:700;font-size:12.5px;margin-bottom:6px;color:var(--muted)}
+.inp{width:100%;min-height:48px;padding:0 14px;border-radius:14px;background:var(--ink);border:1px solid var(--line-2);font-size:15px}
+.inp:focus{outline:none;border-color:var(--brand)}
+.hint{font-size:12px;color:var(--faint);margin-top:6px}
+.quick{display:flex;gap:8px;margin-top:8px}
+.quick button{flex:1;min-height:36px;border-radius:11px;background:var(--panel-2);font-weight:700;font-size:12.5px;color:var(--muted)}
+.sum{margin-top:16px;padding:13px 14px;border-radius:16px;background:var(--panel-2);display:grid;gap:6px;font-size:13px}
+.sum div{display:flex;justify-content:space-between}
+.sum b{color:var(--gold)}
+.toast{position:fixed;inset-inline:16px;bottom:calc(var(--nav-h) + 30px + env(safe-area-inset-bottom));z-index:60;margin:0 auto;width:fit-content;max-width:min(92vw,460px);padding:11px 16px;border-radius:14px;background:var(--raise);border:1px solid var(--line-2);font-weight:700;font-size:13px;text-align:center;opacity:0;transform:translateY(10px);pointer-events:none;transition:.25s}
+.toast.show{opacity:1;transform:none}
+.cele{align-items:center;padding:20px}
+.cele-box{width:min(100%,340px);padding:30px 22px 22px;text-align:center;border-radius:28px;background:var(--panel);border:1px solid color-mix(in srgb,var(--c,var(--gold)) 50%,transparent);animation:pop .5s cubic-bezier(.2,1.3,.3,1)}
+@keyframes pop{from{transform:scale(.8);opacity:0}}
+.cele-box .emb{width:108px;height:108px;margin:0 auto 10px}
+.cele-star svg{width:44px;height:44px}
+.cele-k{color:var(--muted);font-size:13px}
+.cele-v{direction:ltr;unicode-bidi:isolate;font-size:44px;font-weight:800;color:var(--c,var(--gold));line-height:1.2;margin:2px 0 4px}
+.cele-s{color:var(--muted);font-size:13px;margin-bottom:18px}
+
+@media(max-width:360px){.duo{grid-template-columns:1fr}.ach-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-tasks" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></symbol>
+  <symbol id="i-grow" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M7.5 8a2.5 2.5 0 1 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 1 1 0 5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17L17 7M8 7h9v9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+  <symbol id="i-medal" viewBox="0 0 24 24"><circle cx="12" cy="9" r="6"/><path d="M8.5 14.5L7 21l5-3 5 3-1.5-6.5"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 30"><path d="M12 30L2 12A11 11 0 1 1 22 12z" fill="currentColor" stroke="none"/><circle cx="12" cy="11" r="4" fill="#0c1024" stroke="none"/></symbol>
+</svg>
+
 <div class="app">
-  <header class="top">
-    <div class="brand"><div class="logo">TP</div><div><div class="brandname">TaskPlus</div><div class="eyebrow" data-i18n="community">TASK EXCHANGE</div></div></div>
-    <button class="avatar" id="headerAvatar" aria-label="Profile">T</button>
-  </header>
+  <header class="bar" id="topbar"></header>
   <main id="content"><div class="loader"></div></main>
 </div>
-<div class="bottom"><nav class="nav" aria-label="Main navigation">
-  <button class="nav-btn active" data-page="home"><span class="nav-icon">⌂</span><span data-i18n="home">Home</span></button>
-  <button class="nav-btn" data-page="tasks"><span class="nav-icon">✦</span><span data-i18n="tasks">Tasks</span></button>
-  <button class="nav-btn" data-page="campaigns"><span class="nav-icon">▤</span><span data-i18n="campaigns">Campaigns</span></button>
-  <button class="nav-btn" data-page="profile"><span class="nav-icon">◉</span><span data-i18n="profile">Profile</span></button>
-</nav></div>
-<div id="toast" class="toast" role="status"></div>
-<div class="modal-backdrop" id="campaignModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-  <div class="modal-header"><div class="modal-title" id="modalTitle" data-i18n="createCampaign">Create campaign</div><button class="close" id="closeModal" aria-label="Close">×</button></div>
-  <form id="createForm">
-    <div class="field"><label for="campaignType" data-i18n="taskType">Task type</label><select id="campaignType"><option value="join" data-i18n="membership">Membership</option><option value="react" data-i18n="reaction">Reaction</option><option value="view" data-i18n="view">View</option></select></div>
-    <div class="field"><label for="campaignLink" data-i18n="destinationLink">Destination link</label><input id="campaignLink" type="url" placeholder="https://t.me/channel or post link" required maxlength="2048"><div class="hint" id="linkHint" data-i18n="linkHintJoin">For membership, use the channel link. The bot must be an administrator there.</div></div>
-    <div class="field"><label for="campaignQty" data-i18n="quantity">Quantity</label><input id="campaignQty" type="number" value="10" min="1" step="1" required inputmode="numeric"><div class="hint" data-i18n="quantityHint">The maximum depends on your available points.</div></div>
-    <div class="field" id="windowField" hidden><label for="reactionWindow" data-i18n="reactionWindow">Reaction window</label><select id="reactionWindow"><option value="2">2 minutes</option><option value="5" selected>5 minutes</option></select><div class="hint" data-i18n="windowHint">Used for channel reaction count verification.</div></div>
-    <div class="cost-box"><span data-i18n="estimatedCost">Estimated cost</span><strong id="estimatedCost">40 pts</strong></div>
-    <button class="btn btn-primary" id="submitCampaign" type="submit" data-i18n="publishCampaign">Publish campaign</button>
-  </form>
-</section></div>
+
+<nav class="nav" aria-label="Main"><div class="nav-in" id="nav"></div></nav>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div class="veil" id="sheetVeil"><section class="sheet" id="sheet" role="dialog" aria-modal="true"></section></div>
+<div class="veil cele" id="celeVeil"><section class="cele-box" id="cele" role="dialog" aria-modal="true"></section></div>
 <script>
 (()=>{
- const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();if(tg.setHeaderColor)tg.setHeaderColor('#090814');if(tg.setBackgroundColor)tg.setBackgroundColor('#090814');}
- const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
- const state={page:'home',lang:'en',user:null,stats:{},tasks:[],campaigns:[],filter:'all',channelRequired:false,membershipCheckUnavailable:false,busy:false};
- const words={en:{community:'CREATOR GROWTH DESK',heroLine1:'Build momentum.',heroLine2:'Grow with intent.',heroDesc:'Discover missions, promote your channel and track real progress from one focused workspace.',accountActive:'Account active',home:'Home',tasks:'Tasks',campaigns:'Campaigns',profile:'Profile',hello:'Welcome back',growth:'Your growth,',workspace:'in one place.',available:'Available tasks',active:'Active campaigns',completed:'Tasks completed',balance:'Available balance',hold:'On hold',earned:'Earned total',startTasks:'Explore tasks',openChannel:'Task channel',quickActions:'Quick actions',myCampaigns:'My campaigns',seeAll:'See all',recentTasks:'Available for you',emptyTasks:'No tasks available right now',emptyTasksSub:'Check the task channel or come back shortly.',joinChannelRequired:'Join the task channel',joinChannelMessage:'Join the official task channel first. Once you join, return here to load available tasks.',joinTaskChannel:'Join task channel',membershipCheckUnavailable:'Membership check unavailable',membershipCheckMessage:'We could not verify channel membership. Please try again shortly or contact support.',emptyCampaigns:'No campaigns yet',emptyCampaignsSub:'Create a campaign to promote your channel or post.',createCampaign:'Create campaign',manageCampaigns:'Manage your campaigns',tasksTitle:'Find your next task',tasksSub:'Open the actual mission, complete it, then verify here. No detour through the bot.',all:'All',membership:'Membership',reaction:'Reaction',view:'View',startTask:'Open mission',verifyTask:'Verify & claim',openAgain:'Open again',viewPost:'Open post',missionOpened:'Mission opened in Telegram. Return here to verify.',verifySuccess:'Task verified. Reward added: ',pendingVerification:'Reaction count is being verified. This task is now pending.',taskPending:'Verification pending',taskStateStarted:'Mission started',taskStateReady:'Ready to start',taskOpenInfo:'Missions open directly on the target channel or post.',reward:'Reward',left:'left',target:'Target',progress:'Progress',done:'done',remaining:'remaining',stop:'Stop campaign',activeStatus:'Active',completeStatus:'Completed',cancelledStatus:'Cancelled',pausedStatus:'Paused',profileTitle:'Your profile',accountSettings:'Account settings',language:'Language',languageHelp:'Choose the language used across the app and bot.',reminders:'Smart reminders',remindersHelp:'Receive a reminder when you have been inactive.',on:'On',off:'Off',referrals:'Referrals',account:'Account',joinDate:'Member account',points:'points',createNew:'New campaign',campaignTitle:'My campaigns',campaignSub:'Track active orders, progress and remaining balance.',taskType:'Task type',destinationLink:'Destination link',linkHintJoin:'For membership, use the channel link. The bot must be an administrator there.',linkHintPost:'For reactions and views, use a specific Telegram post link.',quantity:'Quantity',quantityHint:'The maximum depends on your available points.',reactionWindow:'Reaction window',windowHint:'Used for channel reaction count verification.',estimatedCost:'Estimated cost',publishCampaign:'Publish campaign',creating:'Publishing…',cancel:'Cancel',confirmStop:'Stop this campaign and refund unused points?',stopping:'Stopping…',refresh:'Refresh',pointsShort:'pts',openInTelegram:'Open in Telegram',authError:'Open TaskPlus from its Telegram bot menu to sign in.',loadingError:'Could not load data. Check your connection and refresh.',networkError:'Connection error. Please try again.',campaignPublished:'Campaign published to the task channel.',campaignStopped:'Campaign stopped. Unused points were refunded.',languageSaved:'Language updated.',remindersSaved:'Reminder settings updated.',error:'Something went wrong',chooseLink:'Enter a Telegram link.',qtyError:'Enter a valid quantity.',insufficient:'Your balance may be insufficient for this quantity.',emptyState:'Nothing to show yet.',unknownUser:'Telegram user',campaignsMade:'Campaigns created',dailySummary:'Your activity',openTaskChannel:'Open task channel',viewAll:'View all',creatorNote:'Campaigns are published to your existing task channel.',currentPoints:'Current balance',openProfile:'Open profile',taskOpenInfo:'Missions open directly on the target channel or post.',authRequired:'Authentication required',reactionWindowHelp:'For channel reaction tasks only.'},fa:{community:'میز رشد کانال',heroLine1:'رشد هدفمند.',heroLine2:'با تمرکز جلو برو.',heroDesc:'مأموریت‌های مرتبط پیدا کن، کانالت را معرفی کن و نتیجه را در یک فضای حرفه‌ای ببین.',accountActive:'حساب فعال',home:'خانه',tasks:'تسک‌ها',campaigns:'کمپین‌ها',profile:'پروفایل',hello:'خوش برگشتی',growth:'رشد کانالت،',workspace:'در یک پنل.',available:'تسک‌های موجود',active:'کمپین‌های فعال',completed:'تسک‌های تکمیل‌شده',balance:'موجودی قابل استفاده',hold:'در انتظار آزادسازی',earned:'مجموع درآمد',startTasks:'مشاهده تسک‌ها',openChannel:'کانال تسک‌ها',quickActions:'دسترسی سریع',myCampaigns:'کمپین‌های من',seeAll:'مشاهده همه',recentTasks:'تسک‌های مناسب تو',emptyTasks:'فعلاً تسکی موجود نیست',emptyTasksSub:'کانال تسک‌ها را بررسی کن یا بعداً برگرد.',joinChannelRequired:'ابتدا عضو کانال تسک‌ها شو',joinChannelMessage:'برای دیدن و انجام تسک‌ها ابتدا عضو کانال رسمی تسک‌ها شو؛ سپس اینجا برگرد.',joinTaskChannel:'عضویت در کانال تسک‌ها',membershipCheckUnavailable:'بررسی عضویت در دسترس نیست',membershipCheckMessage:'بررسی عضویت انجام نشد. کمی بعد دوباره تلاش کن یا با پشتیبانی تماس بگیر.',emptyCampaigns:'هنوز کمپینی نداری',emptyCampaignsSub:'برای معرفی کانال یا پستت یک کمپین بساز.',createCampaign:'ساخت کمپین',manageCampaigns:'مدیریت کمپین‌ها',tasksTitle:'تسک بعدی را پیدا کن',tasksSub:'مستقیم وارد مقصد تسک شو، آن را انجام بده و همین‌جا تأیید بگیر؛ بدون رفت‌وبرگشت به ربات.',all:'همه',membership:'عضویت',reaction:'واکنش',view:'بازدید',startTask:'رفتن به مأموریت',verifyTask:'تأیید و دریافت پاداش',openAgain:'بازکردن مجدد',viewPost:'بازکردن پست',missionOpened:'مأموریت در تلگرام باز شد؛ بعد از انجام، همین‌جا تأیید کن.',verifySuccess:'تسک تأیید شد؛ پاداش اضافه شد: ',pendingVerification:'افزایش شمارش واکنش در حال تأیید است؛ تسک در انتظار بررسی قرار گرفت.',taskPending:'در انتظار تأیید',taskStateStarted:'مأموریت شروع شده',taskStateReady:'آماده شروع',taskOpenInfo:'مأموریت مستقیم در کانال یا پست مقصد باز می‌شود.',reward:'پاداش',left:'باقی‌مانده',target:'هدف',progress:'پیشرفت',done:'انجام‌شده',remaining:'باقی',stop:'توقف کمپین',activeStatus:'فعال',completeStatus:'تکمیل‌شده',cancelledStatus:'لغوشده',pausedStatus:'متوقف موقت',profileTitle:'پروفایل تو',accountSettings:'تنظیمات حساب',language:'زبان',languageHelp:'زبان برنامه و ربات را انتخاب کن.',reminders:'یادآوری هوشمند',remindersHelp:'هنگام غیرفعال بودن، یادآوری دریافت کن.',on:'روشن',off:'خاموش',referrals:'دعوت‌ها',account:'حساب کاربری',joinDate:'عضویت',points:'امتیاز',createNew:'کمپین جدید',campaignTitle:'کمپین‌های من',campaignSub:'سفارش‌های فعال، پیشرفت و موجودی باقی‌مانده را ببین.',taskType:'نوع تسک',destinationLink:'لینک مقصد',linkHintJoin:'برای عضویت لینک کانال را وارد کن. ربات باید مدیر آن کانال باشد.',linkHintPost:'برای واکنش و بازدید، لینک یک پست مشخص تلگرام را وارد کن.',quantity:'تعداد',quantityHint:'حداکثر تعداد به موجودی امتیازت بستگی دارد.',reactionWindow:'بازه بررسی واکنش',windowHint:'برای تأیید افزایش شمارش واکنش در کانال استفاده می‌شود.',estimatedCost:'هزینه تخمینی',publishCampaign:'انتشار کمپین',creating:'در حال انتشار…',cancel:'لغو',confirmStop:'این کمپین متوقف شود و امتیاز استفاده‌نشده برگردد؟',stopping:'در حال توقف…',refresh:'به‌روزرسانی',pointsShort:'امتیاز',openInTelegram:'بازکردن در تلگرام',authError:'برای ورود، TaskPlus را از منوی ربات تلگرام باز کن.',loadingError:'دریافت اطلاعات ناموفق بود. اتصال را بررسی و دوباره تلاش کن.',networkError:'خطا در ارتباط. دوباره تلاش کن.',campaignPublished:'کمپین در کانال تسک‌ها منتشر شد.',campaignStopped:'کمپین متوقف شد و امتیاز استفاده‌نشده برگشت.',languageSaved:'زبان تغییر کرد.',remindersSaved:'تنظیم یادآوری به‌روز شد.',error:'خطایی رخ داد',chooseLink:'لینک تلگرام را وارد کن.',qtyError:'تعداد واردشده معتبر نیست.',insufficient:'ممکن است موجودی برای این تعداد کافی نباشد.',emptyState:'هنوز موردی برای نمایش نیست.',unknownUser:'کاربر تلگرام',campaignsMade:'کمپین‌های ثبت‌شده',dailySummary:'فعالیت تو',openTaskChannel:'بازکردن کانال تسک‌ها',viewAll:'مشاهده همه',creatorNote:'کمپین‌ها در همان کانال فعلی تسک‌ها منتشر می‌شوند.',currentPoints:'موجودی فعلی',openProfile:'رفتن به پروفایل',taskOpenInfo:'مأموریت مستقیم در کانال یا پست مقصد باز می‌شود.',authRequired:'احراز هویت لازم است',reactionWindowHelp:'فقط برای تسک واکنش در کانال.'}};
- const tr=(k)=>words[state.lang]?.[k]||words.en[k]||k;
- const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
- function readableError(e){return apiErrors[state.lang]?.[e?.code]||e?.message||tr('error');}
- const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const num=n=>new Intl.NumberFormat('en-US').format(Number(n||0));
- const iconFor=t=>t==='join'?'↗':t==='react'?'♥':'◉';
- const initData=tg?.initData||'';
- function notify(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(notify.timer);notify.timer=setTimeout(()=>el.classList.remove('show'),3200);}
- async function api(path,options={}){const headers={'Content-Type':'application/json','X-Telegram-Init-Data':initData,...(options.headers||{})};const res=await fetch(path,{...options,headers,body:options.body?JSON.stringify(options.body):undefined});let data={};try{data=await res.json()}catch{}if(!res.ok){const e=new Error(data.message||tr('networkError'));e.status=res.status;e.code=data.error;throw e}return data;}
- function setLang(lang){state.lang=lang==='fa'?'fa':'en';document.documentElement.lang=state.lang;document.documentElement.dir=state.lang==='fa'?'rtl':'ltr';$$('[data-i18n]').forEach(el=>{el.textContent=tr(el.dataset.i18n)});}
- function setPage(page){state.page=page;$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));renderPage();}
- function openLink(url){if(!url)return;if(tg?.openTelegramLink&&url.startsWith('https://t.me/'))tg.openTelegramLink(url);else if(tg?.openLink)tg.openLink(url);else window.open(url,'_blank','noopener');}
- function empty(title,sub){return `<div class="empty"><strong>${escapeHtml(title)}</strong>${escapeHtml(sub||'')}</div>`;}
- function taskCard(t){
-   const pending=['count_pending','pending','settling'].includes(t.completionStatus);
-   const started=!!t.started&&!pending;
-   const stateLabel=pending?tr('taskPending'):started?tr('taskStateStarted'):tr('taskStateReady');
-   const stateClass=pending?'pending':started?'started':'';
-   let actions='';
-   if(pending){actions=`<div class="item-actions"><span class="mission-state pending">◷ ${tr('taskPending')}</span></div>`;}
-   else if(started){actions=`<div class="item-actions"><button class="btn btn-primary" data-claim-task="${escapeHtml(t.id)}">✓ ${tr('verifyTask')}</button><button class="btn btn-secondary" data-start-task="${escapeHtml(t.id)}">↗ ${tr('openAgain')}</button></div>`;}
-   else {actions=`<div class="item-actions"><button class="btn btn-primary" data-start-task="${escapeHtml(t.id)}">↗ ${tr('startTask')}</button></div>`;}
-   return `<article class="item task-mission"><div class="item-top"><div class="item-icon">${iconFor(t.type)}</div><div class="item-main"><div class="mission-label"><i></i>${escapeHtml(t.typeLabel||tr(t.type))}</div><div class="item-title" style="margin-top:7px">${escapeHtml(t.title)}</div><div class="item-meta"><span class="tag">${stateLabel}</span><span class="tag cyan">${num(t.remaining)} ${tr('left')}</span></div></div><div class="reward">+${num(t.reward)} <small style="font-size:9px;color:#b1a9cc">${tr('pointsShort')}</small></div></div>${actions}</article>`;
- }
- function campaignCard(c){const st=c.status==='active'?'active':c.status==='paused'?'paused':'';const statusLabel=c.status==='active'?tr('activeStatus'):c.status==='paused'?tr('pausedStatus'):c.status==='cancelled'?tr('cancelledStatus'):tr('completeStatus');return `<article class="item"><div class="item-top"><div class="item-icon">${iconFor(c.type)}</div><div class="item-main"><div class="item-title">${escapeHtml(c.title)}</div><div class="item-meta"><span class="tag">${escapeHtml(c.typeLabel||tr(c.type))}</span><span class="status ${st}">${statusLabel}</span></div></div><div class="reward">${num(c.status==='active'?c.remaining*c.cost:0)} ${tr('pointsShort')}</div></div><div class="progress"><span style="width:${Math.max(0,Math.min(100,c.progress||0))}%"></span></div><div class="progress-row"><span>${tr('progress')} · ${num(c.done)}/${num(c.target)}</span><span>${num(c.progress)}%</span></div>${c.canStop?`<div class="item-actions"><button class="btn btn-danger" data-stop-campaign="${escapeHtml(c.id)}">${tr('stop')}</button>${c.postUrl?`<button class="btn btn-secondary" data-open-url="${escapeHtml(c.postUrl)}">${tr('viewPost')}</button>`:''}</div>`:''}</article>`;}
- function channelGate(){if(state.channelRequired)return `${empty(tr('joinChannelRequired'),tr('joinChannelMessage'))}${state.tasksChannelUrl?`<button class="btn btn-primary" style="width:100%;margin-top:10px" data-open-url="${escapeHtml(state.tasksChannelUrl)}">◉ ${tr('joinTaskChannel')}</button>`:''}`;if(state.membershipCheckUnavailable)return empty(tr('membershipCheckUnavailable'),tr('membershipCheckMessage'));return '';}
- function renderHome(){const u=state.user||{},s=state.stats||{};const recent=state.tasks.slice(0,3);return `<section class="hero-shell"><div class="hero-copy"><div class="hero-kicker"><i></i>${tr('community')}</div><h1 class="hero-headline">${tr('heroLine1')}<br><span>${tr('heroLine2')}</span></h1><p class="hero-desc">${tr('heroDesc')}</p><div class="hero-actions"><button class="btn btn-primary" data-goto="tasks">${tr('startTasks')} ↗</button><button class="btn btn-secondary" data-create>＋ ${tr('createCampaign')}</button></div></div><div class="hero-art" aria-hidden="true"><svg viewBox="0 0 240 230" role="img"><defs><linearGradient id="orb" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#b19aff"/><stop offset="1" stop-color="#54f2df"/></linearGradient><radialGradient id="core"><stop stop-color="#c0fff8"/><stop offset=".18" stop-color="#79eee3"/><stop offset=".55" stop-color="#6a55d9" stop-opacity=".7"/><stop offset="1" stop-color="#6a55d9" stop-opacity="0"/></radialGradient></defs><circle cx="128" cy="110" r="76" fill="url(#core)" opacity=".55"/><circle class="art-orbit" cx="128" cy="110" r="83" transform="rotate(-25 128 110)"/><ellipse class="art-orbit" cx="128" cy="110" rx="101" ry="40" transform="rotate(-43 128 110)"/><ellipse class="art-orbit" cx="128" cy="110" rx="95" ry="49" transform="rotate(42 128 110)"/><path class="art-line" d="M27 154 L70 154 L88 126 L108 126 L126 88 L147 88 L165 65 L194 65"/><path d="M35 174 L72 174 L93 155 L115 155 L135 129 L154 129 L178 100 L202 100" fill="none" stroke="#ad8cff" stroke-opacity=".45" stroke-width="1.5"/><circle cx="128" cy="110" r="34" fill="none" stroke="url(#orb)" stroke-width="1.6"/><circle cx="128" cy="110" r="23" fill="url(#core)"/><path d="M114 111 L124 121 L144 97" fill="none" stroke="#e1fffb" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="70" cy="154" r="4" fill="#70f5e8"/><circle cx="165" cy="65" r="4" fill="#b29aff"/><circle cx="178" cy="100" r="3.5" fill="#70f5e8"/><circle cx="88" cy="126" r="3" fill="#df9ae9"/><path d="M32 48 H61 M32 55 H49 M175 182 H205 M190 189 H205" stroke="#b9a8ff" stroke-opacity=".48" stroke-linecap="round"/></svg><div class="art-chip one"><small>${tr('available').toUpperCase()}</small><strong>${num(s.availableTasks)}</strong></div><div class="art-chip two"><small>${tr('campaigns').toUpperCase()}</small><strong>${num(s.activeCampaigns)} ${tr('activeStatus')}</strong></div></div></section><section class="balance"><div class="balance-head"><span>✦ ${tr('balance')}</span><span class="pill"><i class="dot"></i> ${tr('accountActive')}</span></div><div class="balance-amount">${num(u.points)} <small>${tr('pointsShort')}</small></div><div class="balance-sub">${tr('hold')}: ${num(u.hold)} · ${tr('earned')}: ${num(u.earned)}</div></section><section class="stats"><div class="stat"><div class="stat-icon">✦</div><div class="stat-num">${num(s.availableTasks)}</div><div class="stat-label">${tr('available')}</div></div><div class="stat"><div class="stat-icon">▤</div><div class="stat-num">${num(s.activeCampaigns)}</div><div class="stat-label">${tr('active')}</div></div><div class="stat"><div class="stat-icon">✓</div><div class="stat-num">${num(s.completedTasks)}</div><div class="stat-label">${tr('completed')}</div></div></section><div class="section-head"><h2 class="section-title">${tr('quickActions')}</h2></div><section class="quick-grid"><button class="quick" data-goto="tasks"><span class="quick-icon">↗</span><span><span class="quick-title">${tr('startTasks')}</span><div class="quick-sub">${tr('taskOpenInfo')}</div></span></button><button class="quick" data-create><span class="quick-icon">＋</span><span><span class="quick-title">${tr('createCampaign')}</span><div class="quick-sub">${tr('creatorNote')}</div></span></button></section><div class="section-head"><h2 class="section-title">${tr('recentTasks')}</h2><button class="text-button" data-goto="tasks">${tr('seeAll')} ›</button></div><section class="card-list">${channelGate()||(recent.length?recent.map(taskCard).join(''):empty(tr('emptyTasks'),tr('emptyTasksSub')))}</section>${state.tasksChannelUrl?`<button class="btn btn-secondary" style="width:100%;margin-top:15px" data-open-url="${escapeHtml(state.tasksChannelUrl)}">◉ ${tr('openChannel')}</button>`:''}`;}
- function renderTasks(){const list=state.filter==='all'?state.tasks:state.tasks.filter(t=>t.type===state.filter);return `<h1 class="page-title">${tr('tasksTitle')}</h1><p class="page-sub">${tr('tasksSub')}</p><div class="filters">${['all','join','react','view'].map(k=>`<button class="filter ${state.filter===k?'selected':''}" data-filter="${k}">${tr(k==='join'?'membership':k==='react'?'reaction':k==='view'?'view':'all')}</button>`).join('')}</div><div class="card-list">${channelGate()||(list.length?list.map(taskCard).join(''):empty(tr('emptyTasks'),tr('emptyTasksSub')))}</div>${state.tasksChannelUrl?`<button class="btn btn-secondary" style="width:100%;margin-top:15px" data-open-url="${escapeHtml(state.tasksChannelUrl)}">◉ ${tr('openChannel')}</button>`:''}`;}
- function renderCampaigns(){return `<h1 class="page-title">${tr('campaignTitle')}</h1><p class="page-sub">${tr('campaignSub')}</p><button class="btn btn-primary" style="width:100%;margin-bottom:16px" data-create>＋ ${tr('createCampaign')}</button><div class="card-list">${state.campaigns.length?state.campaigns.map(campaignCard).join(''):empty(tr('emptyCampaigns'),tr('emptyCampaignsSub'))}</div>`;}
- function renderProfile(){const u=state.user||{};const name=u.name||tr('unknownUser');return `<h1 class="page-title">${tr('profileTitle')}</h1><p class="page-sub">${tr('accountSettings')}</p><section class="profile-card"><div class="profile-avatar">${escapeHtml(name.charAt(0).toUpperCase())}</div><div><div class="profile-name">${escapeHtml(name)}</div><div class="profile-id">${u.username?'@'+escapeHtml(u.username):'ID '+num(u.id)}</div></div></section><section class="item"><div class="setting"><div><div class="setting-label">${tr('language')}</div><div class="setting-help">${tr('languageHelp')}</div></div><select class="select" id="languageSelect"><option value="en" ${state.lang==='en'?'selected':''}>English</option><option value="fa" ${state.lang==='fa'?'selected':''}>فارسی</option></select></div><div class="setting"><div><div class="setting-label">${tr('reminders')}</div><div class="setting-help">${tr('remindersHelp')}</div></div><button id="reminderToggle" class="toggle ${u.remindersOff?'':'on'}" aria-pressed="${!u.remindersOff}"></button></div><div class="setting"><div><div class="setting-label">${tr('balance')}</div><div class="setting-help">${tr('currentPoints')}</div></div><strong>${num(u.points)} ${tr('pointsShort')}</strong></div><div class="setting"><div><div class="setting-label">${tr('referrals')}</div><div class="setting-help">${tr('account')}</div></div><strong>${num(u.referrals)}</strong></div></section>${state.tasksChannelUrl?`<button class="btn btn-secondary" style="width:100%;margin-top:14px" data-open-url="${escapeHtml(state.tasksChannelUrl)}">◉ ${tr('openChannel')}</button>`:''}`;}
- function renderPage(){const content=$('#content');content.innerHTML=state.page==='home'?renderHome():state.page==='tasks'?renderTasks():state.page==='campaigns'?renderCampaigns():renderProfile();bindPageEvents();}
- async function refreshAll(){if(!initData){$('#content').innerHTML=empty(tr('authRequired'),tr('authError'))+'<button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="location.reload()">'+tr('refresh')+'</button>';return;}try{const [d,t,c]=await Promise.all([api('/api/miniapp/dashboard'),api('/api/miniapp/tasks'),api('/api/miniapp/campaigns')]);state.user=d.user;state.stats=d.stats;state.tasksChannelUrl=d.tasksChannelUrl;state.channelRequired=!!t.channelRequired;state.membershipCheckUnavailable=!!t.membershipCheckUnavailable;state.tasks=t.tasks||[];state.campaigns=c.campaigns||[];setLang(state.user.language||'en');$('#headerAvatar').textContent=(state.user.name||'T').charAt(0).toUpperCase();renderPage();}catch(e){$('#content').innerHTML=empty(tr('loadingError'),readableError(e))+'<button id="retry" class="btn btn-primary" style="width:100%;margin-top:14px">'+tr('refresh')+'</button>';$('#retry')?.addEventListener('click',refreshAll);}}
- function openModal(){if(!state.user)return;$('#campaignModal').classList.add('show');updateCost();}
- function closeModal(){$('#campaignModal').classList.remove('show');}
- function updateCost(){const type=$('#campaignType').value;const cost={join:4,react:3,view:2}[type];$('#estimatedCost').textContent=num(Number($('#campaignQty').value||0)*cost)+' '+tr('pointsShort');$('#windowField').hidden=type!=='react';$('#linkHint').textContent=type==='join'?tr('linkHintJoin'):tr('linkHintPost');$('#campaignLink').placeholder=type==='join'?'https://t.me/channel':'https://t.me/channel/123';}
- async function stopCampaign(id){if(!confirm(tr('confirmStop')))return;try{const r=await api('/api/miniapp/campaigns/'+encodeURIComponent(id)+'/stop',{method:'POST',body:{}});notify(tr('campaignStopped')+' '+num(r.refunded)+' '+tr('pointsShort'));await refreshAll();setPage('campaigns');}catch(e){notify(readableError(e));}}
- async function startTask(id,button){const task=state.tasks.find(x=>x.id===id);if(!task)return;const target=task.targetUrl;if(!target){notify(tr('error'));return;}if(button){button.disabled=true;button.textContent='…';}try{const r=await api('/api/miniapp/tasks/'+encodeURIComponent(id)+'/start',{method:'POST',body:{}});task.started=true;renderPage();notify(tr('missionOpened'));openLink(r.targetUrl||target);}catch(e){notify(readableError(e));if(button){button.disabled=false;button.textContent=tr('startTask');}}}
- async function claimTask(id,button){const task=state.tasks.find(x=>x.id===id);if(button){button.disabled=true;button.textContent='…';}try{const r=await api('/api/miniapp/tasks/'+encodeURIComponent(id)+'/claim',{method:'POST',body:{}});if(r.status==='pending'){if(task)task.completionStatus='count_pending';renderPage();notify(tr('pendingVerification'));return;}notify(tr('verifySuccess')+num(r.reward)+' '+tr('pointsShort'));if(r.user){state.user=r.user;state.stats=r.stats||state.stats;}await refreshAll();setPage('tasks');}catch(e){notify(readableError(e));if(button){button.disabled=false;button.textContent=tr('verifyTask');}}}
- function bindPageEvents(){ $$('[data-goto]').forEach(b=>b.addEventListener('click',()=>setPage(b.dataset.goto)));$$('[data-create]').forEach(b=>b.addEventListener('click',openModal));$$('[data-open-url]').forEach(b=>b.addEventListener('click',()=>openLink(b.dataset.openUrl)));$$('[data-start-task]').forEach(b=>b.addEventListener('click',()=>startTask(b.dataset.startTask,b)));$$('[data-claim-task]').forEach(b=>b.addEventListener('click',()=>claimTask(b.dataset.claimTask,b)));$$('[data-stop-campaign]').forEach(b=>b.addEventListener('click',()=>stopCampaign(b.dataset.stopCampaign)));$$('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.filter=b.dataset.filter;renderPage();}));$('#languageSelect')?.addEventListener('change',async e=>{const old=state.lang;try{const d=await api('/api/miniapp/profile',{method:'PATCH',body:{language:e.target.value}});state.user=d.user;state.stats=d.stats;setLang(state.user.language);renderPage();notify(tr('languageSaved'));}catch(err){setLang(old);notify(readableError(err));renderPage();}});$('#reminderToggle')?.addEventListener('click',async()=>{const off=!state.user.remindersOff;try{const d=await api('/api/miniapp/profile',{method:'PATCH',body:{remindersOff:off}});state.user=d.user;state.stats=d.stats;renderPage();notify(tr('remindersSaved'));}catch(e){notify(readableError(e));}});}
- $('#closeModal').addEventListener('click',closeModal);$('#campaignModal').addEventListener('click',e=>{if(e.target===$('#campaignModal'))closeModal()});$('#campaignType').addEventListener('change',updateCost);$('#campaignQty').addEventListener('input',updateCost);$('#createForm').addEventListener('submit',async e=>{e.preventDefault();const type=$('#campaignType').value,link=$('#campaignLink').value.trim(),quantity=Number($('#campaignQty').value),windowMin=Number($('#reactionWindow').value);if(!link){notify(tr('chooseLink'));return;}if(!Number.isInteger(quantity)||quantity<1){notify(tr('qtyError'));return;}const btn=$('#submitCampaign');btn.disabled=true;btn.textContent=tr('creating');try{await api('/api/miniapp/campaigns',{method:'POST',body:{type,link,quantity,windowMin}});closeModal();$('#campaignLink').value='';notify(tr('campaignPublished'));await refreshAll();setPage('campaigns');}catch(err){notify(readableError(err));if(err.code==='baseline_pending'){} }finally{btn.disabled=false;btn.textContent=tr('publishCampaign');}});
- $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>setPage(b.dataset.page)));$('#headerAvatar').addEventListener('click',()=>setPage('profile'));if(tg?.onEvent)tg.onEvent('viewportChanged',()=>tg.expand());document.addEventListener('visibilitychange',()=>{if(!document.hidden&&initData)refreshAll();});window.addEventListener('focus',()=>{if(initData)refreshAll();});refreshAll();
+'use strict';
+const tg=window.Telegram?.WebApp;
+if(tg){try{tg.ready();tg.expand();tg.setHeaderColor('#0c1024');tg.setBackgroundColor('#0c1024');}catch(e){}}
+const T={
+en:{
+ nav_home:'Home',nav_tasks:'Tasks',nav_grow:'Grow',nav_rewards:'Rewards',nav_profile:'Profile',
+ stars:'Stars',levelN:'Level {n}',
+ toNext:'{n} tasks to {level}',maxLevel:'You reached the top level',
+ nextPays:'Reaching it pays +{bonus} Stars and lifts your daily limit to {cap} tasks.',
+ maxSub:'Keep your streak alive and climb the weekly board.',
+ earnNow:'Start earning',dailyGift:'Daily gift',dayStreak:'day streak',claim:'Claim +{n}',nextGiftIn:'Next gift in {t}',
+ today:'Today',ofTasks:'{d} of {c} tasks',wheelReady:'Your wheel spin is ready',wheelLocked:'Finish 1 task to unlock the wheel',wheelUsed:'Wheel used today',
+ golden:'Golden hour: rewards x{m} until {h}:00 UTC',
+ openTasks:'Open tasks',activeCamps:'Active campaigns',tasksDone:'Tasks done',unlockAt:'Next unlock at {level}',seeAll:'See all',
+ doneCount:'{n} tasks done',tasksTitle:'Tasks',tasksSub:'Open the task, finish it, then verify here.',
+ all:'All',join:'Members',react:'Reactions',view:'Views',
+ dailyLimit:'Daily limit',start:'Open task',verify:'Verify and claim',openAgain:'Open again',pending:'Verifying',leftN:'{n} left',live:'In progress',
+ emptyTasks:'No tasks right now',emptyTasksSub:'New tasks appear here as soon as campaigns go live.',
+ joinTitle:'Join the task channel first',joinMsg:'Only members of the official task channel can see and complete tasks. Join, then come back.',joinBtn:'Join task channel',
+ checkTitle:'Membership check unavailable',checkMsg:'Telegram could not verify your membership. Try again in a moment.',
+ opened:'Task opened. Come back here and verify.',verified:'Task verified',pendingMsg:'Reaction count is being verified. Your reward arrives soon.',youEarned:'You earned',goldenBonus:'Golden hour bonus included',
+ growTitle:'Grow your channel',growSub:'Spend Stars on real members, reactions and views.',yourStars:'Your Stars',canBuy:'Enough for up to {n} members',
+ newCamp:'New campaign',myCamps:'My campaigns',emptyCamps:'No campaigns yet',emptyCampsSub:'Create one to bring members, reactions or views to your channel.',
+ doneOf:'{d} of {t} done',stActive:'Active',stPaused:'Paused',stCompleted:'Completed',stCancelled:'Cancelled',stop:'Stop and refund',confirmStop:'Stop this campaign and refund unused Stars?',stopped:'Campaign stopped. Refunded {n} Stars.',
+ typeLbl:'What do you need?',typeJoin:'Members',descJoin:'Real people join your channel or group',typeReact:'Reactions',descReact:'Reactions on one post',typeView:'Views',descView:'Views on one post',perUnit:'{c} Stars each',
+ linkLbl:'Link',hintJoin:'Channel link. The bot must be an admin there.',hintPost:'Link to one specific post.',qtyLbl:'Quantity',max:'Max',windowLbl:'Reaction check window',minN:'{n} min',
+ cost:'Cost',after:'Balance after',publish:'Publish campaign',publishing:'Publishing…',published:'Campaign is live in the task channel.',needStars:'You need at least {n} Stars for this type.',earnStars:'Earn Stars',
+ rewardsTitle:'Rewards',segPath:'Levels',segDaily:'Daily',segBadges:'Badges',segBoard:'Leaderboard',
+ youAreHere:'You are here',needTasks:'{n} tasks',perkBonus:'Level-up bonus +{n} Stars',perkMult:'Daily gift x{m}',perkCap:'Up to {n} tasks per day',soon:'Coming soon',
+ giftSub:'Collect every day to grow your streak. Longer streaks pay more.',dayN:'Day {n}',milestoneNote:'Bonus Stars at 7, 14, 30, 60 and 100 days.',claimed:'Collected today',bestStreak:'Best streak: {n}',
+ wheelTitle:'Lucky wheel',wheelSub:'One free spin a day, unlocked by your first task.',spin:'Spin',spinning:'Spinning…',youWon:'You won',giftWon:'Daily gift',streakN:'{n} day streak',
+ gTasks:'Tasks',gFriends:'Friends',gStreak:'Streak',gOrders:'Campaigns',badgesCount:'{n} of {t} earned',
+ earners:'Top earners',inviters:'Top inviters',resetsIn:'Resets in {t}',yourRank:'Your rank',unranked:'Not ranked yet',boardEmpty:'Nobody on the board yet. Be the first.',weekPrizes:'Weekly prizes in Stars',
+ p1:'1st',p2:'2nd',p3:'3rd',you:'You',
+ totalEarned:'Total earned',onHold:'On hold',invited:'Friends invited',activeFriends:'Active friends',
+ inviteTitle:'Invite friends',inviteSub:'Your friend gets +{w} Stars on joining. You get +{a} Stars once they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Earn free Stars on TaskPlus and grow your channel.',ladderTitle:'Friend milestones',friendsUnit:'friends',
+ language:'Language',reminders:'Smart reminders',remindersHelp:'At most one message a day, only when tasks are waiting.',taskChannel:'Task channel',saved:'Saved',
+ levelUp:'Level up',levelUpSub:'You reached {level}. Bonus +{b} Stars added.',cont:'Continue',
+ authTitle:'Open TaskPlus from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user'
+},
+fa:{
+ nav_home:'خانه',nav_tasks:'تسک‌ها',nav_grow:'رشد',nav_rewards:'جوایز',nav_profile:'پروفایل',
+ stars:'استارز',levelN:'سطح {n}',
+ toNext:'{n} تسک تا {level}',maxLevel:'به بالاترین سطح رسیدی',
+ nextPays:'رسیدن به آن +{bonus} استارز می‌دهد و سقف روزانه‌ات را به {cap} تسک می‌رساند.',
+ maxSub:'استریک را نگه دار و در جدول هفتگی بالا برو.',
+ earnNow:'شروع کسب استارز',dailyGift:'هدیه‌ی روزانه',dayStreak:'روز استریک',claim:'دریافت +{n}',nextGiftIn:'هدیه‌ی بعدی: {t} دیگر',
+ today:'امروز',ofTasks:'{d} از {c} تسک',wheelReady:'چرخش گردونه‌ات آماده است',wheelLocked:'با انجام 1 تسک گردونه باز می‌شود',wheelUsed:'گردونه امروز استفاده شد',
+ golden:'ساعت طلایی: پاداش‌ها {m} برابر تا ساعت {h}:00 به وقت UTC',
+ openTasks:'تسک‌های باز',activeCamps:'کمپین‌های فعال',tasksDone:'تسک‌های انجام‌شده',unlockAt:'قفل بعدی در {level}',seeAll:'مشاهده همه',
+ doneCount:'{n} تسک انجام‌شده',tasksTitle:'تسک‌ها',tasksSub:'تسک را باز کن، انجامش بده و همین‌جا تأیید بگیر.',
+ all:'همه',join:'عضویت',react:'واکنش',view:'بازدید',
+ dailyLimit:'سقف امروز',start:'باز کردن تسک',verify:'تأیید و دریافت',openAgain:'باز کردن دوباره',pending:'در حال بررسی',leftN:'{n} باقی',live:'در حال انجام',
+ emptyTasks:'فعلاً تسکی نیست',emptyTasksSub:'با فعال شدن کمپین‌های جدید، تسک‌ها همین‌جا می‌آیند.',
+ joinTitle:'اول عضو کانال تسک‌ها شو',joinMsg:'فقط اعضای کانال رسمی تسک‌ها می‌توانند تسک‌ها را ببینند و انجام دهند. عضو شو و برگرد.',joinBtn:'عضویت در کانال تسک‌ها',
+ checkTitle:'بررسی عضویت ممکن نیست',checkMsg:'تلگرام نتوانست عضویتت را بررسی کند. کمی بعد دوباره تلاش کن.',
+ opened:'تسک باز شد. بعد از انجام به اینجا برگرد و تأیید بگیر.',verified:'تسک تأیید شد',pendingMsg:'شمارش واکنش در حال بررسی است. پاداش به‌زودی می‌رسد.',youEarned:'دریافت کردی',goldenBonus:'پاداش ساعت طلایی هم اضافه شد',
+ growTitle:'رشد کانال',growSub:'استارزت را خرج عضو، واکنش و بازدید واقعی کن.',yourStars:'استارز تو',canBuy:'برای حداکثر {n} عضو کافی است',
+ newCamp:'کمپین جدید',myCamps:'کمپین‌های من',emptyCamps:'هنوز کمپینی نداری',emptyCampsSub:'یکی بساز تا برای کانالت عضو، واکنش یا بازدید بگیری.',
+ doneOf:'{d} از {t} انجام شد',stActive:'فعال',stPaused:'متوقف موقت',stCompleted:'تکمیل‌شده',stCancelled:'لغوشده',stop:'توقف و بازگشت استارز',confirmStop:'این کمپین متوقف شود و استارز استفاده‌نشده برگردد؟',stopped:'کمپین متوقف شد. {n} استارز برگشت.',
+ typeLbl:'چه چیزی لازم داری؟',typeJoin:'عضو',descJoin:'کاربر واقعی عضو کانال یا گروهت می‌شود',typeReact:'واکنش',descReact:'واکنش روی یک پست مشخص',typeView:'بازدید',descView:'بازدید برای یک پست مشخص',perUnit:'هر عدد {c} استارز',
+ linkLbl:'لینک',hintJoin:'لینک کانال. ربات باید آنجا مدیر باشد.',hintPost:'لینک یک پست مشخص.',qtyLbl:'تعداد',max:'حداکثر',windowLbl:'بازه بررسی واکنش',minN:'{n} دقیقه',
+ cost:'هزینه',after:'موجودی بعد از ثبت',publish:'انتشار کمپین',publishing:'در حال انتشار…',published:'کمپین در کانال تسک‌ها منتشر شد.',needStars:'برای این نوع حداقل {n} استارز لازم است.',earnStars:'کسب استارز',
+ rewardsTitle:'جوایز',segPath:'سطح‌ها',segDaily:'روزانه',segBadges:'نشان‌ها',segBoard:'جدول',
+ youAreHere:'جایگاه تو',needTasks:'{n} تسک',perkBonus:'پاداش ارتقا +{n} استارز',perkMult:'هدیه‌ی روزانه {m} برابر',perkCap:'تا {n} تسک در روز',soon:'به‌زودی',
+ giftSub:'هر روز دریافت کن تا استریکت بالا برود؛ استریک بیشتر یعنی پاداش بیشتر.',dayN:'روز {n}',milestoneNote:'در روزهای 7، 14، 30، 60 و 100 استارز جایزه‌ی ویژه می‌گیری.',claimed:'امروز دریافت شد',bestStreak:'بهترین استریک: {n}',
+ wheelTitle:'گردونه‌ی شانس',wheelSub:'هر روز یک چرخش رایگان؛ با اولین تسک باز می‌شود.',spin:'چرخاندن',spinning:'در حال چرخش…',youWon:'برنده شدی',giftWon:'هدیه‌ی روزانه',streakN:'استریک {n} روزه',
+ gTasks:'تسک‌ها',gFriends:'دوستان',gStreak:'استریک',gOrders:'کمپین‌ها',badgesCount:'{n} از {t} نشان گرفته‌ای',
+ earners:'برترین درآمدسازها',inviters:'برترین دعوت‌کننده‌ها',resetsIn:'بازنشانی تا {t} دیگر',yourRank:'رتبه‌ی تو',unranked:'هنوز رتبه‌ای نداری',boardEmpty:'هنوز کسی در جدول نیست؛ اول تو باش.',weekPrizes:'جایزه‌ی هفتگی (استارز)',
+ p1:'نفر اول',p2:'نفر دوم',p3:'نفر سوم',you:'تو',
+ totalEarned:'کل درآمد',onHold:'در انتظار آزادسازی',invited:'دوستان دعوت‌شده',activeFriends:'دوستان فعال',
+ inviteTitle:'دعوت دوستان',inviteSub:'دوستت هنگام ورود +{w} استارز می‌گیرد و تو بعد از انجام {n} تسک توسط او +{a} استارز می‌گیری.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'در تاسک‌پلاس استارز رایگان بگیر و کانالت را رشد بده.',ladderTitle:'پله‌های دعوت',friendsUnit:'دوست',
+ language:'زبان',reminders:'یادآوری هوشمند',remindersHelp:'حداکثر روزی یک پیام، آن هم فقط وقتی تسک باز داری.',taskChannel:'کانال تسک‌ها',saved:'ذخیره شد',
+ levelUp:'ارتقای سطح',levelUpSub:'به {level} رسیدی. پاداش +{b} استارز اضافه شد.',cont:'ادامه',
+ authTitle:'تاسک‌پلاس را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام'
+}};
+const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
+Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.'});
+Object.assign(apiErrors.fa,{already_claimed:'هدیه‌ی امروز را قبلاً دریافت کرده‌ای.',wheel_locked:'برای باز شدن گردونه امروز 1 تسک انجام بده.',wheel_used:'امروز گردونه را چرخانده‌ای.'});
+
+const HUES=['#ff9f4a','#4fd6ff','#a98bff','#ff6fc8','#ffd36b'];
+const initData=tg?.initData||'';
+const state={page:'home',sub:'path',lang:'en',user:null,stats:{},tasks:[],campaigns:[],g:null,filter:'all',board:'e',
+  tasksChannelUrl:'',channelRequired:false,checkUnavailable:false,type:'join',spinning:false,wheelRot:0,loaded:false,lastFetch:0};
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+const t=(k,v)=>{let s=(T[state.lang]&&T[state.lang][k])??T.en[k]??k;if(v)for(const x in v)s=s.split('{'+x+'}').join(v[x]);return s;};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>new Intl.NumberFormat('en-US').format(Number(n||0));
+const N=n=>`<span class="num">${fmt(n)}</span>`;
+const ic=(n,c='')=>`<svg class="i ${c}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const hue=i=>HUES[Math.max(0,Math.min(HUES.length-1,i||0))];
+const haptic=(k='success')=>{try{tg?.HapticFeedback?.notificationOccurred(k)}catch(e){}};
+const tick=()=>{try{tg?.HapticFeedback?.impactOccurred('light')}catch(e){}};
+
+function dur(sec){sec=Math.max(0,Math.floor(sec));const d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);
+  if(state.lang==='fa')return d?`${d} روز و ${h} ساعت`:h?`${h} ساعت و ${m} دقیقه`:`${m} دقیقه`;
+  return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`;}
+function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast.k);toast.k=setTimeout(()=>el.classList.remove('show'),3000);}
+function errText(e){return apiErrors[state.lang]?.[e?.code]||e?.message||t('error');}
+async function api(path,opt={}){
+  const res=await fetch(path,{method:opt.method||'GET',headers:{'Content-Type':'application/json','X-Telegram-Init-Data':initData},body:opt.body?JSON.stringify(opt.body):undefined});
+  let data={};try{data=await res.json()}catch(_){}
+  if(!res.ok){const e=new Error(data.message||t('netErr'));e.status=res.status;e.code=data.error;throw e;}
+  return data;
+}
+function openLink(url){if(!url)return;if(tg?.openTelegramLink&&url.startsWith('https://t.me/'))tg.openTelegramLink(url);else if(tg?.openLink)tg.openLink(url);else window.open(url,'_blank','noopener');}
+function setLang(l){state.lang=l==='fa'?'fa':'en';document.documentElement.lang=state.lang;document.documentElement.dir=state.lang==='fa'?'rtl':'ltr';}
+
+/* ---------- visuals ---------- */
+function emblem(idx,cls=''){
+  const c=hue(idx),n=idx+1;let dots='';
+  for(let k=0;k<n;k++){const a=(-90+k*360/n)*Math.PI/180;dots+=`<circle cx="${(50+42*Math.cos(a)).toFixed(1)}" cy="${(50+42*Math.sin(a)).toFixed(1)}" r="4.4" fill="${c}"/>`;}
+  return `<svg class="emb ${cls}" style="--c:${c}" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="${c}" stroke-opacity=".45" stroke-width="1.6"/><circle cx="50" cy="50" r="27" fill="${c}" fill-opacity=".22"/><circle cx="50" cy="50" r="19" fill="${c}"/><circle cx="50" cy="50" r="8" fill="#fff" fill-opacity=".92"/>${dots}</svg>`;
+}
+const lvl=()=>state.g?.level||{idx:state.user?.level||0,done:state.user?.doneTasks||0,progress:0,toGo:0,to:null,levels:[]};
+const lvName=i=>lvl().levels[i]?.name||'';
+const typeIcon=k=>k==='join'?'users':k==='react'?'heart':'eye';
+const costs=()=>state.g?.costs||{join:4,react:3,view:2};
+function applyHue(){document.documentElement.style.setProperty('--lv',hue(lvl().idx));}
+
+/* ---------- chrome ---------- */
+function renderBar(){
+  const u=state.user;if(!u){$('#topbar').innerHTML='';return;}
+  const L=lvl();
+  $('#topbar').innerHTML=`<div class="bar-id">${emblem(L.idx)}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${esc(lvName(L.idx))}${lvName(L.idx)?' · ':''}${t('levelN',{n:L.idx+1})}</div></div></div>
+  <button class="bal" id="balChip" data-act="go" data-p="rewards" aria-label="${t('stars')}">${ic('star','fill')}${N(u.points)}</button>`;
+}
+function renderNav(){
+  const items=[['home','home'],['tasks','tasks'],['grow','grow'],['rewards','gift'],['profile','user']];
+  const dot=state.user&&state.user.giftReady;
+  $('#nav').innerHTML=items.map(([p,i])=>`<button class="${state.page===p?'on':''}" data-act="go" data-p="${p}" aria-current="${state.page===p}">${ic(i)}<span>${t('nav_'+p)}</span>${p==='rewards'&&dot&&state.page!=='rewards'?'<i class="dot"></i>':''}</button>`).join('');
+}
+
+/* ---------- cards ---------- */
+function taskCard(x){
+  const pend=['count_pending','pending','settling'].includes(x.completionStatus);
+  const started=!!x.started&&!pend;
+  const gold=state.g?.golden?.active?state.g.golden.mult:1;
+  let act='';
+  if(pend)act=`<div class="t-act"><span class="chip brand">${ic('clock','sm')}${t('pending')}</span></div>`;
+  else if(started)act=`<div class="t-act"><button class="btn primary" data-act="claim" data-id="${esc(x.id)}">${ic('check','sm')}${t('verify')}</button><button class="btn ghost icon" data-act="start" data-id="${esc(x.id)}" aria-label="${t('openAgain')}" title="${t('openAgain')}">${ic('out','sm')}</button></div>`;
+  else act=`<div class="t-act"><button class="btn primary" data-act="start" data-id="${esc(x.id)}">${ic('out','sm')}${t('start')}</button></div>`;
+  return `<article class="task ${started||pend?'live':''}"><div class="t-top"><div class="t-ico ${esc(x.type)}">${ic(typeIcon(x.type))}</div>
+   <div class="grow"><div class="t-title">${esc(x.title)}</div><div class="t-meta"><span class="chip">${esc(x.typeLabel||t(x.type))}</span><span class="chip">${t('leftN',{n:fmt(x.remaining)})}</span>${started?`<span class="chip brand">${t('live')}</span>`:''}</div></div>
+   <div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}${gold>1?' · <span class="num">x'+gold+'</span>':''}</small></div></div>${act}</article>`;
+}
+function campCard(c){
+  const st={active:['mint',t('stActive')],paused:['brand',t('stPaused')],completed:['',t('stCompleted')],cancelled:['rose',t('stCancelled')]}[c.status]||['',c.status];
+  return `<article class="camp"><div class="t-top"><div class="t-ico ${esc(c.type)}">${ic(typeIcon(c.type))}</div><div class="grow"><div class="t-title">${esc(c.title)}</div><div class="t-meta"><span class="chip">${esc(c.typeLabel)}</span><span class="chip ${st[0]}">${st[1]}</span></div></div></div>
+   <div class="bar-track"><div class="bar-fill mint" style="width:${c.progress}%"></div></div>
+   <div class="camp-foot"><span>${t('doneOf',{d:fmt(c.done),t:fmt(c.target)})}</span><span>${c.progress}%</span></div>
+   ${c.canStop?`<div class="t-act"><button class="btn ghost sm" data-act="stop" data-id="${esc(c.id)}">${ic('stop','sm')}${t('stop')}</button></div>`:''}</article>`;
+}
+function gate(){
+  if(state.channelRequired)return `<div class="empty"><strong>${t('joinTitle')}</strong>${t('joinMsg')}</div>${state.tasksChannelUrl?`<button class="btn primary block" style="margin-top:12px" data-act="url" data-u="${esc(state.tasksChannelUrl)}">${ic('out','sm')}${t('joinBtn')}</button>`:''}`;
+  if(state.checkUnavailable)return `<div class="empty"><strong>${t('checkTitle')}</strong>${t('checkMsg')}</div><button class="btn ghost block" style="margin-top:12px" data-act="refresh">${ic('refresh','sm')}${t('retry')}</button>`;
+  return '';
+}
+function liveTasks(){return [...state.tasks].sort((a,b)=>(+!!b.started)-(+!!a.started)||b.reward-a.reward);}
+
+/* ---------- pages ---------- */
+function renderHome(){
+  const u=state.user,g=state.g,L=lvl();
+  const nx=L.levels[L.idx+1];
+  const title=nx?t('toNext',{n:fmt(L.toGo),level:nx.name}):t('maxLevel');
+  const sub=nx?t('nextPays',{bonus:nx.bonus,cap:nx.cap}):t('maxSub');
+  const gift=g?.gift,daily=g?.daily||{done:0,cap:0},wh=g?.wheel?.state;
+  const bars=gift?gift.days.map(d=>`<i class="${d.done?'on':''}"></i>`).join(''):'';
+  const giftBtn=gift?(gift.claimed?`<div class="chip" style="margin-top:12px">${ic('clock','sm')}${t('nextGiftIn',{t:dur(gift.secondsToNext)})}</div>`:`<button class="btn gold sm block" style="margin-top:12px" data-act="gift">${ic('gift','sm')}${t('claim',{n:fmt(gift.reward+gift.milestone)})}</button>`):'';
+  const whText=wh==='ready'?t('wheelReady'):wh==='used'?t('wheelUsed'):t('wheelLocked');
+  const lockPerks=nx?(nx.unlocks||[]).map(x=>x.text).join(' · '):'';
+  const preview=liveTasks().slice(0,3);
+  return `<section class="orbit-card"><div class="orbit-wrap"><svg class="ring" viewBox="0 0 208 208" aria-hidden="true"><circle class="trk" cx="104" cy="104" r="96"/><circle class="arc" id="arc" cx="104" cy="104" r="96" stroke-dasharray="603.2" stroke-dashoffset="603.2"/><circle class="sat" id="sat" cx="200" cy="104" r="6.5"/></svg><div class="orbit-core">${emblem(L.idx)}</div><div class="orbit-lvl"><span>${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div>
+   <div class="orbit-title">${title}</div><p class="orbit-sub">${sub}</p><button class="btn primary block" data-act="go" data-p="tasks">${ic('bolt','sm')}${t('earnNow')}</button></section>
+   ${g?.golden?.active?`<div class="gold-banner">${ic('bolt')}<span>${t('golden',{m:g.golden.mult,h:g.golden.endHour})}</span></div>`:''}
+   ${g?`<div class="duo"><div class="card"><div class="mini-k">${t('dailyGift')}</div><div class="mini-v">${N(gift.streak)} <small>${t('dayStreak')}</small></div><div class="streak">${bars}</div>${giftBtn}</div>
+    <div class="card"><div class="mini-k">${t('today')}</div><div class="mini-v num">${fmt(daily.done)}<small> / ${fmt(daily.cap)}</small></div><div class="bar-track" style="margin-top:12px"><div class="bar-fill gold" style="width:${Math.min(100,daily.cap?daily.done*100/daily.cap:0)}%"></div></div><button class="chip ${wh==='ready'?'gold':''}" style="margin-top:12px;white-space:normal;text-align:start" data-act="wheelgo">${ic('star','sm')}${whText}</button></div></div>`:''}
+   ${nx&&lockPerks?`<div class="next-lock">${emblem(L.idx+1)}<div><b>${t('unlockAt',{level:nx.name})}</b><span>${esc(lockPerks)}</span></div></div>`:''}
+   <div class="stats3"><div class="stat"><b>${N(state.stats.availableTasks)}</b><span>${t('openTasks')}</span></div><div class="stat"><b>${N(state.stats.activeCampaigns)}</b><span>${t('activeCamps')}</span></div><div class="stat"><b>${N(state.stats.completedTasks)}</b><span>${t('tasksDone')}</span></div></div>
+   <div class="sec"><h2>${t('openTasks')}</h2><button class="link-btn" data-act="go" data-p="tasks">${t('seeAll')}${ic('chev','sm flip')}</button></div>
+   ${gate()||(preview.length?preview.map(taskCard).join(''):`<div class="empty"><strong>${t('emptyTasks')}</strong>${t('emptyTasksSub')}</div>`)}`;
+}
+function renderTasks(){
+  const list=liveTasks().filter(x=>state.filter==='all'||x.type===state.filter);
+  const d=state.g?.daily;
+  return `<h1 class="page-title">${t('tasksTitle')}</h1><p class="page-sub">${t('tasksSub')}</p>
+   ${d?`<div class="day-line"><span>${t('dailyLimit')}</span><div class="bar-track"><div class="bar-fill gold" style="width:${Math.min(100,d.cap?d.done*100/d.cap:0)}%"></div></div><b class="num">${fmt(d.done)}/${fmt(d.cap)}</b></div>`:''}
+   <div class="filters">${['all','join','react','view'].map(k=>`<button class="${state.filter===k?'on':''}" data-act="filter" data-f="${k}">${t(k)}</button>`).join('')}</div>
+   ${gate()||(list.length?list.map(taskCard).join(''):`<div class="empty"><strong>${t('emptyTasks')}</strong>${t('emptyTasksSub')}</div>`)}`;
+}
+function maxQty(type){const lim=state.g?.limits?.maxQty||500;return Math.max(0,Math.min(lim,Math.floor((state.user?.points||0)/costs()[type])));}
+function renderGrow(){
+  const m=maxQty('join');
+  return `<h1 class="page-title">${t('growTitle')}</h1><p class="page-sub">${t('growSub')}</p>
+   <div class="fund"><div class="grow"><div class="muted" style="font-size:12px">${t('yourStars')}</div><b>${N(state.user?.points)}</b><div class="muted" style="font-size:12px">${t('canBuy',{n:fmt(m)})}</div></div><button class="btn primary" data-act="create">${ic('plus','sm')}${t('newCamp')}</button></div>
+   <div class="sec"><h2>${t('myCamps')}</h2></div>
+   ${state.campaigns.length?state.campaigns.map(campCard).join(''):`<div class="empty"><strong>${t('emptyCamps')}</strong>${t('emptyCampsSub')}</div>`}`;
+}
+function perksOf(l,i){
+  const out=[];
+  if(l.bonus)out.push(`<li>${ic('check','sm')}<span>${t('perkBonus',{n:l.bonus})}</span></li>`);
+  if(l.mult>1)out.push(`<li>${ic('check','sm')}<span>${t('perkMult',{m:l.mult})}</span></li>`);
+  out.push(`<li>${ic('check','sm')}<span>${t('perkCap',{n:l.cap})}</span></li>`);
+  (l.unlocks||[]).forEach(u=>out.push(u.soon?`<li class="soon">${ic('lock','sm')}<span>${esc(u.text)} · ${t('soon')}</span></li>`:`<li>${ic('check','sm')}<span>${esc(u.text)}</span></li>`));
+  return out.join('');
+}
+function subPath(){
+  const L=lvl();
+  return `<div class="card" style="margin-bottom:16px"><div class="row" style="margin-bottom:10px"><b class="grow">${esc(lvName(L.idx))}</b><span class="chip">${t('doneCount',{n:fmt(L.done)})}</span></div><div class="bar-track"><div class="bar-fill" style="width:${L.progress}%;background:var(--lv)"></div></div>
+   <div class="camp-foot" style="margin-top:8px"><span>${fmt(L.from)}</span><span>${L.to?fmt(L.to):'MAX'}</span></div></div>
+   <div class="lv-path">${L.levels.map((l,i)=>`<div class="lv ${i<L.idx?'past':i===L.idx?'now':'future'}" style="--lv:${hue(i)}">${emblem(i)}<div class="lv-body"><div class="lv-head"><b>${esc(l.name)}</b>${i===L.idx?`<span class="chip brand">${t('youAreHere')}</span>`:i<L.idx?`<span class="chip mint">${ic('check','sm')}</span>`:`<span class="chip">${ic('lock','sm')}${t('needTasks',{n:fmt(l.need)})}</span>`}</div><ul class="perks ${i>L.idx?'fut':''}">${perksOf(l,i)}</ul></div></div>`).join('')}</div>`;
+}
+function wheelSvg(){
+  const P=state.g.wheel.prizes,n=P.length,a=360/n,top=Math.max(...P);let seg='';
+  const pt=(deg,r)=>[150+r*Math.sin(deg*Math.PI/180),150-r*Math.cos(deg*Math.PI/180)];
+  P.forEach((p,i)=>{const c=i*a,[x1,y1]=pt(c-a/2,140),[x2,y2]=pt(c+a/2,140),big=p===top;
+    seg+=`<path d="M150 150L${x1.toFixed(1)} ${y1.toFixed(1)}A140 140 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}Z" fill="${big?'#3a3320':i%2?'#252c5c':'#1c2248'}" stroke="#0c1024" stroke-width="2"/><text transform="rotate(${c} 150 150)" x="150" y="62" text-anchor="middle" font-size="26" font-weight="800" fill="${big?'#ffc759':'#f2f4ff'}" font-family="inherit">${p}</text>`;});
+  return `<svg viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="146" fill="none" stroke="rgba(158,172,255,.26)" stroke-width="3"/><g class="wheel-rot" id="wheelRot" style="transform:rotate(${state.wheelRot}deg)">${seg}</g><circle cx="150" cy="150" r="24" fill="#0c1024" stroke="#ffc759" stroke-width="3"/></svg>`;
+}
+function subDaily(){
+  const g=state.g.gift,w=state.g.wheel;
+  const wbtn=w.state==='ready'?`<button class="btn gold block" id="spinBtn" data-act="spin" ${state.spinning?'disabled':''}>${state.spinning?t('spinning'):t('spin')}</button>`:`<button class="btn ghost block" disabled>${w.state==='used'?t('wheelUsed'):t('wheelLocked')}</button>`;
+  return `<div class="card"><div class="row"><div class="grow"><b style="font-size:16px">${t('dailyGift')}</b><div class="muted" style="font-size:12.5px">${t('giftSub')}</div></div><span class="chip gold">${ic('flame','sm')}${N(g.streak)}</span></div>
+   <div class="gift-days">${g.days.map(d=>`<div class="gd ${d.done?'done':''} ${d.today?'today':''}"><small>${t('dayN',{n:d.n})}</small><b>${d.reward}</b></div>`).join('')}</div>
+   ${g.claimed?`<button class="btn ghost block" disabled>${ic('check','sm')}${t('claimed')} · ${t('nextGiftIn',{t:dur(g.secondsToNext)})}</button>`:`<button class="btn gold block" data-act="gift">${ic('gift','sm')}${t('claim',{n:fmt(g.reward+g.milestone)})}</button>`}
+   <div class="muted" style="font-size:11.5px;margin-top:10px">${t('milestoneNote')}<br>${t('bestStreak',{n:g.best})}</div></div>
+   <div class="card"><b style="font-size:16px">${t('wheelTitle')}</b><div class="muted" style="font-size:12.5px;margin-bottom:12px">${t('wheelSub')}</div>
+   <div class="wheel-box"><svg class="wheel-pin" viewBox="0 0 24 30" aria-hidden="true"><use href="#i-pin"/></svg>${wheelSvg()}</div>${wbtn}</div>`;
+}
+function subBadges(){
+  const A=state.g.achievements,have=A.filter(a=>a.have).length;
+  const groups=[['done_tasks','gTasks','tasks'],['ref_active_count','gFriends','users'],['streak_best','gStreak','flame'],['campaigns_made','gOrders','grow']];
+  return `<div class="row" style="margin-bottom:4px"><b class="grow" style="font-size:16px">${t('segBadges')}</b><span class="chip gold">${t('badgesCount',{n:have,t:A.length})}</span></div>`+groups.map(([k,lab,icn])=>{
+    const rows=A.filter(a=>a.group===k);if(!rows.length)return '';
+    return `<div class="ach-group">${t(lab)}</div><div class="ach-grid">${rows.map(a=>`<div class="ach ${a.have?'have':''}"><div class="ach-top"><div class="ach-ico">${ic(a.have?'medal':icn)}</div><b>${esc(a.name)}</b></div><div class="bar-track" style="height:6px"><div class="bar-fill ${a.have?'gold':''}" style="width:${Math.min(100,a.current*100/a.need)}%"></div></div><div class="meta"><span>${fmt(a.current)}/${fmt(a.need)}</span><span class="chip gold num">+${a.reward}</span></div></div>`).join('')}</div>`;}).join('');
+}
+function subBoard(){
+  const B=state.g.board,e=state.board==='e',rows=e?B.earners:B.inviters,rank=e?B.myEarnRank:B.myInviteRank,score=e?B.myEarnScore:B.myInviteScore;
+  const lab=[t('p1'),t('p2'),t('p3')];
+  return `<div class="seg"><button class="${e?'on':''}" data-act="board" data-b="e">${t('earners')}</button><button class="${e?'':'on'}" data-act="board" data-b="r">${t('inviters')}</button></div>
+   <div class="row" style="margin:14px 2px 0"><span class="chip">${ic('clock','sm')}${t('resetsIn',{t:dur(B.secondsLeft)})}</span><span class="muted" style="margin-inline-start:auto;font-size:12px">${t('weekPrizes')}</span></div>
+   <div class="prizes">${B.prizes.slice(0,3).map((p,i)=>`<div class="prize"><b class="num">+${p}</b><span>${lab[i]}</span></div>`).join('')}</div>
+   <div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span>${t('yourRank')}</span><b style="color:var(--brand)">${rank?'#'+rank+' · '+fmt(score):t('unranked')}</b></div>
+   ${rows.length?rows.map(r=>`<div class="rank-row ${r.me?'me':''}"><div class="rk ${r.rank<=3?'r'+r.rank:''}">${r.rank}</div><span>${esc(r.name||t('user'))}${r.me?' · '+t('you'):''}</span><span class="sc">${fmt(r.score)}</span></div>`).join(''):`<div class="empty">${t('boardEmpty')}</div>`}`;
+}
+function renderRewards(){
+  if(!state.g)return `<div class="empty"><strong>${t('error')}</strong>${t('loadErr')}</div><button class="btn ghost block" style="margin-top:12px" data-act="refresh">${t('retry')}</button>`;
+  const segs=[['path','segPath'],['daily','segDaily'],['badges','segBadges'],['board','segBoard']];
+  const body={path:subPath,daily:subDaily,badges:subBadges,board:subBoard}[state.sub]();
+  return `<h1 class="page-title">${t('rewardsTitle')}</h1><div class="seg" style="margin:12px 0 16px">${segs.map(([k,l])=>`<button class="${state.sub===k?'on':''}" data-act="sub" data-s="${k}">${t(l)}</button>`).join('')}</div>${body}`;
+}
+function renderProfile(){
+  const u=state.user,g=state.g,L=lvl(),inv=g?.invite;
+  const ladder=inv?`<div class="ladder">${inv.ladder.map(r=>`<div class="${r.have?'have':''}"><b>${r.need}</b>${t('friendsUnit')}<br><span class="num">+${r.reward}</span></div>`).join('')}</div>`:'';
+  return `<div class="card"><div class="me-card">${emblem(L.idx)}<div class="grow"><div class="me-name">${esc(u.name||t('user'))}</div><div class="muted" style="font-size:12.5px">${u.username?`<span class="num">@${esc(u.username)}</span> · `:''}ID <span class="num">${u.id}</span></div><div class="t-meta"><span class="chip" style="color:var(--lv)">${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div></div></div>
+   <div class="grid2"><div class="stat"><b>${N(u.earned)}</b><span>${t('totalEarned')}</span></div><div class="stat"><b>${N(u.hold)}</b><span>${t('onHold')}</span></div><div class="stat"><b>${N(u.referrals)}</b><span>${t('invited')}</span></div><div class="stat"><b>${N(inv?inv.active:0)}</b><span>${t('activeFriends')}</span></div></div>
+   ${inv&&inv.link?`<div class="card" style="margin-top:10px"><b style="font-size:16px">${t('inviteTitle')}</b><div class="muted" style="font-size:12.5px;margin:2px 0 12px">${t('inviteSub',{w:inv.welcomeBonus,a:inv.activeBonus,n:inv.activeTasks})}</div><div class="invite-link">${ic('link','sm')}<span>${esc(inv.link)}</span></div><div class="t-act"><button class="btn ghost" data-act="copy">${ic('copy','sm')}${t('copyLink')}</button><button class="btn primary" data-act="share">${ic('share','sm')}${t('share')}</button></div><div class="ach-group" style="margin-bottom:0">${t('ladderTitle')}</div>${ladder}</div>`:''}
+   <div class="card" style="margin-top:10px;padding-top:4px;padding-bottom:4px"><div class="set-row"><div><b>${t('language')}</b></div><div class="seg" style="min-width:150px"><button class="${state.lang==='en'?'on':''}" data-act="lang" data-l="en">English</button><button class="${state.lang==='fa'?'on':''}" data-act="lang" data-l="fa">فارسی</button></div></div>
+   <div class="set-row"><div class="grow"><b>${t('reminders')}</b><div class="muted" style="font-size:12px">${t('remindersHelp')}</div></div><button class="toggle ${u.remindersOff?'':'on'}" data-act="remind" role="switch" aria-checked="${!u.remindersOff}" aria-label="${t('reminders')}"></button></div>
+   ${state.tasksChannelUrl?`<div class="set-row"><b>${t('taskChannel')}</b><button class="btn ghost sm" data-act="url" data-u="${esc(state.tasksChannelUrl)}">${ic('out','sm')}</button></div>`:''}</div>`;
+}
+function render(){
+  if(!state.user)return;
+  applyHue();renderBar();renderNav();
+  const f={home:renderHome,tasks:renderTasks,grow:renderGrow,rewards:renderRewards,profile:renderProfile}[state.page];
+  $('#content').innerHTML=f();
+  if(state.page==='home')animateOrbit();
+}
+function animateOrbit(){
+  const L=lvl(),arc=$('#arc'),sat=$('#sat');if(!arc)return;
+  const p=Math.max(2,L.progress||0);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{arc.style.strokeDashoffset=String(603.2*(1-p/100));sat.style.transform=`rotate(${p*3.6}deg)`;}));
+}
+function go(p){state.page=p;render();window.scrollTo({top:0});}
+
+/* ---------- celebrate & sheets ---------- */
+function celebrate({idx=null,k,v,s,color}){
+  const c=color||(idx!==null?hue(idx):'#ffc759');
+  $('#cele').style.setProperty('--c',c);
+  $('#cele').innerHTML=`${idx!==null?emblem(idx):`<div class="cele-star" style="width:90px;height:90px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">${ic('star','fill')}</div>`}<div class="cele-k">${esc(k)}</div><div class="cele-v">${esc(v)}</div><div class="cele-s">${esc(s||'')}</div><button class="btn primary block" data-act="closecele">${t('cont')}</button>`;
+  $('#celeVeil').classList.add('show');haptic('success');
+}
+function bumpBal(){const b=$('#balChip');if(b){b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');}}
+function checkLevelUp(prev,silent){
+  const cur=state.user?.level??0;
+  if(cur>prev&&!silent){const L=lvl();const b=L.levels[cur]?.bonus||0;celebrate({idx:cur,k:t('levelUp'),v:lvName(cur),s:t('levelUpSub',{level:lvName(cur),b})});}
+  try{localStorage.setItem('tp_lvl_'+state.user.id,String(cur));}catch(_){}
+}
+function openSheet(html){$('#sheet').innerHTML=html;$('#sheetVeil').classList.add('show');}
+function closeSheet(){$('#sheetVeil').classList.remove('show');}
+function sheetCreate(){
+  const ty=state.type,c=costs(),max=maxQty(ty),react=ty==='react';
+  const opt=k=>`<button type="button" class="type-opt ${ty===k?'on':''}" data-act="ctype" data-k="${k}"><div class="t-ico ${k}">${ic(typeIcon(k))}</div><div class="grow"><div class="row"><b>${t('type'+k[0].toUpperCase()+k.slice(1))}</b><span class="chip gold" style="margin-inline-start:auto">${t('perUnit',{c:c[k]})}</span></div><span>${t('desc'+k[0].toUpperCase()+k.slice(1))}</span></div></button>`;
+  return `<div class="sheet-h"><b>${t('newCamp')}</b><button class="x" data-act="closesheet" aria-label="Close">${ic('x')}</button></div>
+   <div class="field" style="margin-top:0"><label>${t('typeLbl')}</label><div class="types">${['join','react','view'].map(opt).join('')}</div></div>
+   <div class="field"><label for="cLink">${t('linkLbl')}</label><input class="inp" id="cLink" type="url" inputmode="url" dir="ltr" maxlength="2048" placeholder="${ty==='join'?'https://t.me/channel':'https://t.me/channel/123'}" autocomplete="off"><div class="hint">${ty==='join'?t('hintJoin'):t('hintPost')}</div></div>
+   <div class="field"><label for="cQty">${t('qtyLbl')}</label><input class="inp" id="cQty" type="number" inputmode="numeric" min="1" step="1" max="${max}" value="${Math.min(10,Math.max(1,max))}"><div class="quick">${[10,25,50].filter(n=>n<max).map(n=>`<button type="button" data-act="qty" data-n="${n}">${n}</button>`).join('')}<button type="button" data-act="qty" data-n="${max}">${t('max')} ${fmt(max)}</button></div></div>
+   ${react?`<div class="field"><label>${t('windowLbl')}</label><div class="seg" id="cWin"><button type="button" data-act="win" data-m="2">${t('minN',{n:2})}</button><button type="button" class="on" data-act="win" data-m="5">${t('minN',{n:5})}</button></div></div>`:''}
+   <div class="sum"><div><span>${t('cost')}</span><b id="sCost">0</b></div><div><span>${t('after')}</span><span id="sAfter">0</span></div></div>
+   ${max<1?`<div class="hint" style="color:var(--rose)">${t('needStars',{n:c[ty]})}</div>`:''}
+   <button class="btn primary block" id="cGo" style="margin-top:16px" data-act="publish" ${max<1?'disabled':''}>${t('publish')}</button>`;
+}
+function updateSum(){
+  const q=Number($('#cQty')?.value||0),c=costs()[state.type],cost=q>0?q*c:0;
+  if($('#sCost'))$('#sCost').textContent=fmt(cost)+' '+t('stars');
+  if($('#sAfter'))$('#sAfter').textContent=fmt((state.user?.points||0)-cost);
+}
+
+/* ---------- data ---------- */
+async function loadAll(quiet){
+  if(!initData){$('#content').innerHTML=`<div class="empty" style="margin-top:60px"><strong>${t('authTitle')}</strong>${t('authSub')}</div><button class="btn primary block" style="margin-top:14px" onclick="location.reload()">${t('retry')}</button>`;return;}
+  try{
+    const [d,tk,cp,gr]=await Promise.all([api('/api/miniapp/dashboard'),api('/api/miniapp/tasks'),api('/api/miniapp/campaigns'),api('/api/miniapp/growth').catch(()=>null)]);
+    const prev=state.user?.level;
+    state.user=d.user;state.stats=d.stats;state.tasksChannelUrl=d.tasksChannelUrl||'';state.tasks=tk.tasks||[];state.channelRequired=!!tk.channelRequired;state.checkUnavailable=!!tk.membershipCheckUnavailable;state.campaigns=cp.campaigns||[];
+    if(gr)state.g=gr;
+    setLang(d.user.language);state.loaded=true;state.lastFetch=Date.now();
+    let stored=null;try{stored=localStorage.getItem('tp_lvl_'+d.user.id);}catch(_){}
+    render();
+    if(prev!==undefined)checkLevelUp(prev);else checkLevelUp(stored===null?d.user.level:Number(stored));
+  }catch(e){
+    if(!quiet)$('#content').innerHTML=`<div class="empty" style="margin-top:60px"><strong>${t('error')}</strong>${esc(e.code?errText(e):t('loadErr'))}</div><button class="btn primary block" style="margin-top:14px" data-act="refresh">${t('retry')}</button>`;
+  }
+}
+async function reloadGrowth(){try{state.g=await api('/api/miniapp/growth');}catch(_){}}
+function absorb(r){if(r.user){state.user=r.user;state.stats=r.stats||state.stats;}if(r.growth)state.g=r.growth;}
+
+/* ---------- actions ---------- */
+async function startTask(id,btn){
+  const x=state.tasks.find(v=>v.id===id);if(!x)return;if(btn){btn.disabled=true;}
+  try{const r=await api(`/api/miniapp/tasks/${encodeURIComponent(id)}/start`,{method:'POST',body:{}});x.started=true;render();toast(t('opened'));openLink(r.targetUrl||x.targetUrl);}
+  catch(e){render();toast(errText(e));if(e.code==='task_channel_required'||e.code==='task_unavailable')loadAll(true);}
+}
+async function claimTask(id,btn){
+  const x=state.tasks.find(v=>v.id===id);if(btn){btn.disabled=true;}
+  const prev=state.user.level;
+  try{
+    const r=await api(`/api/miniapp/tasks/${encodeURIComponent(id)}/claim`,{method:'POST',body:{}});
+    if(r.status==='pending'){if(x)x.completionStatus='count_pending';render();toast(t('pendingMsg'));return;}
+    absorb(r);state.tasks=state.tasks.filter(v=>v.id!==id);await reloadGrowth();render();bumpBal();
+    const gold=state.g?.golden?.active;
+    celebrate({k:t('verified'),v:'+'+fmt(r.reward*(gold?state.g.golden.mult:1)),s:gold?t('goldenBonus'):t('youEarned')+' '+t('stars')});
+    $('#celeVeil').dataset.after=String(prev);
+  }catch(e){render();toast(errText(e));}
+}
+async function claimGift(){
+  const prev=state.user.level;
+  try{const r=await api('/api/miniapp/gift/claim',{method:'POST',body:{}});absorb(r);render();bumpBal();
+    celebrate({k:t('giftWon'),v:'+'+fmt(r.reward+r.milestone),s:t('streakN',{n:r.streak})});$('#celeVeil').dataset.after=String(prev);}
+  catch(e){toast(errText(e));loadAll(true);}
+}
+async function spin(){
+  if(state.spinning)return;state.spinning=true;render();
+  try{
+    const r=await api('/api/miniapp/wheel/spin',{method:'POST',body:{}});
+    const n=r.growth.wheel.prizes.length,a=360/n,cur=state.wheelRot;
+    let target=(Math.floor(cur/360)+5)*360+((360-r.index*a)%360);if(target<=cur)target+=360;
+    state.wheelRot=target;const el=$('#wheelRot');if(el)el.style.transform=`rotate(${target}deg)`;tick();
+    const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+    setTimeout(()=>{absorb(r);state.spinning=false;render();bumpBal();celebrate({k:t('youWon'),v:'+'+r.prize,s:t('wheelTitle')});},reduce?200:4400);
+  }catch(e){state.spinning=false;render();toast(errText(e));loadAll(true);}
+}
+async function publish(){
+  const btn=$('#cGo'),link=$('#cLink').value.trim(),qty=Number($('#cQty').value),ty=state.type;
+  if(!link){toast(apiErrors[state.lang].link);return;}
+  if(!Number.isInteger(qty)||qty<1||qty>maxQty(ty)){toast(apiErrors[state.lang].quantity_range);return;}
+  const body={type:ty,link,quantity:qty};if(ty==='react'){const on=$('#cWin .on');body.windowMin=Number(on?.dataset.m||5);}
+  btn.disabled=true;btn.textContent=t('publishing');
+  try{await api('/api/miniapp/campaigns',{method:'POST',body});closeSheet();toast(t('published'));await loadAll(true);go('grow');}
+  catch(e){btn.disabled=false;btn.textContent=t('publish');toast(errText(e));}
+}
+async function stopCampaign(id){
+  const ok=await new Promise(res=>{if(tg?.showConfirm)tg.showConfirm(t('confirmStop'),res);else res(confirm(t('confirmStop')));});if(!ok)return;
+  try{const r=await api(`/api/miniapp/campaigns/${encodeURIComponent(id)}/stop`,{method:'POST',body:{}});toast(t('stopped',{n:fmt(r.refunded)}));await loadAll(true);}
+  catch(e){toast(errText(e));}
+}
+async function patchProfile(body){
+  try{const r=await api('/api/miniapp/profile',{method:'PATCH',body});state.user=r.user;state.stats=r.stats||state.stats;setLang(r.user.language);if('language' in body)await reloadGrowth();render();toast(t('saved'));}
+  catch(e){toast(errText(e));}
+}
+async function copyLink(){
+  const l=state.g?.invite?.link;if(!l)return;
+  try{await navigator.clipboard.writeText(l);}catch(_){const i=document.createElement('input');i.value=l;document.body.appendChild(i);i.select();try{document.execCommand('copy')}catch(__){}i.remove();}
+  toast(t('copied'));tick();
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');if(!el)return;
+  const d=el.dataset;
+  switch(d.act){
+    case'go':go(d.p);break;
+    case'sub':state.sub=d.s;render();break;
+    case'filter':state.filter=d.f;render();break;
+    case'board':state.board=d.b;render();break;
+    case'wheelgo':state.sub='daily';go('rewards');break;
+    case'start':startTask(d.id,el);break;
+    case'claim':claimTask(d.id,el);break;
+    case'gift':claimGift();break;
+    case'spin':spin();break;
+    case'create':state.type='join';openSheet(sheetCreate());updateSum();break;
+    case'ctype':{const keep=$('#cLink')?.value||'';state.type=d.k;$('#sheet').innerHTML=sheetCreate();$('#cLink').value=keep;updateSum();break;}
+    case'qty':$('#cQty').value=Math.max(1,Math.min(maxQty(state.type)||1,Number(d.n)||1));updateSum();break;
+    case'win':$$('#cWin button').forEach(b=>b.classList.toggle('on',b===el));break;
+    case'publish':publish();break;
+    case'stop':stopCampaign(d.id);break;
+    case'closesheet':closeSheet();break;
+    case'closecele':{const v=$('#celeVeil');const prev=v.dataset.after;v.classList.remove('show');if(prev!==undefined&&prev!==''){delete v.dataset.after;checkLevelUp(Number(prev));}break;}
+    case'url':openLink(d.u);break;
+    case'refresh':loadAll();break;
+    case'lang':if(d.l!==state.lang)patchProfile({language:d.l});break;
+    case'remind':patchProfile({remindersOff:!state.user.remindersOff});break;
+    case'copy':copyLink();break;
+    case'share':{const l=state.g?.invite?.link;if(l)openLink('https://t.me/share/url?url='+encodeURIComponent(l)+'&text='+encodeURIComponent(t('shareText')));break;}
+  }
+});
+document.addEventListener('input',e=>{if(e.target.id==='cQty'||e.target.id==='cLink')updateSum();});
+$('#sheetVeil').addEventListener('click',e=>{if(e.target.id==='sheetVeil')closeSheet();});
+$('#celeVeil').addEventListener('click',e=>{if(e.target.id==='celeVeil')$('#celeVeil [data-act=closecele]')?.click();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&initData&&state.loaded&&Date.now()-state.lastFetch>8000&&!$('#sheetVeil').classList.contains('show')&&!state.spinning)loadAll(true);});
+if(tg?.onEvent)tg.onEvent('viewportChanged',()=>tg.expand());
+loadAll();
+
 })();
 </script>
 </body>
