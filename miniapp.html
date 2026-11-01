@@ -42,8 +42,13 @@ svg.i.fill{fill:currentColor;stroke:none}
 .bar-id{display:flex;align-items:center;gap:10px;min-width:0}
 .bar-name{font-weight:700;font-size:15px;line-height:1.2}
 .bar-sub{font-size:11px;color:var(--muted);line-height:1.3}
-.bal{display:flex;align-items:center;gap:7px;padding:7px 13px 7px 11px;border-radius:999px;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 34%,transparent);color:var(--gold);font-weight:800;font-size:16px}
-[dir=rtl] .bal{padding:7px 11px 7px 13px}
+.bal{display:flex;align-items:center;gap:10px;padding:5px 14px 5px 5px;border-radius:20px;color:var(--gold);background:linear-gradient(135deg,rgba(255,196,77,.24),rgba(255,138,61,.08));border:1px solid color-mix(in srgb,var(--gold) 48%,transparent);box-shadow:0 8px 22px -10px color-mix(in srgb,var(--gold) 70%,transparent),inset 0 1px 0 rgba(255,255,255,.12)}
+[dir=rtl] .bal{padding:5px 5px 5px 14px}
+.bal-ico{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;flex:none;color:#4a2b00;background:linear-gradient(145deg,#ffe08a,#ff9d2e);box-shadow:0 4px 12px -3px rgba(255,157,46,.7),inset 0 1px 0 rgba(255,255,255,.5)}
+.bal-ico svg{width:20px;height:20px}
+.bal-txt{display:grid;gap:1px;text-align:start;line-height:1.05}
+.bal-txt small{font-size:10px;font-weight:700;color:var(--muted)}
+.bal-txt b{font-size:20px;font-weight:900;letter-spacing:.2px}
 .bal.bump{animation:bump .5s ease}
 @keyframes bump{40%{transform:scale(1.14)}}
 main{padding-top:6px}
@@ -275,6 +280,11 @@ main{padding-top:6px}
 .ban-body>span{font-size:12px;color:var(--muted);line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ban-link{display:flex;align-items:center;gap:6px;margin-top:4px;padding:5px 9px;border-radius:9px;background:var(--ink);direction:ltr;font-size:10.5px;color:var(--brand);overflow:hidden}
 .ban-link span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.invite .t-act{margin-top:12px}
+.inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.inv-stats div{padding:10px 6px;text-align:center;border-radius:14px;background:var(--panel-2)}
+.inv-stats b{display:block;font-size:18px}
+.inv-stats span{font-size:11px;color:var(--muted)}
 .up-row{display:flex;gap:12px;align-items:center}
 .up-thumb{width:52px;height:52px;border-radius:13px;overflow:hidden;background:var(--panel-2);border:1px dashed var(--line-2);display:grid;place-items:center;color:var(--faint);flex:none}
 .up-thumb img{width:100%;height:100%;object-fit:cover}
@@ -375,7 +385,7 @@ if(tg){try{tg.ready();tg.expand();tg.setHeaderColor('#0c1024');tg.setBackgroundC
 const T={
 en:{
  nav_home:'Home',nav_tasks:'Tasks',nav_grow:'Grow',nav_rewards:'Rewards',nav_profile:'Profile',
- stars:'Stars',levelN:'Level {n}',
+ stars:'Stars',balance:'Balance',levelN:'Level {n}',
  toNext:'{n} tasks to next level',maxLevel:'Top level',
  nextPays:'Reaching it pays +{bonus} Stars and lifts your daily limit to {cap} tasks.',
  maxSub:'Keep your streak alive and climb the weekly board.',
@@ -442,7 +452,7 @@ en:{
 },
 fa:{
  nav_home:'خانه',nav_tasks:'تسک‌ها',nav_grow:'رشد',nav_rewards:'جوایز',nav_profile:'پروفایل',
- stars:'استارز',levelN:'سطح {n}',
+ stars:'استارز',balance:'موجودی',levelN:'سطح {n}',
  toNext:'{n} تسک تا سطح بعد',maxLevel:'بالاترین سطح',
  nextPays:'رسیدن به آن +{bonus} استارز می‌دهد و سقف روزانه‌ات را به {cap} تسک می‌رساند.',
  maxSub:'استریک را نگه دار و در جدول هفتگی بالا برو.',
@@ -572,7 +582,7 @@ function renderBar(){
   const u=state.user;if(!u){$('#topbar').innerHTML='';return;}
   const L=lvl();
   $('#topbar').innerHTML=`<div class="bar-id">${avatar(L)}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${t('levelN',{n:L.idx+1})}${lvName(L.idx)?' · '+esc(lvName(L.idx)):''}</div></div></div>
-  <button class="bal" id="balChip" data-act="go" data-p="rewards" aria-label="${t('stars')}">${ic('star','fill')}${N(u.points)}</button>`;
+  <button class="bal" id="balChip" data-act="go" data-p="rewards" aria-label="${t('stars')}"><span class="bal-ico">${ic('star','fill')}</span><span class="bal-txt"><small>${t('balance')}</small><b>${N(u.points)}</b></span></button>`;
 }
 function renderNav(){
   const items=[['home','home'],['tasks','tasks'],['grow','grow'],['rewards','gift'],['profile','user']];

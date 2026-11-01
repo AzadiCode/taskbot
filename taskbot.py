@@ -66,7 +66,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v59-memberland"
+VERSION = "v60-memberland"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -340,22 +340,20 @@ S = {
 
     # ───────── Core screens ─────────
     "menu": (
-        "<b>Memberland👁‍🗨</b>\n<i>Free growth for Telegram channels, groups and bots</i>\n"
-        "<blockquote><b>Balance:</b> <code>{points}</code> Stars⭐{hold}</blockquote>\n"
-        "Welcome, {name}! Here is exactly how it works:\n"
-        "⭐ <b>Earn</b> — do quick tasks (join, react, view) and collect free Stars.\n"
-        "🚀 <b>Grow</b> — spend your Stars to get members, reactions and views for your own channel.\n"
-        "🎁 <b>Bonus</b> — daily gift, lucky wheel and invite rewards.\n"
-        "<i>No payment needed. Real people complete your tasks, and every price is shown before you confirm.</i>\n"
-        "@" + BRAND_ID,
-        "<b>ممبرلند👁‍🗨</b>\nرشد رایگان کانال، گروه و ربات تلگرامی شما\n"
-        "<blockquote><b>موجودی:</b> <code>{points}</code> استارز⭐{hold}</blockquote>\n"
-        "{name} عزیز، به ممبرلند خوش آمدید! روش کار کاملاً ساده و شفاف است:\n"
-        "⭐ <b>کسب استارز</b> — تسک‌های سریع (عضویت، ریکشن، بازدید) را انجام دهید و استارز رایگان بگیرید.\n"
-        "🚀 <b>رشد کانال</b> — با استارزتان برای کانال خودتان عضو، ریکشن و ویو سفارش دهید.\n"
-        "🎁 <b>پاداش‌ها</b> — هدیه‌ی روزانه، گردونه‌ی شانس و جایزه‌ی دعوت دوستان.\n"
-        "<i>بدون پرداخت پول. تسک‌ها را کاربران واقعی انجام می‌دهند و هزینه‌ی هر سفارش پیش از تأیید نمایش داده می‌شود.</i>\n"
-        "@" + BRAND_ID),
+        "<b>✨ Memberland | ممبرلند</b>\n<i>Grow your channel for free 🚀</i>\n"
+        "<blockquote>💰 <b>Balance:</b> <code>{points}</code> Stars⭐{hold}</blockquote>\n"
+        "Welcome, {name}! 👋\n\n"
+        "1️⃣ Do quick tasks → earn Stars ⭐\n"
+        "2️⃣ Spend Stars → get members, reactions & views 📈\n"
+        "3️⃣ Claim a free gift every day 🎁\n\n"
+        "✅ Free · ✅ Real users · ✅ Clear prices",
+        "<b>✨ ممبرلند | Memberland</b>\n<i>کانالت را رایگان رشد بده 🚀</i>\n"
+        "<blockquote>💰 <b>موجودی:</b> <code>{points}</code> استارز⭐{hold}</blockquote>\n"
+        "{name} جان، خوش اومدی! 👋\n\n"
+        "1️⃣ تسک‌های سریع انجام بده ← استارز بگیر ⭐\n"
+        "2️⃣ استارز خرج کن ← عضو، ریکشن و ویو بگیر 📈\n"
+        "3️⃣ هر روز هدیه‌ی رایگان بگیر 🎁\n\n"
+        "✅ رایگان · ✅ کاربران واقعی · ✅ قیمت شفاف"),
     "app_open": (
         "<b>Memberland App</b>\nTasks, daily gift, lucky wheel, levels and your campaigns in one place. Tap below to open it.",
         "<b>مینی‌اپ ممبرلند</b>\nتسک‌ها، هدیه‌ی روزانه، گردونه‌ی شانس، لول‌ها و سفارش‌هایتان در یک صفحه. برای ورود دکمه‌ی زیر را بزنید."),
@@ -1250,6 +1248,9 @@ def invite_cfg():
     cfg = dict(INVITE_DEFAULT)
     try:
         cfg.update({k: v for k, v in (db.settings.find_one({"_id": "invite"}) or {}).items() if k in INVITE_DEFAULT and isinstance(v, str)})
+        for k in ("text_en", "text_fa"):          # texts saved under the old brand fall back to the new default
+            if re.search(r"grameeting|taskplus|گرامیتینگ|تاسک‌?پلاس", cfg.get(k, ""), re.I):
+                cfg[k] = INVITE_DEFAULT[k]
     except Exception:
         log.exception("invite_cfg")
     return cfg
