@@ -842,6 +842,180 @@ def admin_text(lang, en, fa):
     return H(_rtl(fa) if lang == "fa" else en)
 
 
+# ═════════════════════════════ Helper account: simple admin screens inside the bot ═════════════════════════════
+def ub_wait(first, tries=70):
+    """Slow helper-account steps run as background jobs; wait for the result (always called from a thread)."""
+    if not isinstance(first, dict) or not first.get("job"):
+        return first
+    for _ in range(tries):
+        time.sleep(1)
+        r = UB.op("job", {"id": first["job"]})
+        if not r.get("running"):
+            return r
+    return {"ok": False, "error": "مهلت تمام شد"}
+
+
+def ub_status_text():
+    sx = UB.status()
+    if not sx["configured"] or not sx["libs"]:
+        return ("🤖 <b>حساب کمکی ریکشن</b>\n\nتنظیم نشده است: متغیرهای <code>TG_API_ID</code> و <code>TG_API_HASH</code> را در سرویس بگذارید "
+                "و بعد از نصب requirements (telethon) سرویس را دوباره اجرا کنید.")
+    if not sx["logged_in"]:
+        state = "وارد نشده"
+    elif sx["invalid"]:
+        state = "⚠️ نشست نامعتبر؛ دوباره وارد شوید"
+    elif sx["enabled"]:
+        state = "🟢 فعال و سالم" if sx["healthy"] else "🟡 فعال، در حال اتصال"
+    else:
+        state = "⚪ وارد شده، خاموش"
+    lines = ["🤖 <b>حساب کمکی ریکشن</b>", "", f"وضعیت: {state}"]
+    if sx.get("user"):
+        u = sx["user"]
+        lines.append("حساب: " + html.escape(str(u.get("name") or "")) + (f" @{html.escape(str(u['username']))}" if u.get("username") else ""))
+    if sx["enabled"] and sx.get("last_ok"):
+        lines.append(f"آخرین خواندن: {int(time.time() - float(sx['last_ok']))} ثانیه پیش · پست‌های خوانده‌شده: {sx['polled']}")
+    if sx.get("floods_1h"):
+        lines.append(f"⚠️ محدودیت تلگرام در ساعت اخیر: {sx['floods_1h']}")
+    if sx.get("last_error"):
+        lines.append("آخرین خطا: <code>" + html.escape(str(sx["last_error"])[:160]) + "</code>")
+    return "\n".join(lines)
+
+
+def ub_screen(chat, mid=None):
+    sx = UB.status()
+    if not sx["configured"] or not sx["libs"]:
+        rows = []
+    elif not sx["logged_in"] or sx["invalid"]:
+        rows = [[B("📱 ورود با شماره", "ad:ub:phone")], [B("🔳 ورود با QR", "ad:ub:qr")]]
+    else:
+        rows = [[B("⏹ غیرفعال کردن" if sx["enabled"] else "▶️ فعال کردن", "ad:ub:toggle", "danger" if sx["enabled"] else "success")],
+                [B("🚪 خروج از حساب", "ad:ub:logout")]]
+    rows += [[B("🔌 تست اتصال به تلگرام", "ad:ub:net")], [B("🔄 بروزرسانی", "ad:ub"), B("↩️ پنل", "ad:home")]]
+    return view(chat, mid, ub_status_text(), rows)
+
+
+def ub_net_test(chat):
+    import socket
+    out = ["🔌 <b>تست اتصال سرور به سرورهای MTProto تلگرام</b>"]
+    good = 0
+    for name, ip in (("DC2", "149.154.167.51"), ("DC4", "149.154.167.91"), ("DC1", "149.154.175.53")):
+        t0 = time.time()
+        try:
+            sock = socket.create_connection((ip, 443), timeout=5)
+            sock.close()
+            good += 1
+            out.append(f"✅ {name} {ip}:443 — {int((time.time() - t0) * 1000)}ms")
+        except Exception as e:
+            out.append(f"❌ {name} {ip}:443 — {html.escape(type(e).__name__)}")
+    out.append("")
+    out.append("همه‌چیز خوب است؛ ورود باید کار کند." if good else
+               "سرور شما به تلگرام (MTProto) وصل نمی‌شود، برای همین کد ارسال نمی‌شود. این مشکل هاست است؛ خروجی TCP پورت 443 به آدرس‌های تلگرام باید باز باشد.")
+    send(chat, "\n".join(out), [[B("↩️ حساب کمکی", "ad:ub")]])
+
+
+def ub_send_qr(chat, url, old_mid=None):
+    import io
+    import segno
+    if old_mid:
+        tg("deleteMessage", chat_id=chat, message_id=old_mid)
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="png", scale=8, border=4)
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                      data={"chat_id": chat, "caption": "🔳 با گوشی حساب کمکی اسکن کنید:\nتلگرام › Settings › Devices › Link Desktop Device\n(QR هر ~۳۰ ثانیه عوض می‌شود)"},
+                      files={"photo": ("qr.png", buf.getvalue(), "image/png")}, timeout=30)
+    try:
+        return int(r.json()["result"]["message_id"])
+    except Exception:
+        return None
+
+
+def ub_qr_thread(uid, chat):
+    try:
+        send(chat, "⏳ در حال ساخت QR…")
+        res = ub_wait(UB.op("qr_start", {}))
+        if not res.get("ok"):
+            return send(chat, "❌ " + html.escape(str(res.get("error") or "خطا")) + "\n\nابتدا «🔌 تست اتصال» را بزنید.", [[B("↩️ حساب کمکی", "ad:ub")]])
+        url, photo = res.get("url"), ub_send_qr(chat, res.get("url"))
+        for _ in range(80):
+            time.sleep(3)
+            r = UB.op("qr_poll", {})
+            if r.get("need_password"):
+                set_state(uid, "ub_qrpw", {})
+                return send(chat, "🔐 رمز تأیید دو مرحله‌ای حساب را بفرستید:")
+            if r.get("ok") and r.get("pending"):
+                if r.get("url") != url:
+                    url, photo = r.get("url"), ub_send_qr(chat, r.get("url"), photo)
+                continue
+            if photo:
+                tg("deleteMessage", chat_id=chat, message_id=photo)
+            if r.get("ok"):
+                return ub_screen(chat)
+            return send(chat, "❌ " + html.escape(str(r.get("error") or "QR منقضی شد")), [[B("↩️ حساب کمکی", "ad:ub")]])
+    except Exception:
+        log.exception("ub_qr_thread")
+        send(chat, "❌ خطای غیرمنتظره در ورود با QR؛ لاگ سرور را ببینید.")
+
+
+def ub_text_thread(uid, chat, step, text, msg_id):
+    try:
+        if step == "ub_phone":
+            res = ub_wait(UB.op("send_code", {"phone": text}))
+            if res.get("ok"):
+                set_state(uid, "ub_code", {})
+                return send(chat, "✅ کد به تلگرام همان حساب ارسال شد.\n\nکد را بفرستید، <b>ولی بین رقم‌ها خط یا فاصله بگذارید</b> "
+                                  "(مثلاً <code>1-2-3-4-5</code>)؛ اگر کد را یکجا بفرستید تلگرام آن را باطل می‌کند.")
+            db.states.delete_one({"_id": uid})
+            return send(chat, "❌ " + html.escape(str(res.get("error") or "خطا")) + "\n\nاگر مشکل اتصال است «🔌 تست اتصال» را بزنید.",
+                        [[B("🔌 تست اتصال", "ad:ub:net")], [B("↩️ حساب کمکی", "ad:ub")]])
+        if step == "ub_code":
+            tg("deleteMessage", chat_id=chat, message_id=msg_id)
+            res = ub_wait(UB.op("sign_in", {"code": re.sub(r"\D", "", text), "password": ""}))
+        elif step == "ub_pw":
+            tg("deleteMessage", chat_id=chat, message_id=msg_id)
+            res = ub_wait(UB.op("sign_in", {"code": "", "password": text}))
+        else:                                                       # ub_qrpw
+            tg("deleteMessage", chat_id=chat, message_id=msg_id)
+            res = UB.op("qr_poll", {"password": text})
+        if res.get("need_password"):
+            set_state(uid, "ub_pw", {})
+            return send(chat, (html.escape(str(res["error"])) + "\n\n" if res.get("error") else "") + "🔐 رمز تأیید دو مرحله‌ای حساب را بفرستید:")
+        if res.get("ok"):
+            db.states.delete_one({"_id": uid})
+            return ub_screen(chat)
+        send(chat, "❌ " + html.escape(str(res.get("error") or "خطا")) + "\nدوباره بفرستید یا از «حساب کمکی» شروع کنید.", [[B("↩️ حساب کمکی", "ad:ub")]])
+    except Exception:
+        log.exception("ub_text_thread")
+        send(chat, "❌ خطای غیرمنتظره؛ لاگ سرور را ببینید.")
+
+
+def ub_admin_text(uid, chat, text, st, msg_id):
+    step = st.get("step")
+    threading.Thread(target=ub_text_thread, args=(uid, chat, step, text.strip(), msg_id), daemon=True).start()
+    if step == "ub_phone":
+        send(chat, "⏳ در حال درخواست کد از تلگرام… (حداکثر ۴۰ ثانیه)")
+
+
+def ub_admin_callback(uid, chat, mid, parts):
+    act = parts[0] if parts else ""
+    if act == "phone":
+        set_state(uid, "ub_phone", {})
+        return view(chat, mid, "📱 شماره‌ی حساب کمکی را با کد کشور بفرستید (مثل <code>+98912xxxxxxx</code>).\n"
+                               "حتماً یک حساب جدا و فقط برای این کار باشد.", [[B("↩️ انصراف", "ad:ub")]])
+    if act == "qr":
+        db.states.delete_one({"_id": uid})
+        threading.Thread(target=ub_qr_thread, args=(uid, chat), daemon=True).start()
+        return
+    if act == "net":
+        threading.Thread(target=ub_net_test, args=(chat,), daemon=True).start()
+        return
+    if act == "toggle":
+        UB.op("toggle", {"enabled": not UB.status()["enabled"]})
+    elif act == "logout":
+        threading.Thread(target=lambda: (ub_wait(UB.op("logout", {})), ub_screen(chat)), daemon=True).start()
+        return
+    return ub_screen(chat, mid)
+
+
 def admin_home_keyboard(lang):
     fa = lang == "fa"
     return [
@@ -849,6 +1023,7 @@ def admin_home_keyboard(lang):
         [B("👥 کاربران" if fa else "👥 Users", "ad:users:0"), B("🔎 جست‌وجو" if fa else "🔎 Search", "ad:search")],
         [B("📣 سفارش‌ها" if fa else "📣 Orders", "ad:campaigns:0"), B("📢 همه‌پیامی" if fa else "📢 Broadcast", "ad:bc")],
         [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0"), B("♻️ بازنشر تسک‌ها" if fa else "♻️ Re-post tasks", "ad:rp")],
+        [B("🤖 حساب کمکی ریکشن" if fa else "🤖 Reaction helper account", "ad:ub", "primary")],
     ] + ([[U("🖥 پنل وب" if fa else "🖥 Web panel", f"{BASE_URL}/panel", "primary")]] if ADMIN_PANEL_KEY else []) + [
         [B("↩️ بازگشت به منو" if fa else "↩️ Main menu", "home")],
     ]
@@ -3648,6 +3823,8 @@ def on_message(msg):
         return send(chat, menu_text(u), main_kb(lang, uid))
 
     st = db.states.find_one({"_id": uid})
+    if st and st.get("step") in ("ub_phone", "ub_code", "ub_pw", "ub_qrpw") and uid in ADMINS and text:
+        return ub_admin_text(uid, chat, text, st, msg.get("message_id"))
     if st and st.get("step") == "admin_bc" and uid in ADMINS and text:
         return admin_bc_text(uid, chat, lang, text, st)
     if st and st.get("step") in ("admin_search", "admin_points") and uid in ADMINS and text:
@@ -3763,6 +3940,10 @@ def on_callback(cq):
         if action == "home":
             db.states.delete_one({"_id": uid})
             return admin_home(chat, lang, mid)
+        if action == "ub":
+            if len(parts) == 2:
+                db.states.delete_one({"_id": uid})
+            return ub_admin_callback(uid, chat, mid, parts[2:])
         if action == "stats":
             return view(chat, mid, H(str(admin_stats_text(lang)) + str(growth_stats_text(lang))), [[B("↩️ پنل" if lang == "fa" else "↩️ Panel", "ad:home")]])
         if action == "users":
