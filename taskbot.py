@@ -3985,14 +3985,14 @@ def allowed_nudge_emojis(chat_id):
     r = tg("getChat", chat_id=chat_id)
     prefer = ["\U0001F44D", "\u2764", "\U0001F525", "\U0001F44F", "\U0001F389"]
     if not r.get("ok"):
-        return prefer[:2], None
+        return prefer[:4], None
     allowed = (r.get("result") or {}).get("available_reactions")
     if allowed is None:                       # field absent = every emoji reaction is allowed
-        out, err = prefer[:2], None
+        out, err = prefer[:4], None
     else:
         emojis = [x.get("emoji") for x in allowed if x.get("type") == "emoji" and x.get("emoji")]
         out = [e for e in prefer if e in emojis] + [e for e in emojis if e not in prefer]
-        out, err = out[:2], (None if emojis else "channel reactions are disabled or custom-only")
+        out, err = out[:4], (None if emojis else "channel reactions are disabled or custom-only")
     _emoji_cache[chat_id] = (time.time(), out, err)
     return out, err
 
@@ -4006,26 +4006,25 @@ def nudge_once(chat_id, mid):
     w = db.reaction_watch.find_one({"_id": wkey}) or {}
     current = w.get("bot_emoji")
     ok, detail = False, why or ""
-    if emojis:
-        target = next((e for e in emojis if e != current), None)
-        if target is None:
-            detail = "only one reaction emoji is allowed in this channel; cannot swap to refresh"
-        else:
-            if not current:
-                # the first reaction of the bot raises the total by one: never pay it to a user
-                db.reaction_watch.update_one({"_id": wkey}, {"$set": {"nudge_until": time.time() + NUDGE_ABSORB_SEC,
-                                                                      "nudge_plus": 1, "nudge_minus": 0}}, upsert=True)
-            r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": target}])
-            ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
-            if ok:
-                db.reaction_watch.update_one({"_id": wkey}, {"$set": {"bot_emoji": target}}, upsert=True)
-            elif not current:
-                db.reaction_watch.update_one({"_id": wkey}, {"$unset": {"nudge_until": "", "nudge_plus": "", "nudge_minus": ""}})
+    candidates = [e for e in emojis if e != current]
+    if emojis and not candidates:
+        detail = "only one reaction emoji is allowed in this channel; cannot swap to refresh"
+    for target in candidates:                      # a rejected emoji (REACTION_INVALID) falls through to the next one
+        r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": target}])
+        ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
+        if ok:
+            fields = {"bot_emoji": target}
+            if not current:                        # the bot's first reaction raises the total by one: never pay it to a user
+                fields.update(nudge_until=time.time() + NUDGE_ABSORB_SEC, nudge_plus=1, nudge_minus=0)
+            db.reaction_watch.update_one({"_id": wkey}, {"$set": fields}, upsert=True)
+            break
+        if "reaction_invalid" not in detail.lower():
+            break
     if not ok:
         log.warning("nudge_reaction failed for %s/%s: %s", chat_id, mid, detail)
     try:
-        db.reaction_watch.update_one({"_id": wkey}, {"$set": {"chat_id": chat_id, "mid": int(mid), "nudge_at": time.time(), "nudge_ok": ok,
-                                                           "nudge_err": detail[:200]}}, upsert=True)
+        db.reaction_watch.update_one({"_id": wkey}, {"$set": {"chat_id": chat_id, "mid": int(mid), "nudge_at": time.time(),
+                                                               "nudge_ok": ok, "nudge_err": detail[:200]}}, upsert=True)
     except Exception:
         log.exception("nudge record")
     return ok, detail
