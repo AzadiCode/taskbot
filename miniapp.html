@@ -98,13 +98,25 @@ main{padding-top:6px}
 .ring .trk{fill:none;stroke:rgba(158,172,255,.2);stroke-width:7}
 .ring .arc{fill:none;stroke:var(--lv);stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--lv) 70%,transparent))}
 .ring .sat{fill:#fff;filter:drop-shadow(0 0 7px var(--lv));transition:transform 1.4s cubic-bezier(.2,.8,.2,1);transform-origin:104px 104px}
-.orbit-core{position:absolute;inset:34px;display:grid;place-items:center}
+.orbit-core{position:absolute;inset:24px;display:grid;place-items:center}
 .orbit-core .emb{width:100%;height:100%}
 .orbit-lvl{position:absolute;inset-inline:0;bottom:-2px;text-align:center}
 .orbit-lvl span{display:inline-block;padding:2px 12px;border-radius:99px;background:var(--ink);border:1px solid color-mix(in srgb,var(--lv) 55%,transparent);color:var(--lv);font-weight:800;font-size:12px}
 .orbit-title{text-align:center;font-size:20px;font-weight:800;margin:16px 0 8px}
 .orbit-sub{display:flex;justify-content:center;min-height:26px;margin:0 auto 14px}
-.emb{display:block;filter:drop-shadow(0 0 9px color-mix(in srgb,var(--c,var(--lv)) 55%,transparent))}
+.emb{display:block;overflow:visible;filter:drop-shadow(0 0 9px color-mix(in srgb,var(--c,var(--lv)) 55%,transparent))}
+
+/* member-crowd badge motion */
+.emb .p{transform-box:fill-box;transform-origin:50% 100%}
+.emb.live .p{animation:popin .65s cubic-bezier(.2,1.5,.4,1) backwards,bob 3.2s ease-in-out infinite;animation-delay:var(--d),calc(var(--d) + .65s)}
+.emb .pulse{opacity:0;transform-box:fill-box;transform-origin:center}
+.emb.live .pulse{animation:pulse 2.8s ease-out infinite}
+.emb .crown{transform-box:fill-box;transform-origin:50% 100%}
+.emb.live .crown{animation:tw 2.2s ease-in-out infinite}
+@keyframes popin{from{transform:scale(0);opacity:0}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.8px)}}
+@keyframes pulse{0%{transform:scale(.94);opacity:.55}100%{transform:scale(1.22);opacity:0}}
+@keyframes tw{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.12);filter:brightness(1.35)}}
 
 /* ---------- home blocks ---------- */
 .gold-banner{display:flex;align-items:center;gap:10px;margin-top:12px;padding:11px 14px;border-radius:16px;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 38%,transparent);color:var(--gold);font-weight:700;font-size:13px}
@@ -421,10 +433,21 @@ function openLink(url){if(!url)return;if(tg?.openTelegramLink&&url.startsWith('h
 function setLang(l){state.lang=l==='fa'?'fa':'en';document.documentElement.lang=state.lang;document.documentElement.dir=state.lang==='fa'?'rtl':'ltr';}
 
 /* ---------- visuals ---------- */
-function emblem(idx,cls=''){
-  const c=hue(idx),n=idx+1;let bars='';
-  for(let k=0;k<5;k++){const h=14+k*9,x=21+k*13;bars+=`<rect x="${x}" y="${76-h}" width="9" height="${h}" rx="3" fill="${c}" fill-opacity="${k<n?1:.22}"/>`;}
-  return `<svg class="emb ${cls}" style="--c:${c}" viewBox="0 0 100 100" aria-hidden="true"><rect x="6" y="6" width="88" height="88" rx="28" fill="${c}" fill-opacity=".14" stroke="${c}" stroke-opacity=".5" stroke-width="1.6"/>${bars}</svg>`;
+/* Level badge: a gathering of members. Level 1 = you alone, each level adds more people; Legend adds a crown. */
+const CROWD=[[[50,60,1.1]],[[30,58,.8],[70,58,.8]],[[38,44,.62],[62,44,.62]],[[14,60,.62],[86,60,.62]],[[24,44,.55],[76,44,.55]]];
+function person(x,y,s,c,op,ghost,d){
+  const w=11.5*s,top=y+s,bot=y+14*s,st=ghost?`fill="none" stroke="${c}" stroke-opacity=".6" stroke-width="1.1" stroke-dasharray="2.4 2.4"`:`fill="${c}" fill-opacity="${op}"`;
+  return `<g class="p" style="--d:${d}s" ${st}><circle cx="${x}" cy="${(y-13*s).toFixed(1)}" r="${(7.2*s).toFixed(1)}"/><path d="M${(x-w).toFixed(1)} ${bot.toFixed(1)}C${(x-w).toFixed(1)} ${top.toFixed(1)} ${(x+w).toFixed(1)} ${top.toFixed(1)} ${(x+w).toFixed(1)} ${bot.toFixed(1)}Z"/></g>`;
+}
+function emblem(idx,cls='',ghost=false){
+  const c=hue(idx);let list=[];
+  for(let k=0;k<=idx;k++)CROWD[k].forEach((p,n)=>list.push([...p,k,n]));
+  list.sort((a,b)=>a[2]-b[2]||a[1]-b[1]);
+  let g='';
+  if(ghost&&CROWD[idx+1])CROWD[idx+1].forEach((p,n)=>{g+=person(p[0],p[1],p[2],c,0,true,0)});
+  const people=list.map((p,n)=>person(p[0],p[1],p[2],c,Math.min(1,.4+p[2]*.55),false,(n*.09).toFixed(2))).join('');
+  const crown=idx>=4?`<path class="crown" d="M42 38.5l2.6-8 5.4 5 5.4-5 2.6 8z" fill="#ffd36b"/>`:'';
+  return `<svg class="emb ${cls}" style="--c:${c}" viewBox="0 0 100 100" aria-hidden="true"><circle class="pulse" cx="50" cy="50" r="46" fill="none" stroke="${c}" stroke-width="1.5"/><circle cx="50" cy="50" r="46" fill="${c}" fill-opacity=".13" stroke="${c}" stroke-opacity=".5" stroke-width="1.6"/>${g}${people}${crown}</svg>`;
 }
 const lvl=()=>state.g?.level||{idx:state.user?.level||0,done:state.user?.doneTasks||0,progress:0,toGo:0,to:null,levels:[]};
 const lvName=i=>lvl().levels[i]?.name||'';
@@ -436,7 +459,7 @@ function applyHue(){document.documentElement.style.setProperty('--lv',hue(lvl().
 function renderBar(){
   const u=state.user;if(!u){$('#topbar').innerHTML='';return;}
   const L=lvl();
-  $('#topbar').innerHTML=`<div class="bar-id">${emblem(L.idx)}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${t('levelN',{n:L.idx+1})}${lvName(L.idx)?' · '+esc(lvName(L.idx)):''}</div></div></div>
+  $('#topbar').innerHTML=`<div class="bar-id">${emblem(L.idx,'live')}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${t('levelN',{n:L.idx+1})}${lvName(L.idx)?' · '+esc(lvName(L.idx)):''}</div></div></div>
   <button class="bal" id="balChip" data-act="go" data-p="rewards" aria-label="${t('stars')}">${ic('star','fill')}${N(u.points)}</button>`;
 }
 function renderNav(){
@@ -484,7 +507,7 @@ function renderHome(){
   const whText=wh==='ready'?t('wheelReady'):wh==='used'?t('wheelUsed'):t('wheelLocked');const whIcon=wh==='locked'?'lock':'star';
   const lockPerks=nx?(nx.unlocks||[]).map(x=>x.text).join(' · '):'';
   const preview=liveTasks().slice(0,3);
-  return `<section class="orbit-card"><div class="orbit-wrap"><svg class="ring" viewBox="0 0 208 208" aria-hidden="true"><circle class="trk" cx="104" cy="104" r="96"/><circle class="arc" id="arc" cx="104" cy="104" r="96" stroke-dasharray="603.2" stroke-dashoffset="603.2"/><circle class="sat" id="sat" cx="200" cy="104" r="6.5"/></svg><div class="orbit-core">${emblem(L.idx)}</div><div class="orbit-lvl"><span>${esc(lvName(L.idx))}</span></div></div>
+  return `<section class="orbit-card"><div class="orbit-wrap"><svg class="ring" viewBox="0 0 208 208" aria-hidden="true"><circle class="trk" cx="104" cy="104" r="96"/><circle class="arc" id="arc" cx="104" cy="104" r="96" stroke-dasharray="603.2" stroke-dashoffset="603.2"/><circle class="sat" id="sat" cx="200" cy="104" r="6.5"/></svg><div class="orbit-core">${emblem(L.idx,'live',true)}</div><div class="orbit-lvl"><span>${esc(lvName(L.idx))}</span></div></div>
    <div class="orbit-title">${title}</div><div class="orbit-sub">${sub}</div><button class="btn primary block" data-act="go" data-p="tasks">${ic('bolt','sm')}${t('earnNow')}</button></section>
    ${g?.golden?.active?`<div class="gold-banner">${ic('bolt')}<span>${t('golden',{m:`<span class="num">${g.golden.mult}</span>`})}</span></div>`:''}
    ${g?`<div class="duo"><div class="card"><div class="mini-k">${t('dailyGift')}</div><div class="mini-v">${N(gift.streak)} <small>${t('dayStreak')}</small></div><div class="streak">${bars}</div>${giftBtn}</div>
@@ -522,7 +545,7 @@ function subPath(){
   const L=lvl();
   return `<div class="card" style="margin-bottom:16px"><div class="row" style="margin-bottom:10px"><b class="grow">${esc(lvName(L.idx))}</b><span class="chip">${t('doneCount',{n:fmt(L.done)})}</span></div><div class="bar-track"><div class="bar-fill" style="width:${L.progress}%;background:var(--lv)"></div></div>
    <div class="camp-foot" style="margin-top:8px"><span>${fmt(L.from)}</span><span>${L.to?fmt(L.to):'MAX'}</span></div></div>
-   <div class="lv-path">${L.levels.map((l,i)=>`<div class="lv ${i<L.idx?'past':i===L.idx?'now':'future'}" style="--lv:${hue(i)}">${emblem(i)}<div class="lv-body"><div class="lv-head"><b>${esc(l.name)}</b>${i===L.idx?`<span class="chip brand">${t('youAreHere')}</span>`:i<L.idx?`<span class="chip mint">${ic('check','sm')}</span>`:`<span class="chip">${ic('lock','sm')}${t('needTasks',{n:fmt(l.need)})}</span>`}</div><ul class="perks ${i>L.idx?'fut':''}">${perksOf(l,i)}</ul></div></div>`).join('')}</div>`;
+   <div class="lv-path">${L.levels.map((l,i)=>`<div class="lv ${i<L.idx?'past':i===L.idx?'now':'future'}" style="--lv:${hue(i)}">${emblem(i,i===L.idx?'live':'')}<div class="lv-body"><div class="lv-head"><b>${esc(l.name)}</b>${i===L.idx?`<span class="chip brand">${t('youAreHere')}</span>`:i<L.idx?`<span class="chip mint">${ic('check','sm')}</span>`:`<span class="chip">${ic('lock','sm')}${t('needTasks',{n:fmt(l.need)})}</span>`}</div><ul class="perks ${i>L.idx?'fut':''}">${perksOf(l,i)}</ul></div></div>`).join('')}</div>`;
 }
 function wheelSvg(){
   const P=state.g.wheel.prizes,n=P.length,a=360/n,top=Math.max(...P);let seg='';
@@ -566,7 +589,7 @@ function renderRewards(){
 function renderProfile(){
   const u=state.user,g=state.g,L=lvl(),inv=g?.invite;
   const ladder=inv?`<div class="ladder">${inv.ladder.map(r=>`<div class="${r.have?'have':''}"><b>${r.need}</b>${t('friendsUnit')}<br><span class="num">+${r.reward}</span></div>`).join('')}</div>`:'';
-  return `<div class="card"><div class="me-card">${emblem(L.idx)}<div class="grow"><div class="me-name">${esc(u.name||t('user'))}</div><div class="muted" style="font-size:12.5px">${u.username?`<span class="num">@${esc(u.username)}</span> · `:''}ID <span class="num">${u.id}</span></div><div class="t-meta"><span class="chip" style="color:var(--lv)">${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div></div></div>
+  return `<div class="card"><div class="me-card">${emblem(L.idx,'live')}<div class="grow"><div class="me-name">${esc(u.name||t('user'))}</div><div class="muted" style="font-size:12.5px">${u.username?`<span class="num">@${esc(u.username)}</span> · `:''}ID <span class="num">${u.id}</span></div><div class="t-meta"><span class="chip" style="color:var(--lv)">${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div></div></div>
    <div class="grid2"><div class="stat"><b>${N(u.earned)}</b><span>${t('totalEarned')}</span></div><div class="stat"><b>${N(u.hold)}</b><span>${t('onHold')}</span></div><div class="stat"><b>${N(u.referrals)}</b><span>${t('invited')}</span></div><div class="stat"><b>${N(inv?inv.active:0)}</b><span>${t('activeFriends')}</span></div></div>
    ${inv&&inv.link?`<div class="card" style="margin-top:10px"><b style="font-size:16px">${t('inviteTitle')}</b><div class="muted" style="font-size:12.5px;margin:2px 0 12px">${t('inviteSub',{w:inv.welcomeBonus,a:inv.activeBonus,n:inv.activeTasks})}</div><div class="invite-link">${ic('link','sm')}<span>${esc(inv.link)}</span></div><div class="t-act"><button class="btn ghost" data-act="copy">${ic('copy','sm')}${t('copyLink')}</button><button class="btn primary" data-act="share">${ic('share','sm')}${t('share')}</button></div><div class="ach-group" style="margin-bottom:0">${t('ladderTitle')}</div>${ladder}</div>`:''}
    <div class="card" style="margin-top:10px;padding-top:4px;padding-bottom:4px"><div class="set-row"><div><b>${t('language')}</b></div><div class="seg" style="min-width:150px"><button class="${state.lang==='en'?'on':''}" data-act="lang" data-l="en">English</button><button class="${state.lang==='fa'?'on':''}" data-act="lang" data-l="fa">فارسی</button></div></div>
@@ -591,7 +614,7 @@ function go(p){state.page=p;render();window.scrollTo({top:0});}
 function celebrate({idx=null,k,v,s,color}){
   const c=color||(idx!==null?hue(idx):'#ffc759');
   $('#cele').style.setProperty('--c',c);
-  $('#cele').innerHTML=`${idx!==null?emblem(idx):`<div class="cele-star" style="width:90px;height:90px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">${ic('star','fill')}</div>`}<div class="cele-k">${esc(k)}</div><div class="cele-v">${esc(v)}</div><div class="cele-s">${esc(s||'')}</div><button class="btn primary block" data-act="closecele">${t('cont')}</button>`;
+  $('#cele').innerHTML=`${idx!==null?emblem(idx,'live'):`<div class="cele-star" style="width:90px;height:90px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">${ic('star','fill')}</div>`}<div class="cele-k">${esc(k)}</div><div class="cele-v">${esc(v)}</div><div class="cele-s">${esc(s||'')}</div><button class="btn primary block" data-act="closecele">${t('cont')}</button>`;
   $('#celeVeil').classList.add('show');haptic('success');
 }
 function bumpBal(){const b=$('#balChip');if(b){b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');}}

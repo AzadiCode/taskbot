@@ -4113,14 +4113,14 @@ def miniapp_update_profile():
 
 # ═════════════════════════ Mini App · rewards, levels & growth (v55) ═════════════════════════
 # Display names for the 5 levels (thresholds, bonuses, multipliers and caps stay in LEVELS above).
-MA_LEVEL_NAMES = [("Spark", "جرقه"), ("Comet", "شهاب"), ("Nova", "نواختر"), ("Quasar", "اختروش"), ("Galaxy", "کهکشان")]
+MA_LEVEL_NAMES = [("Rookie", "تازه‌کار"), ("Active", "فعال"), ("Pro", "حرفه‌ای"), ("Elite", "نخبه"), ("Legend", "افسانه‌ای")]
 # Perks shown on the level path. soon=True items are teasers only (nothing is gated behind them yet).
 MA_UNLOCKS = {
     0: [("Create campaigns and earn Stars", "ساخت کمپین و کسب استارز", False)],
-    1: [("Higher daily gift", "هدیه‌ی روزانه‌ی بیشتر", False)],
+    1: [("Bigger daily gift", "هدیه روزانه بزرگ‌تر", False)],
     2: [("Channel growth report", "گزارش رشد کانال", True)],
-    3: [("Member-retention bot for channel owners", "ربات نگهداشت ممبر برای صاحبان کانال", True)],
-    4: [("Partner programme", "برنامه‌ی همکاری ویژه", True)],
+    3: [("Member-retention bot", "ربات نگهداشت ممبر", True)],
+    4: [("Partner programme", "برنامه همکاری", True)],
 }
 
 
