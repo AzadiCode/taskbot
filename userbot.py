@@ -26,6 +26,7 @@ import random
 import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 from pymongo.errors import DuplicateKeyError
 
@@ -89,6 +90,7 @@ class Manager:
         self._polled = 0
         self._qr = None
         self._lead_until = 0.0
+        self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ub-bg")
 
     # ───────────────────────── crypto / storage ─────────────────────────
     def _fernet(self):
@@ -146,7 +148,18 @@ class Manager:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
     async def _bg(self, fn, *a):
-        return await self.loop.run_in_executor(None, fn, *a)
+        # Own pool instead of the loop's default executor: the default one is shut down
+        # when the interpreter/worker exits -> "cannot schedule new futures after shutdown".
+        try:
+            return await self.loop.run_in_executor(self._pool, fn, *a)
+        except RuntimeError as e:
+            if "shutdown" not in str(e) and "interpreter" not in str(e):
+                raise
+            try:
+                self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ub-bg")
+                return await self.loop.run_in_executor(self._pool, fn, *a)
+            except RuntimeError:
+                return fn(*a)          # last resort: tiny DB call, run inline
 
     async def _connect(self, client):
         await asyncio.wait_for(client.connect(), CONNECT_TIMEOUT)
