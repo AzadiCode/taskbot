@@ -36,6 +36,8 @@ WARM_SEC = float(os.environ.get("UB_WARM_SEC", "45"))
 MAX_PER_MIN = int(os.environ.get("UB_MAX_PER_MIN", "20"))
 MIN_GAP = (1.5, 2.5)          # seconds between two requests (random)
 FEED_REFRESH_SEC = 45         # unchanged totals are re-sent at most this often (keeps the snapshot "fresh")
+CONNECT_TIMEOUT = 20         # seconds to reach Telegram over MTProto before giving up
+JOB_TIMEOUT = 40             # login steps always finish (or fail with a clear message) within this time
 FLOOD_LIMIT = 3               # floods per hour before the helper switches itself off
 
 
@@ -138,6 +140,16 @@ class Manager:
     async def _bg(self, fn, *a):
         return await self.loop.run_in_executor(None, fn, *a)
 
+    async def _connect(self, client):
+        await asyncio.wait_for(client.connect(), CONNECT_TIMEOUT)
+
+    @staticmethod
+    async def _bye(client):
+        try:
+            await asyncio.wait_for(client.disconnect(), 5)
+        except Exception:
+            pass
+
     async def _client(self, session="", updates=False):
         from telethon import TelegramClient
         from telethon.sessions import StringSession
@@ -159,26 +171,66 @@ class Manager:
                 "invalid": bool(c.get("session_invalid")),
                 "login_stage": login.get("stage") if login and now - float(login.get("at", 0)) < 900 else ""}
 
+    def _submit(self, coro, timeout=None):
+        """Run a slow Telegram call in the background; the HTTP request returns at once (gunicorn kills requests > 30 s)."""
+        timeout = timeout or JOB_TIMEOUT
+        jid = f"{int(time.time() * 1000)}{random.randint(100, 999)}"
+        now = time.time()
+        try:
+            self.db.userbot.delete_many({"_id": {"$regex": "^job:"}, "at": {"$lt": now - 600}})
+        except Exception:
+            pass
+        self.db.userbot.update_one({"_id": "job:" + jid}, {"$set": {"status": "running", "at": now}}, upsert=True)
+
+        async def runner():
+            try:
+                res = await asyncio.wait_for(coro, timeout)
+            except asyncio.TimeoutError:
+                res = {"ok": False, "error": "اتصال به سرورهای تلگرام (MTProto) برقرار نشد؛ سرور شما شاید دسترسی خروجی TCP به تلگرام ندارد."}
+            except Exception as e:
+                log.exception("userbot job")
+                res = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:160]}"}
+            await self._bg(self._job_done, jid, res)
+
+        if not self._ready.wait(8):
+            coro.close()
+            raise RuntimeError("userbot loop is not running")
+        asyncio.run_coroutine_threadsafe(runner(), self.loop)
+        return {"ok": True, "job": jid}
+
+    def _job_done(self, jid, res):
+        self.db.userbot.update_one({"_id": "job:" + jid}, {"$set": {"status": "done", "res": res, "at": time.time()}}, upsert=True)
+
+    def _job_status(self, jid):
+        j = self.db.userbot.find_one({"_id": "job:" + str(jid)})
+        if not j:
+            return {"ok": False, "error": "job lost"}
+        if j.get("status") != "done":
+            return {"ok": True, "running": True}
+        return j.get("res") or {"ok": False, "error": "empty result"}
+
     def op(self, name, body):
-        """Single entry point for the panel. Never raises."""
+        """Single entry point for the panel. Never raises, never blocks longer than a few seconds."""
         try:
             self.start()
             if not (self.configured and self.libs_ok) and name != "status":
                 return {"ok": False, "error": "TG_API_ID / TG_API_HASH یا کتابخانه‌ی telethon تنظیم نشده است."}
             if name == "status":
                 return {"ok": True, **self.status()}
+            if name == "job":
+                return self._job_status(body.get("id"))
             if name == "send_code":
-                return self.call(self._send_code(str(body.get("phone") or "")), 45)
+                return self._submit(self._send_code(str(body.get("phone") or "")))
             if name == "sign_in":
-                return self.call(self._sign_in(str(body.get("code") or "").strip(), str(body.get("password") or "")), 45)
+                return self._submit(self._sign_in(str(body.get("code") or "").strip(), str(body.get("password") or "")))
             if name == "qr_start":
-                return self.call(self._qr_start(), 30)
+                return self._submit(self._qr_start())
             if name == "qr_poll":
-                return self.call(self._qr_poll(str(body.get("password") or "")), 30)
+                return self.call(self._qr_poll(str(body.get("password") or "")), 20)
             if name == "toggle":
                 return self._toggle(bool(body.get("enabled")))
             if name == "logout":
-                return self.call(self._logout(), 30)
+                return self._submit(self._logout(), 30)
             return {"ok": False, "error": "unknown op"}
         except Exception as e:
             log.exception("userbot op %s", name)
@@ -206,11 +258,11 @@ class Manager:
             return {"ok": False, "error": "شماره را با کد کشور وارد کنید (مثل +98912...)."}
         client = await self._client("")
         try:
-            await client.connect()
+            await self._connect(client)
             sent = await client.send_code_request(phone)
             tmp = client.session.save()
         finally:
-            await client.disconnect()
+            await self._bye(client)
         self.db.userbot.update_one({"_id": "login"}, {"$set": {"phone": phone, "hash": sent.phone_code_hash,
                                                                 "tmp": self._enc(tmp), "stage": "code", "at": time.time()}}, upsert=True)
         return {"ok": True, "stage": "code"}
@@ -222,7 +274,7 @@ class Manager:
             return {"ok": False, "error": "مهلت کد تمام شد؛ دوباره «ارسال کد» بزنید."}
         client = await self._client(self._dec(L["tmp"]))
         try:
-            await client.connect()
+            await self._connect(client)
             try:
                 if L.get("stage") == "password":
                     if not password:
@@ -245,7 +297,7 @@ class Manager:
                 return {"ok": False, "need_password": True, "error": "رمز تأیید دو مرحله‌ای اشتباه است."}
             return await self._finish_login(client, L.get("phone"))
         finally:
-            await client.disconnect()
+            await self._bye(client)
 
     async def _finish_login(self, client, phone):
         me = await client.get_me()
@@ -274,7 +326,7 @@ class Manager:
             except Exception:
                 pass
             try:
-                await s["client"].disconnect()
+                await self._bye(s["client"])
             except Exception:
                 pass
 
@@ -300,7 +352,7 @@ class Manager:
     async def _qr_start(self):
         await self._qr_drop()
         client = await self._client("", updates=True)      # QR login needs the update stream
-        await client.connect()
+        await self._connect(client)
         qr = await client.qr_login()
         s = {"client": client, "qr": qr, "url": qr.url, "at": time.time()}
         s["task"] = asyncio.ensure_future(self._qr_runner(s))
@@ -339,11 +391,11 @@ class Manager:
         if c.get("session"):
             try:
                 client = await self._client(self._dec(c["session"]))
-                await client.connect()
+                await self._connect(client)
                 try:
                     await client.log_out()
                 finally:
-                    await client.disconnect()
+                    await self._bye(client)
             except Exception:
                 log.exception("userbot logout")
         self.db.userbot.update_one({"_id": "cfg"}, {"$unset": {"session": "", "user": "", "phone_masked": ""},
@@ -374,7 +426,7 @@ class Manager:
         self._ents.clear()
         if c:
             try:
-                await c.disconnect()
+                await self._bye(c)
             except Exception:
                 pass
 
@@ -385,9 +437,9 @@ class Manager:
             self._set(session_invalid=True, enabled=False, state="invalid", last_error="decrypt failed (SECRET_KEY changed?)")
             return False
         client = await self._client(session)
-        await client.connect()
+        await self._connect(client)
         if not await client.is_user_authorized():
-            await client.disconnect()
+            await self._bye(client)
             self._set(session_invalid=True, enabled=False, state="invalid", last_error="session is no longer authorized")
             self.notify("⚠️ حساب کمکی ریکشن از تلگرام خارج شده است؛ از پنل دوباره وارد کنید.")
             return False
@@ -417,9 +469,13 @@ class Manager:
                 await asyncio.sleep(random.uniform(1.0, 2.0))
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as e:
                 log.exception("userbot main")
-                await asyncio.sleep(10)
+                try:
+                    self._set(last_error=(f"{type(e).__name__}: {str(e)[:120]}" or "error"), state="error")
+                except Exception:
+                    pass
+                await asyncio.sleep(15)
 
     async def _heartbeat(self):
         now = time.time()

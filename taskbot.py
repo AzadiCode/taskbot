@@ -4903,7 +4903,9 @@ $('upd').textContent='· بروزرسانی خودکار هر ۱۰ ثانیه';u
 async function loadUsers(reset){if(reset)skip=0;const d=await api('/api/panel/users',{q:$('q').value,skip:skip});$('users').innerHTML=(reset?head:$('users').innerHTML)+d.users.map(row).join('')}
 function more(){skip+=30;loadUsers(false)}
 let ubQrTimer=null,ubEn=false;
-async function ub(op,extra){return api('/api/panel/userbot',Object.assign({op:op},extra||{}))}
+async function ub(op,extra){try{const r=await fetch('/api/panel/userbot',{method:'POST',headers:{'X-Panel-Key':KEY,'Content-Type':'application/json'},body:JSON.stringify(Object.assign({op:op},extra||{}))});
+if(r.status===401)return{ok:false,error:'کلید پنل نامعتبر است'};const t=await r.text();try{return JSON.parse(t)}catch(e){return{ok:false,error:'پاسخ نامعتبر از سرور (کد '+r.status+'). احتمالاً سرور مهلت را تمام کرد.'}}}catch(e){return{ok:false,error:'ارتباط با سرور قطع شد'}}}
+async function ubRun(op,extra){let d=await ub(op,extra);if(!d.job)return d;const id=d.job;for(let i=0;i<70;i++){await new Promise(r=>setTimeout(r,1200));d=await ub('job',{id:id});if(!d.running)return d}return{ok:false,error:'مهلت تمام شد'}}
 function ubMsg(t){$('ubmsg').textContent=t||''}
 async function ubStatus(){const d=await ub('status');const ok=d.configured&&d.libs;
 $('ubnone').style.display=ok?'none':'block';$('ubout').style.display=ok&&!d.logged_in?'block':'none';$('ubin').style.display=ok&&d.logged_in?'block':'none';
@@ -4913,10 +4915,10 @@ if(d.user)t+=' · '+esc(d.user.name)+(d.user.username?' @'+esc(d.user.username):
 if(d.enabled)t+=' · آخرین خواندن: '+ago(d.last_ok)+' · پست‌های خوانده‌شده: '+n(d.polled);
 if(d.floods_1h)t+=' · ⚠️ محدودیت تلگرام در ساعت اخیر: '+d.floods_1h;
 if(d.last_error)t+=' · '+esc(d.last_error);$('ubst').innerHTML=t}
-async function ubSend(){ubMsg('در حال ارسال کد…');const d=await ub('send_code',{phone:$('ubphone').value});ubMsg(d.ok?'کد به تلگرام حساب کمکی ارسال شد.':(d.error||'خطا'))}
-async function ubSign(){ubMsg('…');const d=await ub('sign_in',{code:$('ubcode').value,password:$('ubpw1').value});
+async function ubSend(){ubMsg('در حال ارسال کد…');const d=await ubRun('send_code',{phone:$('ubphone').value});ubMsg(d.ok?'کد به تلگرام حساب کمکی ارسال شد.':(d.error||'خطا'))}
+async function ubSign(){ubMsg('…');const d=await ubRun('sign_in',{code:$('ubcode').value,password:$('ubpw1').value});
 if(d.need_password)ubMsg(d.error||'رمز تأیید دو مرحله‌ای را وارد کنید و دوباره «ورود» بزنید.');else if(d.ok){ubMsg('وارد شد. برای شروع «فعال کردن» را بزنید.');ubStatus()}else ubMsg(d.error||'خطا')}
-async function ubQr(){ubMsg('');const d=await ub('qr_start');if(!d.ok){ubMsg(d.error||'خطا');return}ubShowQr(d);clearInterval(ubQrTimer);ubQrTimer=setInterval(ubQrPoll,3000)}
+async function ubQr(){ubMsg('در حال ساخت QR…');const d=await ubRun('qr_start');ubMsg('');if(!d.ok){ubMsg(d.error||'خطا');return}ubShowQr(d);clearInterval(ubQrTimer);ubQrTimer=setInterval(ubQrPoll,3000)}
 function ubShowQr(d){const b=$('ubqr');b.style.display='block';b.innerHTML=d.svg?d.svg:'<code style="color:#000;word-break:break-all">'+esc(d.url)+'</code>'}
 async function ubQrPoll(pw){const d=await ub('qr_poll',{password:pw||''});
 if(d.pending){ubShowQr(d);return}
@@ -4925,7 +4927,7 @@ clearInterval(ubQrTimer);$('ubqr').style.display='none';$('ubqrpw').style.displa
 if(d.ok){ubMsg('وارد شد. برای شروع «فعال کردن» را بزنید.');ubStatus()}else ubMsg(d.error||'QR منقضی شد؛ دوباره بزنید.')}
 function ubQrPw(){ubQrPoll($('ubpw2').value)}
 async function ubToggle(){const d=await ub('toggle',{enabled:!ubEn});ubMsg(d.ok?'':(d.error||'خطا'));ubStatus()}
-async function ubLogout(){if(!confirm('از حساب کمکی خارج شوید؟'))return;await ub('logout');ubStatus()}
+async function ubLogout(){if(!confirm('از حساب کمکی خارج شوید؟'))return;await ubRun('logout');ubStatus()}
 if(KEY){$('key').value=KEY;go()}
 </script></body></html>"""
 
