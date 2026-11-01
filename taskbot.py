@@ -4292,7 +4292,8 @@ def miniapp_growth_data(u):
                         "image": ("/invite-banner?v=" + hashlib.md5(icfg["photo"].encode()).hexdigest()[:8]) if icfg["photo"] else ""}
     invite["isAdmin"] = uid in ADMINS
     if uid in ADMINS:
-        invite["settings"] = {"text_en": icfg["text_en"], "text_fa": icfg["text_fa"], "photo": icfg["photo"] if icfg["photo"].startswith("https://") else ""}
+        invite["settings"] = {"text_en": icfg["text_en"], "text_fa": icfg["text_fa"], "hasPhoto": bool(icfg["photo"]),
+                              "photo": icfg["photo"] if icfg["photo"].startswith("https://") else ""}
 
     today_done = counter_get(f"d:{uid}:{today}")
     cap = DAILY_TASKS + LEVELS[idx][6]
@@ -4407,6 +4408,34 @@ def miniapp_invite_settings():
     if upd:
         invite_set(**upd)
     fresh = db.users.find_one({"_id": int(u["_id"])}) or u
+    return jsonify(ok=True, **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
+
+
+@app.post("/api/miniapp/invite/upload")
+def miniapp_invite_upload():
+    """Admin uploads the banner image from the Mini App. It is sent to the admin's own chat (doubles as a preview); Telegram's file_id is stored."""
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    if uid not in ADMINS:
+        return jsonify(error="forbidden", message="Admins only."), 403
+    f = request.files.get("image")
+    data = f.read(8 * 1024 * 1024 + 1) if f else b""
+    if not data or len(data) > 8 * 1024 * 1024 or not (f.mimetype or "").startswith("image/"):
+        return jsonify(error="bad_image_file"), 400
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                          data={"chat_id": uid, "caption": invite_caption(lang_of(u), uid), "parse_mode": "HTML"},
+                          files={"photo": ("banner.jpg", data, f.mimetype)}, timeout=40).json()
+        file_id = r["result"]["photo"][-1]["file_id"] if r.get("ok") else ""
+    except Exception:
+        log.exception("invite upload")
+        file_id = ""
+    if not file_id:
+        return jsonify(error="banner_failed"), 502
+    invite_set(photo=file_id)
+    fresh = db.users.find_one({"_id": uid}) or u
     return jsonify(ok=True, **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
 
 

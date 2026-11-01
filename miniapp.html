@@ -248,6 +248,9 @@ main{padding-top:6px}
 .inv-stats div{padding:10px 6px;text-align:center;border-radius:14px;background:var(--panel-2)}
 .inv-stats b{display:block;font-size:18px}
 .inv-stats span{font-size:11px;color:var(--muted)}
+.up-row{display:flex;gap:12px;align-items:center}
+.up-thumb{width:96px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--panel-2);border:1px dashed var(--line-2);display:grid;place-items:center;color:var(--faint);flex:none}
+.up-thumb img{width:100%;height:100%;object-fit:cover}
 .ta{padding:12px 14px;min-height:96px;resize:vertical;line-height:1.7}
 
 /* ---------- nav ---------- */
@@ -384,7 +387,7 @@ en:{
  editBanner:'Edit banner',
  bannerFa:'Persian text',
  bannerEn:'English text',
- bannerHint:'First line is the headline',
+ bannerHint:'First line is the headline',bannerImage:'Banner image',uploadImage:'Upload image',removeImage:'Remove image',imageHint:'Any photo. It is resized automatically.',imageSaved:'Image saved',
  bannerImg:'Image link (https)',
  save:'Save'
 },
@@ -429,13 +432,13 @@ fa:{
  editBanner:'ویرایش بنر',
  bannerFa:'متن فارسی',
  bannerEn:'متن انگلیسی',
- bannerHint:'خط اول عنوان است',
+ bannerHint:'خط اول عنوان است',bannerImage:'تصویر بنر',uploadImage:'آپلود تصویر',removeImage:'حذف تصویر',imageHint:'هر عکسی؛ اندازه‌اش خودکار تنظیم می‌شود.',imageSaved:'تصویر ذخیره شد',
  bannerImg:'لینک تصویر (https)',
  save:'ذخیره'
 }};
 const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
-Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.',banner_failed:'Could not send. Open the bot chat first.',bad_image:'Image link must start with https://'});
-Object.assign(apiErrors.fa,{already_claimed:'هدیه‌ی امروز را قبلاً دریافت کرده‌ای.',wheel_locked:'برای باز شدن گردونه امروز 1 تسک انجام بده.',wheel_used:'امروز گردونه را چرخانده‌ای.',banner_failed:'ارسال نشد. اول چت ربات را باز کن.',bad_image:'لینک تصویر باید با https:// شروع شود'});
+Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.',banner_failed:'Could not send. Open the bot chat first.',bad_image:'Image link must start with https://',bad_image_file:'Pick an image under 8 MB.'});
+Object.assign(apiErrors.fa,{already_claimed:'هدیه‌ی امروز را قبلاً دریافت کرده‌ای.',wheel_locked:'برای باز شدن گردونه امروز 1 تسک انجام بده.',wheel_used:'امروز گردونه را چرخانده‌ای.',banner_failed:'ارسال نشد. اول چت ربات را باز کن.',bad_image:'لینک تصویر باید با https:// شروع شود',bad_image_file:'یک تصویر زیر 8 مگابایت انتخاب کن.'});
 
 const HUES=['#ff9f4a','#4fd6ff','#a98bff','#ff6fc8','#ffd36b'];
 const initData=tg?.initData||'';
@@ -632,16 +635,43 @@ function inviteCard(inv,L){
   ${inv.isAdmin?`<button class="btn ghost sm block" style="margin-top:14px" data-act="editbanner">${ic('plus','sm')}${t('editBanner')}</button>`:''}</div>`;
 }
 function sheetBanner(){
-  const s=state.g?.invite?.settings||{text_en:'',text_fa:'',photo:''};
+  const g=state.g?.invite,s=g?.settings||{text_en:'',text_fa:'',photo:''},img=g?.banner?.image;
   return `<div class="sheet-h"><b>${t('editBanner')}</b><button class="x" data-act="closesheet" aria-label="Close">${ic('x')}</button></div>
-  <div class="field" style="margin-top:0"><label for="bFa">${t('bannerFa')}</label><textarea class="inp ta" id="bFa" rows="4" maxlength="600">${esc(s.text_fa)}</textarea></div>
+  <div class="field" style="margin-top:0"><label>${t('bannerImage')}</label>
+   <div class="up-row"><div class="up-thumb" id="upThumb">${img?`<img src="${esc(img)}" alt="">`:ic('gift')}</div>
+   <div class="grow"><input type="file" id="bFile" accept="image/*" hidden><button class="btn ghost sm block" data-act="pickimg">${ic('plus','sm')}${t('uploadImage')}</button>
+   ${s.hasPhoto?`<button class="btn ghost sm block" style="margin-top:8px" data-act="rmimg">${ic('x','sm')}${t('removeImage')}</button>`:''}</div></div>
+   <div class="hint">${t('imageHint')}</div></div>
+  <div class="field"><label for="bFa">${t('bannerFa')}</label><textarea class="inp ta" id="bFa" rows="4" maxlength="600">${esc(s.text_fa)}</textarea></div>
   <div class="field"><label for="bEn">${t('bannerEn')}</label><textarea class="inp ta" id="bEn" rows="4" maxlength="600" dir="ltr">${esc(s.text_en)}</textarea><div class="hint">${t('bannerHint')}</div></div>
-  <div class="field"><label for="bImg">${t('bannerImg')}</label><input class="inp" id="bImg" type="url" dir="ltr" inputmode="url" placeholder="https://" value="${esc(s.photo)}"></div>
   <button class="btn primary block" style="margin-top:16px" data-act="savebanner">${t('save')}</button>`;
+}
+function shrinkImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{const k=Math.min(1,1280/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(url);c.toBlob(b=>b?res(b):rej(new Error('img')),'image/jpeg',.88);};
+    im.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('img'));};im.src=url;
+  });
+}
+async function uploadBanner(file){
+  const btn=$('[data-act=pickimg]');if(btn)btn.disabled=true;
+  try{
+    const blob=await shrinkImage(file),fd=new FormData();fd.append('image',blob,'banner.jpg');
+    const res=await fetch('/api/miniapp/invite/upload',{method:'POST',headers:{'X-Telegram-Init-Data':initData},body:fd});
+    let d={};try{d=await res.json()}catch(_){}
+    if(!res.ok){const e=new Error(d.message||t('netErr'));e.code=d.error;throw e;}
+    absorb(d);const th=$('#upThumb');const im=state.g?.invite?.banner?.image;if(th&&im)th.innerHTML=`<img src="${esc(im)}" alt="">`;
+    toast(t('imageSaved'));haptic();
+  }catch(e){toast(apiErrors[state.lang][e.code]||t('netErr'));}
+  if(btn)btn.disabled=false;
+}
+async function removeBannerImage(){
+  try{const r=await api('/api/miniapp/invite/settings',{method:'POST',body:{photo:''}});absorb(r);openSheet(sheetBanner());toast(t('saved'));}catch(e){toast(errText(e));}
 }
 async function sendBanner(){try{await api('/api/miniapp/invite/send',{method:'POST',body:{}});toast(t('bannerSent'));haptic();}catch(e){toast(errText(e));}}
 async function saveBanner(){
-  try{const r=await api('/api/miniapp/invite/settings',{method:'POST',body:{text_fa:$('#bFa').value,text_en:$('#bEn').value,photo:$('#bImg').value.trim()}});absorb(r);closeSheet();render();toast(t('saved'));}
+  try{const r=await api('/api/miniapp/invite/settings',{method:'POST',body:{text_fa:$('#bFa').value,text_en:$('#bEn').value}});absorb(r);closeSheet();render();toast(t('saved'));}
   catch(e){toast(errText(e));}
 }
 function renderProfile(){
@@ -808,9 +838,12 @@ document.addEventListener('click',e=>{
     case'sendbanner':sendBanner();break;
     case'editbanner':openSheet(sheetBanner());break;
     case'savebanner':saveBanner();break;
+    case'pickimg':$('#bFile').click();break;
+    case'rmimg':removeBannerImage();break;
     case'share':{const l=state.g?.invite?.link;if(l)openLink('https://t.me/share/url?url='+encodeURIComponent(l)+'&text='+encodeURIComponent(state.g.invite.banner?.shareText||t('shareText')));break;}
   }
 });
+document.addEventListener('change',e=>{if(e.target.id==='bFile'&&e.target.files[0])uploadBanner(e.target.files[0]);});
 document.addEventListener('input',e=>{if(e.target.id==='cQty'||e.target.id==='cLink')updateSum();});
 $('#sheetVeil').addEventListener('click',e=>{if(e.target.id==='sheetVeil')closeSheet();});
 $('#celeVeil').addEventListener('click',e=>{if(e.target.id==='celeVeil')$('#celeVeil [data-act=closecele]')?.click();});
