@@ -41,6 +41,14 @@ JOB_TIMEOUT = 40             # login steps always finish (or fail with a clear m
 FLOOD_LIMIT = 3               # floods per hour before the helper switches itself off
 
 
+_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+def ascii_digits(text):
+    """Persian/Arabic digits -> ASCII (Telegram rejects them in phone numbers and codes)."""
+    return str(text or "").translate(_DIGITS)
+
+
 def _libs_ok():
     try:
         import telethon  # noqa: F401
@@ -159,6 +167,17 @@ class Manager:
                               connection_retries=3, retry_delay=3, request_retries=2, auto_reconnect=True)
 
     # ───────────────────────── panel API (sync wrappers) ─────────────────────────
+    def checks(self):
+        """What is missing? (values are never shown)"""
+        def mod(name):
+            try:
+                m = __import__(name)
+                return str(getattr(m, "__version__", "ok"))
+            except Exception:
+                return None
+        return {"TG_API_ID": bool(self.api_id), "TG_API_HASH": len(self.api_hash) == 32,
+                "telethon": mod("telethon"), "cryptography": mod("cryptography"), "segno": mod("segno")}
+
     def status(self):
         c = self.cfg()
         login = self.db.userbot.find_one({"_id": "login"}) or {}
@@ -219,6 +238,8 @@ class Manager:
                 return {"ok": True, **self.status()}
             if name == "job":
                 return self._job_status(body.get("id"))
+            if name == "checks":
+                return {"ok": True, **self.checks()}
             if name == "send_code":
                 return self._submit(self._send_code(str(body.get("phone") or "")))
             if name == "sign_in":
@@ -251,7 +272,7 @@ class Manager:
 
     # ───────────────────────── login: phone + code (stateless across workers) ─────────────────────────
     async def _send_code(self, phone):
-        phone = "".join(ch for ch in phone if ch.isdigit() or ch == "+")
+        phone = "".join(ch for ch in ascii_digits(phone) if ch in "+0123456789")
         if not phone.startswith("+"):
             phone = "+" + phone
         if len(phone) < 8:

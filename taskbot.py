@@ -857,9 +857,16 @@ def ub_wait(first, tries=70):
 
 def ub_status_text():
     sx = UB.status()
+    ck = UB.checks()
+    ok = lambda v: "✅" if v else "❌"
+    checklist = ("\n\n<b>پیش‌نیازها</b>\n"
+                 f"{ok(ck['TG_API_ID'])} <code>TG_API_ID</code> (عدد)\n"
+                 f"{ok(ck['TG_API_HASH'])} <code>TG_API_HASH</code> (۳۲ کاراکتر)\n"
+                 f"{ok(ck['telethon'])} telethon {ck['telethon'] or '— نصب نیست'}\n"
+                 f"{ok(ck['cryptography'])} cryptography {ck['cryptography'] or '— نصب نیست'}\n"
+                 f"{ok(ck['segno'])} segno (برای QR) {ck['segno'] or '— نصب نیست'}")
     if not sx["configured"] or not sx["libs"]:
-        return ("🤖 <b>حساب کمکی ریکشن</b>\n\nتنظیم نشده است: متغیرهای <code>TG_API_ID</code> و <code>TG_API_HASH</code> را در سرویس بگذارید "
-                "و بعد از نصب requirements (telethon) سرویس را دوباره اجرا کنید.")
+        return ("🤖 <b>حساب کمکی ریکشن</b>\n\n❌ تنظیم کامل نیست. متغیرها را در سرویس بگذارید، requirements را نصب کنید و سرویس را دوباره اجرا کنید." + checklist)
     if not sx["logged_in"]:
         state = "وارد نشده"
     elif sx["invalid"]:
@@ -878,14 +885,12 @@ def ub_status_text():
         lines.append(f"⚠️ محدودیت تلگرام در ساعت اخیر: {sx['floods_1h']}")
     if sx.get("last_error"):
         lines.append("آخرین خطا: <code>" + html.escape(str(sx["last_error"])[:160]) + "</code>")
-    return "\n".join(lines)
+    return "\n".join(lines) + (checklist if not (sx["logged_in"] and not sx["invalid"]) else "")
 
 
 def ub_screen(chat, mid=None):
     sx = UB.status()
-    if not sx["configured"] or not sx["libs"]:
-        rows = []
-    elif not sx["logged_in"] or sx["invalid"]:
+    if not sx["logged_in"] or sx["invalid"]:
         rows = [[B("📱 ورود با شماره", "ad:ub:phone")], [B("🔳 ورود با QR", "ad:ub:qr")]]
     else:
         rows = [[B("⏹ غیرفعال کردن" if sx["enabled"] else "▶️ فعال کردن", "ad:ub:toggle", "danger" if sx["enabled"] else "success")],
@@ -951,9 +956,9 @@ def ub_qr_thread(uid, chat):
             if r.get("ok"):
                 return ub_screen(chat)
             return send(chat, "❌ " + html.escape(str(r.get("error") or "QR منقضی شد")), [[B("↩️ حساب کمکی", "ad:ub")]])
-    except Exception:
+    except Exception as e:
         log.exception("ub_qr_thread")
-        send(chat, "❌ خطای غیرمنتظره در ورود با QR؛ لاگ سرور را ببینید.")
+        send(chat, "❌ ساخت QR ناموفق بود:\n<code>" + html.escape(f"{type(e).__name__}: {str(e)[:200]}") + "</code>")
 
 
 def ub_text_thread(uid, chat, step, text, msg_id):
@@ -969,7 +974,7 @@ def ub_text_thread(uid, chat, step, text, msg_id):
                         [[B("🔌 تست اتصال", "ad:ub:net")], [B("↩️ حساب کمکی", "ad:ub")]])
         if step == "ub_code":
             tg("deleteMessage", chat_id=chat, message_id=msg_id)
-            res = ub_wait(UB.op("sign_in", {"code": re.sub(r"\D", "", text), "password": ""}))
+            res = ub_wait(UB.op("sign_in", {"code": re.sub(r"\D", "", _userbot_mod.ascii_digits(text)), "password": ""}))
         elif step == "ub_pw":
             tg("deleteMessage", chat_id=chat, message_id=msg_id)
             res = ub_wait(UB.op("sign_in", {"code": "", "password": text}))
@@ -983,9 +988,9 @@ def ub_text_thread(uid, chat, step, text, msg_id):
             db.states.delete_one({"_id": uid})
             return ub_screen(chat)
         send(chat, "❌ " + html.escape(str(res.get("error") or "خطا")) + "\nدوباره بفرستید یا از «حساب کمکی» شروع کنید.", [[B("↩️ حساب کمکی", "ad:ub")]])
-    except Exception:
+    except Exception as e:
         log.exception("ub_text_thread")
-        send(chat, "❌ خطای غیرمنتظره؛ لاگ سرور را ببینید.")
+        send(chat, "❌ خطا:\n<code>" + html.escape(f"{type(e).__name__}: {str(e)[:200]}") + "</code>")
 
 
 def ub_admin_text(uid, chat, text, st, msg_id):
