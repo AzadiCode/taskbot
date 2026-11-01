@@ -240,6 +240,26 @@ main{padding-top:6px}
 .av-lv{position:absolute;inset-inline-end:-5px;bottom:-5px;width:46%;height:46%;border-radius:50%;background:var(--ink)}
 .av-lv .emb{width:100%;height:100%;filter:none}
 
+/* task flow */
+.tk-head{display:flex;gap:12px;align-items:flex-start;padding-bottom:4px}
+.steps{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:12px;position:relative}
+.steps li{display:flex;gap:12px;align-items:flex-start;color:var(--faint)}
+.steps li i{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:800;font-size:13px;background:var(--panel-2);border:1px solid var(--line-2)}
+.steps li b{display:block;font-size:14px;line-height:1.5;padding-top:3px}
+.steps li>div>span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.steps li.cur{color:var(--text)}
+.steps li.cur i{background:var(--brand);color:var(--on-brand);border-color:transparent}
+.steps li.done{color:var(--muted)}
+.steps li.done i{background:var(--mint-soft);color:var(--mint);border-color:transparent}
+.tk-timer{display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 14px;border-radius:14px;background:var(--gold-soft);color:var(--gold);font-weight:800;font-size:13.5px}
+.tk-msg{display:flex;gap:9px;align-items:flex-start;margin-top:14px;padding:11px 14px;border-radius:14px;font-size:13px;line-height:1.6}
+.tk-msg.err{background:rgba(255,122,144,.12);color:var(--rose)}
+.tk-msg.info{background:rgba(123,140,255,.12);color:var(--brand)}
+.tk-msg.ok{background:var(--mint-soft);color:var(--mint)}
+.tk-msg svg{margin-top:3px}
+.spin{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;animation:spin .8s linear infinite;flex:none}
+.task[data-act]{cursor:pointer}
+
 /* invite banner */
 .banner{border-radius:20px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line-2)}
 .ban-img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:var(--ink)}
@@ -397,7 +417,31 @@ en:{
  bannerEn:'English text',
  bannerHint:'First line is the headline',bannerImage:'Banner image',uploadImage:'Upload image',removeImage:'Remove image',imageHint:'Any photo. It is resized automatically.',imageSaved:'Image saved',
  bannerImg:'Image link (https)',
- save:'Save'
+ save:'Save',
+ tkOpenJoin:'Open the channel',
+ tkOpenPost:'Open the post',
+ tkDoJoin:'Join it',
+ tkDoReact:'Add a reaction',
+ tkDoView:'View the post',
+ tkVerify:'Verify',
+ tkVerifyBtn:'Verify and get reward',
+ tkBackFast:'Then come back here quickly',
+ continueBtn:'Continue',
+ unavailable:'Unavailable for now',
+ verifying:'Checking…',
+ verifyWithin:'Verify within {t}',
+ timeUp:'Time is up. Open the task again.',
+ pendingInfo:'Waiting for Telegram to update the reaction count. It can take a few minutes. You can leave this page.',
+ counterStale:'This post has no fresh reaction data yet. Try again in a few minutes.',
+ calTitle:'Prepare the post counter',
+ calWhy:'Telegram sends reaction counts to bots with a delay. This one-time step makes verification accurate.',
+ calStep1:'Open the post',
+ calStep2:'Add or remove any reaction (an admin can too)',
+ calStep3:'Wait for the counter to update',
+ calWaiting:'Waiting for the update…',
+ calReady:'Counter ready. Publishing…',
+ openPost:'Open post',
+ cancel:'Cancel'
 },
 fa:{
  nav_home:'خانه',nav_tasks:'تسک‌ها',nav_grow:'رشد',nav_rewards:'جوایز',nav_profile:'پروفایل',
@@ -442,7 +486,31 @@ fa:{
  bannerEn:'متن انگلیسی',
  bannerHint:'خط اول عنوان است',bannerImage:'تصویر بنر',uploadImage:'آپلود تصویر',removeImage:'حذف تصویر',imageHint:'هر عکسی؛ اندازه‌اش خودکار تنظیم می‌شود.',imageSaved:'تصویر ذخیره شد',
  bannerImg:'لینک تصویر (https)',
- save:'ذخیره'
+ save:'ذخیره',
+ tkOpenJoin:'کانال را باز کن',
+ tkOpenPost:'پست را باز کن',
+ tkDoJoin:'عضو شو',
+ tkDoReact:'یک واکنش بزن',
+ tkDoView:'پست را ببین',
+ tkVerify:'تأیید',
+ tkVerifyBtn:'تأیید و دریافت پاداش',
+ tkBackFast:'بعد سریع برگرد اینجا',
+ continueBtn:'ادامه',
+ unavailable:'فعلاً در دسترس نیست',
+ verifying:'در حال بررسی…',
+ verifyWithin:'مهلت تأیید {t}',
+ timeUp:'زمان تمام شد. دوباره باز کن.',
+ pendingInfo:'منتظر به‌روزرسانی شمارش واکنش در تلگرام هستیم؛ چند دقیقه طول می‌کشد. می‌توانی از صفحه خارج شوی.',
+ counterStale:'اطلاعات تازه‌ی واکنش این پست هنوز نیامده. چند دقیقه بعد دوباره امتحان کن.',
+ calTitle:'آماده‌سازی شمارنده پست',
+ calWhy:'تلگرام شمارش واکنش را با تأخیر برای ربات می‌فرستد. این مرحله یک‌بار انجام می‌شود تا تأیید دقیق باشد.',
+ calStep1:'پست را باز کن',
+ calStep2:'یک واکنش بزن یا بردار (ادمین هم می‌تواند)',
+ calStep3:'منتظر به‌روزرسانی شمارنده بمان',
+ calWaiting:'منتظر به‌روزرسانی…',
+ calReady:'شمارنده آماده شد. در حال انتشار…',
+ openPost:'باز کردن پست',
+ cancel:'انصراف'
 }};
 const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
 Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.',banner_failed:'Could not send. Open the bot chat first.',bad_image:'Image link must start with https://',bad_image_file:'Pick an image under 8 MB.'});
@@ -519,15 +587,14 @@ function renderNav(){
 
 /* ---------- cards ---------- */
 function taskCard(x){
-  const pend=['count_pending','pending','settling'].includes(x.completionStatus);
-  const started=!!x.started&&!pend;
+  const pend=x.completionStatus==='count_pending',live=!!x.started&&!pend;
   const gold=state.g?.golden?.active?state.g.golden.mult:1;
-  let act='';
+  let act;
   if(pend)act=`<div class="t-act"><span class="chip brand">${ic('clock','sm')}${t('pending')}</span></div>`;
-  else if(started)act=`<div class="t-act"><button class="btn primary" data-act="claim" data-id="${esc(x.id)}">${ic('check','sm')}${t('verify')}</button><button class="btn ghost icon" data-act="start" data-id="${esc(x.id)}" aria-label="${t('openAgain')}" title="${t('openAgain')}">${ic('out','sm')}</button></div>`;
-  else act=`<div class="t-act"><button class="btn primary" data-act="start" data-id="${esc(x.id)}">${ic('out','sm')}${t('start')}</button></div>`;
-  return `<article class="task ${started||pend?'live':''}"><div class="t-top"><div class="t-ico ${esc(x.type)}">${ic(typeIcon(x.type))}</div>
-   <div class="grow"><div class="t-title">${esc(x.title)}</div><div class="t-meta"><span class="chip">${esc(x.typeLabel||t(x.type))}</span><span class="chip">${t('leftN',{n:fmt(x.remaining)})}</span>${started?`<span class="chip brand">${t('live')}</span>`:''}</div></div>
+  else if(!x.ready)act=`<div class="t-act"><button class="btn ghost" disabled>${t('unavailable')}</button></div>`;
+  else act=`<div class="t-act"><button class="btn primary" data-act="task" data-id="${esc(x.id)}">${live?t('continueBtn'):t('start')}${ic('chev','sm flip')}</button></div>`;
+  return `<article class="task ${live||pend?'live':''}" data-act="task" data-id="${esc(x.id)}"><div class="t-top"><div class="t-ico ${esc(x.type)}">${ic(typeIcon(x.type))}</div>
+   <div class="grow"><div class="t-title">${esc(x.title)}</div><div class="t-meta"><span class="chip">${esc(x.typeLabel||t(x.type))}</span><span class="chip">${t('leftN',{n:fmt(x.remaining)})}</span>${live?`<span class="chip brand">${t('live')}</span>`:''}</div></div>
    <div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}${gold>1?' · <span class="num">x'+gold+'</span>':''}</small></div></div>${act}</article>`;
 }
 function campCard(c){
@@ -702,6 +769,7 @@ function render(){
   const f={home:renderHome,tasks:renderTasks,grow:renderGrow,rewards:renderRewards,profile:renderProfile}[state.page];
   $('#content').innerHTML=f();
   if(state.page==='home')animateOrbit();
+  schedulePoll();
 }
 function animateOrbit(){
   const L=lvl(),arc=$('#arc'),sat=$('#sat');if(!arc)return;
@@ -724,7 +792,7 @@ function checkLevelUp(prev,silent){
   try{localStorage.setItem('tp_lvl_'+state.user.id,String(cur));}catch(_){}
 }
 function openSheet(html){$('#sheet').innerHTML=html;$('#sheetVeil').classList.add('show');}
-function closeSheet(){$('#sheetVeil').classList.remove('show');}
+function closeSheet(){$('#sheetVeil').classList.remove('show');clearInterval(tkTimer);stopCalib();state.taskId=null;state.tmsg=null;state.tbusy=false;}
 function sheetCreate(){
   const ty=state.type,c=costs(),max=maxQty(ty),react=ty==='react';
   const opt=k=>`<button type="button" class="type-opt ${ty===k?'on':''}" data-act="ctype" data-k="${k}"><div class="t-ico ${k}">${ic(typeIcon(k))}</div><div class="grow"><div class="row"><b>${t('type'+k[0].toUpperCase()+k.slice(1))}</b><span class="chip gold" style="margin-inline-start:auto">${t('perUnit',{c:c[k]})}</span></div><span>${t('desc'+k[0].toUpperCase()+k.slice(1))}</span></div></button>`;
@@ -748,13 +816,13 @@ async function loadAll(quiet){
   if(!initData){$('#content').innerHTML=`<div class="empty" style="margin-top:60px"><strong>${t('authTitle')}</strong>${t('authSub')}</div><button class="btn primary block" style="margin-top:14px" onclick="location.reload()">${t('retry')}</button>`;return;}
   try{
     const [d,tk,cp,gr]=await Promise.all([api('/api/miniapp/dashboard'),api('/api/miniapp/tasks'),api('/api/miniapp/campaigns'),api('/api/miniapp/growth').catch(()=>null)]);
-    const prev=state.user?.level;
-    state.user=d.user;state.stats=d.stats;state.tasksChannelUrl=d.tasksChannelUrl||'';state.tasks=tk.tasks||[];state.channelRequired=!!tk.channelRequired;state.checkUnavailable=!!tk.membershipCheckUnavailable;state.campaigns=cp.campaigns||[];
+    const prev=state.user?.level,oldPend=pendingIds(),beforePts=state.user?.points??0;
+    state.user=d.user;state.stats=d.stats;state.tasksChannelUrl=d.tasksChannelUrl||'';state.tasks=tk.tasks||[];if(tk.now)state.skew=tk.now-Date.now()/1000;state.channelRequired=!!tk.channelRequired;state.checkUnavailable=!!tk.membershipCheckUnavailable;state.campaigns=cp.campaigns||[];
     if(gr)state.g=gr;
     setLang(d.user.language);state.loaded=true;state.lastFetch=Date.now();
     let stored=null;try{stored=localStorage.getItem('tp_lvl_'+d.user.id);}catch(_){}
-    render();
-    if(prev!==undefined)checkLevelUp(prev);else checkLevelUp(stored===null?d.user.level:Number(stored));
+    render();refreshTaskSheet();
+    if(prev!==undefined){if(!await afterPendingResolved(oldPend,beforePts,prev))checkLevelUp(prev);}else checkLevelUp(stored===null?d.user.level:Number(stored));
   }catch(e){
     if(!quiet)$('#content').innerHTML=`<div class="empty" style="margin-top:60px"><strong>${t('error')}</strong>${esc(e.code?errText(e):t('loadErr'))}</div><button class="btn primary block" style="margin-top:14px" data-act="refresh">${t('retry')}</button>`;
   }
@@ -763,23 +831,96 @@ async function reloadGrowth(){try{state.g=await api('/api/miniapp/growth');}catc
 function absorb(r){if(r.user){state.user=r.user;state.stats=r.stats||state.stats;}if(r.growth)state.g=r.growth;}
 
 /* ---------- actions ---------- */
-async function startTask(id,btn){
-  const x=state.tasks.find(v=>v.id===id);if(!x)return;if(btn){btn.disabled=true;}
-  try{const r=await api(`/api/miniapp/tasks/${encodeURIComponent(id)}/start`,{method:'POST',body:{}});x.started=true;render();toast(t('opened'));openLink(r.targetUrl||x.targetUrl);}
-  catch(e){render();toast(errText(e));if(e.code==='task_channel_required'||e.code==='task_unavailable')loadAll(true);}
+/* ---------- task flow: open -> do -> verify, all inside one sheet ---------- */
+let tkTimer=null,pollTimer=null;
+const tk=()=>state.tasks.find(x=>x.id===state.taskId);
+const nowSrv=()=>Date.now()/1000+(state.skew||0);
+const mmss=s=>{s=Math.max(0,Math.ceil(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
+function sheetTask(){
+  const x=tk();if(!x)return '';
+  const gold=state.g?.golden?.active?state.g.golden.mult:1;
+  const pend=x.completionStatus==='count_pending',live=!!x.started&&!pend,count=x.mode==='count';
+  const open=x.type==='join'?t('tkOpenJoin'):t('tkOpenPost');
+  const doit=x.type==='join'?t('tkDoJoin'):x.type==='react'?t('tkDoReact'):t('tkDoView');
+  const li=(n,label,st,sub='')=>`<li class="${st}"><i>${st==='done'?ic('check','sm'):n}</i><div><b>${label}</b>${sub?`<span>${sub}</span>`:''}</div></li>`;
+  const steps=li(1,open,live||pend?'done':'cur')+li(2,doit,pend?'done':live?'cur':'',count&&!live&&!pend?t('tkBackFast'):'')+li(3,t('tkVerify'),pend?'cur':'');
+  const m=state.tmsg;
+  const msg=pend?`<div class="tk-msg info">${ic('clock','sm')}<span>${t('pendingInfo')}</span></div>`:m?`<div class="tk-msg ${m.k}"><span>${esc(m.text)}</span></div>`:'';
+  const timer=live&&x.deadline?`<div class="tk-timer">${ic('clock','sm')}<span id="tkTimer">${t('verifyWithin',{t:mmss(x.deadline-nowSrv())})}</span></div>`:'';
+  let cta;
+  if(state.tbusy)cta=`<button class="btn primary block" disabled><span class="spin"></span>${t('verifying')}</button>`;
+  else if(pend)cta=`<button class="btn ghost block" disabled><span class="spin"></span>${t('verifying')}</button>`;
+  else if(!x.ready)cta=`<button class="btn ghost block" disabled>${t('unavailable')}</button>`;
+  else if(live)cta=`<div class="t-act"><button class="btn primary" data-act="tverify">${ic('check','sm')}${t('tkVerifyBtn')}</button><button class="btn ghost icon" data-act="tstart" aria-label="${t('openAgain')}" title="${t('openAgain')}">${ic('out','sm')}</button></div>`;
+  else cta=`<button class="btn primary block" data-act="tstart">${ic('out','sm')}${open}</button>`;
+  return `<div class="sheet-h"><b>${esc(x.typeLabel||t(x.type))}</b><button class="x" data-act="closesheet" aria-label="Close">${ic('x')}</button></div>
+  <div class="tk-head"><div class="t-ico ${esc(x.type)}">${ic(typeIcon(x.type))}</div><div class="grow"><div class="t-title">${esc(x.title)}</div></div><div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}</small></div></div>
+  <ol class="steps">${steps}</ol>${timer}${msg}<div style="margin-top:16px">${cta}</div>`;
 }
-async function claimTask(id,btn){
-  const x=state.tasks.find(v=>v.id===id);if(btn){btn.disabled=true;}
+function refreshTaskSheet(){if(state.taskId&&$('#sheetVeil').classList.contains('show')){const x=tk();if(!x){closeSheet();return;}$('#sheet').innerHTML=sheetTask();}}
+function openTaskSheet(id){
+  state.taskId=id;state.tmsg=null;state.tbusy=false;openSheet(sheetTask());
+  clearInterval(tkTimer);
+  tkTimer=setInterval(()=>{
+    const x=tk();if(!x||!x.deadline||!x.started){return;}
+    const left=x.deadline-nowSrv();
+    if(left<=0){x.started=false;x.deadline=0;state.tmsg={k:'err',text:t('timeUp')};refreshTaskSheet();render();return;}
+    const el=$('#tkTimer');if(el)el.textContent=t('verifyWithin',{t:mmss(left)});
+  },1000);
+}
+async function tStart(){
+  const x=tk();if(!x||state.tbusy)return;state.tmsg=null;state.tbusy=true;refreshTaskSheet();
+  try{
+    const r=await api(`/api/miniapp/tasks/${encodeURIComponent(x.id)}/start`,{method:'POST',body:{}});
+    if(r.now)state.skew=r.now-Date.now()/1000;
+    x.started=true;x.deadline=r.deadline||0;state.tbusy=false;refreshTaskSheet();render();tick();openLink(r.targetUrl||x.targetUrl);
+  }catch(e){
+    state.tbusy=false;state.tmsg={k:'err',text:e.code==='reaction_data_unavailable'?t('counterStale'):errText(e)};refreshTaskSheet();
+    if(['task_unavailable','task_channel_required','task_paused'].includes(e.code))loadAll(true);
+  }
+}
+async function tVerify(){
+  const x=tk();if(!x||state.tbusy)return;state.tmsg=null;state.tbusy=true;refreshTaskSheet();
   const prev=state.user.level;
   try{
-    const r=await api(`/api/miniapp/tasks/${encodeURIComponent(id)}/claim`,{method:'POST',body:{}});
-    if(r.status==='pending'){if(x)x.completionStatus='count_pending';render();toast(t('pendingMsg'));return;}
-    absorb(r);state.tasks=state.tasks.filter(v=>v.id!==id);await reloadGrowth();render();bumpBal();
+    const r=await api(`/api/miniapp/tasks/${encodeURIComponent(x.id)}/claim`,{method:'POST',body:{}});
+    state.tbusy=false;
+    if(r.status==='pending'){x.completionStatus='count_pending';refreshTaskSheet();render();schedulePoll();return;}
+    absorb(r);state.tasks=state.tasks.filter(v=>v.id!==x.id);await reloadGrowth();closeSheet();render();bumpBal();
     const gold=state.g?.golden?.active;
     celebrate({k:t('verified'),v:'+'+fmt(r.reward*(gold?state.g.golden.mult:1)),s:gold?t('goldenBonus'):t('youEarned')+' '+t('stars')});
     $('#celeVeil').dataset.after=String(prev);
-  }catch(e){render();toast(errText(e));}
+  }catch(e){
+    state.tbusy=false;haptic('error');
+    if(e.code==='reaction_window_expired'||e.code==='open_task_first'){x.started=false;x.deadline=0;render();}
+    state.tmsg={k:'err',text:errText(e)};refreshTaskSheet();
+  }
 }
+/* count-based reactions are confirmed by Telegram a few minutes later: watch for it instead of leaving the user guessing */
+function schedulePoll(){
+  clearTimeout(pollTimer);
+  if(document.hidden||!state.user||!state.tasks.some(x=>x.completionStatus==='count_pending'))return;
+  pollTimer=setTimeout(pollPending,6000);
+}
+const pendingIds=()=>state.tasks.filter(x=>x.completionStatus==='count_pending').map(x=>x.id);
+async function afterPendingResolved(oldPend,beforePts,prevLevel){
+  const paid=oldPend.filter(id=>!state.tasks.some(x=>x.id===id));
+  if(!paid.length)return false;
+  await reloadGrowth();if(state.taskId&&paid.includes(state.taskId))closeSheet();render();bumpBal();
+  const gain=Math.max(0,(state.user?.points||0)-beforePts);
+  if(gain>0){celebrate({k:t('verified'),v:'+'+fmt(gain),s:t('youEarned')+' '+t('stars')});$('#celeVeil').dataset.after=String(prevLevel);}
+  return true;
+}
+async function pollPending(){
+  const oldPend=pendingIds(),beforePts=state.user.points,prev=state.user.level;
+  try{
+    const [d,tk2]=await Promise.all([api('/api/miniapp/dashboard'),api('/api/miniapp/tasks')]);
+    state.user=d.user;state.stats=d.stats;state.tasks=tk2.tasks||[];if(tk2.now)state.skew=tk2.now-Date.now()/1000;
+    if(!await afterPendingResolved(oldPend,beforePts,prev)){render();refreshTaskSheet();}
+  }catch(_){}
+  schedulePoll();
+}
+
 async function claimGift(){
   const prev=state.user.level;
   try{const r=await api('/api/miniapp/gift/claim',{method:'POST',body:{}});absorb(r);render();bumpBal();
@@ -797,14 +938,53 @@ async function spin(){
     setTimeout(()=>{absorb(r);state.spinning=false;render();bumpBal();celebrate({k:t('youWon'),v:'+'+r.prize,s:t('wheelTitle')});},reduce?200:4400);
   }catch(e){state.spinning=false;render();toast(errText(e));loadAll(true);}
 }
+let calibTimer=null;
+function stopCalib(){clearInterval(calibTimer);calibTimer=null;state.calib=null;}
+function sheetCalib(){
+  const c=state.calib;if(!c)return '';
+  const li=(n,label,st,extra='')=>`<li class="${st}"><i>${st==='done'?ic('check','sm'):n}</i><div><b>${label}</b>${extra}</div></li>`;
+  const status=c.err?`<div class="tk-msg err"><span>${esc(c.err)}</span></div>`:c.ready?`<div class="tk-msg ok">${ic('check','sm')}<span>${t('calReady')}</span></div>`:`<div class="tk-msg info"><span class="spin"></span><span>${t('calWaiting')}${c.total!=null?` · <span class="num">${fmt(c.total)}</span>`:''}</span></div>`;
+  return `<div class="sheet-h"><b>${t('calTitle')}</b><button class="x" data-act="calcancel" aria-label="Close">${ic('x')}</button></div>
+  <p class="muted" style="font-size:12.5px;margin:0 0 4px">${t('calWhy')}</p>
+  <ol class="steps">${li(1,t('calStep1'),c.opened?'done':'cur',`<button class="btn ghost sm" style="margin-top:8px" data-act="calopen">${ic('out','sm')}${t('openPost')}</button>`)}${li(2,t('calStep2'),c.opened?'cur':'')}${li(3,t('calStep3'),c.ready?'done':'')}</ol>
+  ${status}<button class="btn ghost block" style="margin-top:14px" data-act="calcancel">${t('cancel')}</button>`;
+}
+function refreshCalib(){if(state.calib&&$('#sheetVeil').classList.contains('show'))$('#sheet').innerHTML=sheetCalib();}
+function startCalib(body){
+  stopCalib();state.calib={body,ready:false,total:null,postUrl:'',err:'',opened:false,busy:false};
+  openSheet(sheetCalib());calibCheck();calibTimer=setInterval(calibCheck,5000);
+}
+async function calibCheck(){
+  const c=state.calib;if(!c||c.busy||c.ready)return;c.busy=true;
+  try{
+    const r=await api('/api/miniapp/campaigns/baseline',{method:'POST',body:{link:c.body.link}});
+    c.postUrl=r.postUrl||c.postUrl;c.total=r.total;
+    if(r.ready){c.ready=true;clearInterval(calibTimer);refreshCalib();haptic();c.busy=false;await submitCampaign(c.body,true);return;}
+  }catch(e){c.err=errText(e);clearInterval(calibTimer);}
+  c.busy=false;refreshCalib();
+}
+async function submitCampaign(body,fromCalib,btn){
+  try{
+    await api('/api/miniapp/campaigns',{method:'POST',body});
+    stopCalib();closeSheet();toast(t('published'));haptic();await loadAll(true);go('grow');
+  }catch(e){
+    if(e.code==='baseline_pending'){
+      if(!fromCalib)startCalib(body);
+      else if(state.calib){state.calib.ready=false;state.calib.busy=false;clearInterval(calibTimer);calibTimer=setInterval(calibCheck,5000);refreshCalib();}
+      return;
+    }
+    if(fromCalib&&state.calib){state.calib.err=errText(e);state.calib.ready=false;refreshCalib();return;}
+    if(btn){btn.disabled=false;btn.textContent=t('publish');}
+    toast(errText(e));
+  }
+}
 async function publish(){
   const btn=$('#cGo'),link=$('#cLink').value.trim(),qty=Number($('#cQty').value),ty=state.type;
   if(!link){toast(apiErrors[state.lang].link);return;}
   if(!Number.isInteger(qty)||qty<1||qty>maxQty(ty)){toast(apiErrors[state.lang].quantity_range);return;}
   const body={type:ty,link,quantity:qty};if(ty==='react'){const on=$('#cWin .on');body.windowMin=Number(on?.dataset.m||5);}
   btn.disabled=true;btn.textContent=t('publishing');
-  try{await api('/api/miniapp/campaigns',{method:'POST',body});closeSheet();toast(t('published'));await loadAll(true);go('grow');}
-  catch(e){btn.disabled=false;btn.textContent=t('publish');toast(errText(e));}
+  await submitCampaign(body,false,btn);
 }
 async function stopCampaign(id){
   const ok=await new Promise(res=>{if(tg?.showConfirm)tg.showConfirm(t('confirmStop'),res);else res(confirm(t('confirmStop')));});if(!ok)return;
@@ -831,8 +1011,11 @@ document.addEventListener('click',e=>{
     case'filter':state.filter=d.f;render();break;
     case'board':state.board=d.b;render();break;
     case'wheelgo':state.sub='daily';go('rewards');break;
-    case'start':startTask(d.id,el);break;
-    case'claim':claimTask(d.id,el);break;
+    case'task':openTaskSheet(d.id);break;
+    case'tstart':tStart();break;
+    case'tverify':tVerify();break;
+    case'calopen':{const c=state.calib;if(c){c.opened=true;refreshCalib();openLink(c.postUrl||c.body.link);}break;}
+    case'calcancel':closeSheet();break;
     case'gift':claimGift();break;
     case'spin':spin();break;
     case'create':state.type='join';openSheet(sheetCreate());updateSum();break;
@@ -860,7 +1043,7 @@ document.addEventListener('change',e=>{if(e.target.id==='bFile'&&e.target.files[
 document.addEventListener('input',e=>{if(e.target.id==='cQty'||e.target.id==='cLink')updateSum();});
 $('#sheetVeil').addEventListener('click',e=>{if(e.target.id==='sheetVeil')closeSheet();});
 $('#celeVeil').addEventListener('click',e=>{if(e.target.id==='celeVeil')$('#celeVeil [data-act=closecele]')?.click();});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&initData&&state.loaded&&Date.now()-state.lastFetch>8000&&!$('#sheetVeil').classList.contains('show')&&!state.spinning)loadAll(true);});
+document.addEventListener('visibilitychange',()=>{if(document.hidden||!initData||!state.loaded)return;schedulePoll();const sheetOpen=$('#sheetVeil').classList.contains('show');if(Date.now()-state.lastFetch>4000&&!state.spinning&&(!sheetOpen||state.taskId))loadAll(true);});
 if(tg?.onEvent)tg.onEvent('viewportChanged',()=>tg.expand());
 loadAll();
 
