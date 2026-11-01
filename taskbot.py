@@ -66,7 +66,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v60-memberland"
+VERSION = "v61-memberland"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -276,6 +276,9 @@ S = {
     # ───────── Buttons (plain text) ─────────
     "b_menu": ("🏠 Main menu", "🏠 منوی اصلی"),
     "b_app": ("🚀 Open Memberland App", "🚀 باز کردن مینی‌اپ ممبرلند"),
+    "b_add_channel": ("➕ Add to channel", "➕ افزودن به کانال"),
+    "b_add_group": ("➕ Add to group", "➕ افزودن به گروه"),
+    "b_added": ("✅ Done, next step", "✅ انجام شد، مرحله بعد"),
     "b_back": ("↩️ Back", "↩️ بازگشت"),
     "b_cancel": ("Cancel", "⭕️ انصراف"),
     "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
@@ -587,18 +590,34 @@ S = {
     "new": (
         "<b>New order</b>\n<i>Choose what you want to promote</i>\n\nThe price per unit is shown on each button.",
         "<b>ثبت سفارش</b>\n<i>فعالیت موردنظر برای ترویج را انتخاب کنید</i>\n\nهزینه‌ی هر واحد روی دکمه‌ها درج شده است."),
+    "admin_step": (
+        "<b>Step 1 · Add the bot as admin</b>\n\n"
+        "1️⃣ Tap the button below and choose your channel or group.\n"
+        "2️⃣ Confirm the admin permissions.\n"
+        "3️⃣ Come back here and tap <b>Done</b>.\n"
+        "<blockquote>⚠️ Keep the bot as admin until your order is fully completed. If you remove it earlier, the order pauses.</blockquote>",
+        "<b>مرحله ۱ · ادمین کردن ربات</b>\n\n"
+        "1️⃣ دکمه‌ی زیر را بزنید و کانال یا گروه خود را انتخاب کنید.\n"
+        "2️⃣ دسترسی‌های ادمین را تأیید کنید.\n"
+        "3️⃣ به همین‌جا برگردید و روی <b>انجام شد</b> بزنید.\n"
+        "<blockquote>⚠️ تا پایان کامل سفارش، ربات را ادمین نگه دارید. اگر زودتر حذفش کنید، سفارش متوقف می‌شود.</blockquote>"),
     "prompt_join": (
-        "<b>Join destination</b>\n\nSend the public username or link of the channel or group, for example <code>@mychannel</code>.\n"
-        "<blockquote>First add <code>@{bot}</code> as an administrator of the destination so memberships can be verified.</blockquote>",
-        "<b>مقصد عضویت</b>\n\nنام کاربری یا لینک عمومی کانال یا گروه را ارسال کنید؛ برای مثال <code>@mychannel</code>.\n"
-        "<blockquote>ابتدا ربات <code>@{bot}</code> را در مقصد ادمین کنید تا بتواند عضویت‌ها را بررسی کند.</blockquote>"),
+        "<b>Step 2 · Channel or group link</b>\n\nSend the public username or link, for example <code>@mychannel</code>.\n"
+        "<i>It must be public. Stars are charged only after you confirm.</i>",
+        "<b>مرحله ۲ · لینک کانال یا گروه</b>\n\nنام کاربری یا لینک عمومی را ارسال کنید؛ مثلاً <code>@mychannel</code>.\n"
+        "<i>باید عمومی باشد. استارز فقط بعد از تأیید شما کم می‌شود.</i>"),
+    "prompt_react": (
+        "<b>Step 2 · Post link</b>\n\nSend the post link, for example <code>https://t.me/channel/123</code>, "
+        "or forward the channel post here.\n"
+        "<i>For groups, send the message link. Stars are charged only after you confirm.</i>",
+        "<b>مرحله ۲ · لینک پست</b>\n\nلینک پست را ارسال کنید؛ مثلاً <code>https://t.me/channel/123</code>؛ "
+        "یا پست کانال را اینجا فوروارد کنید.\n"
+        "<i>برای گروه، لینک پیام را بفرستید. استارز فقط بعد از تأیید شما کم می‌شود.</i>"),
     "prompt_post": (
-        "<b>Destination post</b>\n\nSend the post link, for example <code>https://t.me/channel/123</code>, "
-        "or forward the channel post to this chat.\n"
-        "<blockquote>Forwarded group messages cannot be identified. For groups, always send the message link.</blockquote>",
-        "<b>پست مقصد</b>\n\nلینک پست را ارسال کنید؛ برای مثال <code>https://t.me/channel/123</code>؛ "
-        "یا خود پست کانال را به این گفتگو فوروارد نمایید.\n"
-        "<blockquote>پیام‌های گروه با فوروارد قابل شناسایی نیستند. برای گروه‌ها حتماً لینک پیام را ارسال کنید.</blockquote>"),
+        "<b>Destination post</b>\n\nSend the post link, for example <code>https://t.me/channel/123</code>.\n"
+        "<i>Stars are charged only after you confirm.</i>",
+        "<b>پست مقصد</b>\n\nلینک پست را ارسال کنید؛ مثلاً <code>https://t.me/channel/123</code>.\n"
+        "<i>استارز فقط بعد از تأیید شما کم می‌شود.</i>"),
     "err_link_join": ("<b>Invalid link</b>\nSend <code>@username</code> or <code>t.me/username</code>.",
                       "<b>لینک نامعتبر است</b>\n<code>@username</code> یا <code>t.me/username</code> ارسال کنید."),
     "err_link_post": ("<b>Invalid link</b>\nExpected format: <code>https://t.me/username/123</code>.",
@@ -2149,8 +2168,23 @@ def pick_type(cq, uid, lang, chat, mid, typ):
         return ans(cq, tb(lang, "a_max_active", n=MAX_ACTIVE), True)
     ans(cq)
     set_state(uid, "link", {"type": typ})
-    key = "prompt_join" if typ == "join" else "prompt_post"
-    view(chat, mid, t(lang, key, bot=_me.get("username", "")), cancel_kb(lang))
+    bot = _me.get("username", "")
+    if needs_admin_mode(typ, "auto"):          # join / react: Step 1 = add the bot as admin (direct buttons)
+        return view(chat, mid, t(lang, "admin_step"), [
+            [U(tb(lang, "b_add_channel"), f"https://t.me/{bot}?startchannel=true&admin=invite_users", "primary"),
+             U(tb(lang, "b_add_group"), f"https://t.me/{bot}?startgroup=true&admin=invite_users")],
+            [B(tb(lang, "b_added"), f"na:{typ}", "success")],
+            [B(tb(lang, "b_cancel"), "campaigns", "danger")]])
+    view(chat, mid, t(lang, "prompt_post", bot=bot), cancel_kb(lang))
+
+
+def after_admin_step(cq, uid, lang, chat, mid, typ):
+    st = db.states.find_one({"_id": uid})
+    if typ not in TYPES or not st or st.get("step") != "link" or (st.get("d") or {}).get("type") != typ:
+        ans(cq, tb(lang, "a_step_expired"), True)
+        return view(chat, mid, t(lang, "e_restart"), main_kb(lang, uid))
+    ans(cq)
+    view(chat, mid, t(lang, "prompt_join" if typ == "join" else "prompt_react", bot=_me.get("username", "")), cancel_kb(lang))
 
 
 def ask_qty(chat, lang, d, cost):
@@ -3730,6 +3764,8 @@ def on_callback(cq):
         return start_new(cq, lang, chat, mid)
     if data.startswith("nt:"):
         return pick_type(cq, uid, lang, chat, mid, data[3:])
+    if data.startswith("na:"):
+        return after_admin_step(cq, uid, lang, chat, mid, data[3:])
     if data == "ok":
         return confirm_new(cq, uid, lang, chat, mid)
     if data == "my":
@@ -3922,6 +3958,7 @@ def miniapp_dashboard_data(u):
         "stats": {"availableTasks": available, "activeCampaigns": active_campaigns,
                   "completedTasks": completed_tasks},
         "tasksChannelUrl": tasks_channel_url(),
+        "botUsername": _me.get("username", ""),
     }
 
 
