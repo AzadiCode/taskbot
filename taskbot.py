@@ -68,6 +68,8 @@ REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ONLINE_WINDOW_SEC = int(os.environ.get("ONLINE_WINDOW_SEC", "300"))        # "online now" = activity in the last 5 minutes
 ADMIN_PANEL_KEY = os.environ.get("ADMIN_PANEL_KEY", "")
+TG_API_ID = os.environ.get("TG_API_ID", "")          # helper account (userbot): from my.telegram.org
+TG_API_HASH = os.environ.get("TG_API_HASH", "")
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
 VERSION = "v63-memberland"
 
@@ -2509,6 +2511,9 @@ def reactcheck(chat, lang, link):
         f"{'✅' if ok else '❌'} bot reaction test: {'ok' if ok else esc(detail)}",
         f"{'✅' if age is not None and age < 900 else '⚠️'} last count update: " + (f"{age // 60}m {age % 60}s ago · total {w.get('total')}" if age is not None else "never received"),
         f"{'✅' if m[1] and w.get('chat_id') else '⚠️'} registered in watch list: {'yes' if w.get('chat_id') else 'no'}",
+        f"🤖 helper account: {'ON' if UB.enabled_cached() else 'off'}"
+        + (f" · last read {int(time.time() - w['ub_at'])}s ago" if w.get("ub_at") else "")
+        + (f" · ⚠️ {esc(str(w.get('ub_err')))}" if w.get("ub_err") else ""),
         "",
         "Wait ~1 minute, then send the same command again: a fresh 'last count update' means Telegram delivers counts.",
         "If it stays 'never received' while admin and reaction test are ✅, Telegram is not sending counts for this post.",
@@ -3991,6 +3996,13 @@ def nudge_once(chat_id, mid):
 
 def nudge_reaction(chat_id, mid):
     """Background nudge, at most once a minute per post. Failures are logged and stored (see /reactcheck)."""
+    try:
+        if UB.enabled_cached():                      # helper account reads the counter directly: no bot reaction needed
+            w = db.reaction_watch.find_one({"_id": post_key(chat_id, mid)}, {"ub_bad_until": 1}) or {}
+            if float(w.get("ub_bad_until", 0) or 0) < time.time():
+                return
+    except Exception:
+        log.exception("nudge guard")
     if not counter_take(f"nudge:{post_key(chat_id, mid)}:{int(time.time() // 60)}", 1):
         return
 
@@ -4000,6 +4012,41 @@ def nudge_reaction(chat_id, mid):
         except Exception:
             log.exception("nudge_reaction")
     threading.Thread(target=run, daemon=True).start()
+
+
+def live_reaction_posts():
+    """Posts the helper account must read: active count orders (warm), pending claims / waiting drafts / calibration (hot)."""
+    posts = {}
+
+    def add(key, hot, uname=None):
+        try:
+            chat_id, mid = str(key).rsplit(":", 1)
+            chat_id, mid = int(chat_id), int(mid)
+        except (TypeError, ValueError):
+            return
+        p = posts.setdefault(key, {"chat_id": chat_id, "mid": mid, "uname": None, "hot": False})
+        p["hot"] = p["hot"] or hot
+        p["uname"] = p["uname"] or uname
+
+    for c in db.campaigns.find({"type": "react", "mode": "count", "status": "active", "remaining": {"$gt": 0}},
+                               {"chat_id": 1, "mid": 1, "uname": 1}).limit(80):
+        if c.get("chat_id") is not None and c.get("mid"):
+            add(post_key(c["chat_id"], c["mid"]), False, c.get("uname"))
+    for key in db.completions.distinct("post_key", {"status": "count_pending"}):
+        add(key, True)
+    for d in db.campaign_drafts.find({"status": {"$in": ["waiting", "activating"]}}, {"post_key": 1, "uname": 1}):
+        add(d.get("post_key"), True, d.get("uname"))
+    for w in db.reaction_watch.find({"calibrating_owner": {"$exists": True}}, {"uname": 1}):
+        add(w["_id"], True, w.get("uname"))
+    return posts
+
+
+def userbot_notify(text):
+    for a in list(ADMINS)[:5]:
+        try:
+            send(a, text)
+        except Exception:
+            log.exception("userbot notify")
 
 
 def queue_reaction_draft(uid, link, qty, body, d, key):
@@ -4825,6 +4872,19 @@ button{background:var(--ac);border:0;cursor:pointer}.dot{display:inline-block;wi
 <div class="sec"><b>👥 کاربران</b><div class="bar"><input id="q" placeholder="جست‌وجو: نام، یوزرنیم یا آیدی" oninput="loadUsers(true)"></div><div class="wrap"><table id="users"></table></div>
 <div class="bar"><button onclick="more()">بیشتر</button></div></div>
 <div class="sec"><b>🎯 پایش واکنش پست‌ها</b><div class="wrap"><table id="posts"></table></div></div>
+<div class="sec card" id="ub"><b>🤖 حساب کمکی (خواندن لحظه‌ای ریکشن‌ها)</b>
+<div id="ubst" class="mu" style="margin:6px 0">…</div>
+<div id="ubnone" style="display:none" class="mu">برای فعال‌سازی، متغیرهای TG_API_ID و TG_API_HASH را در سرویس تنظیم کنید و telethon نصب باشد.</div>
+<div id="ubout" style="display:none">
+<div class="bar"><input id="ubphone" dir="ltr" placeholder="+98912xxxxxxx"><button onclick="ubSend()">ارسال کد</button></div>
+<div class="bar"><input id="ubcode" dir="ltr" placeholder="کد تلگرام"><input id="ubpw1" type="password" dir="ltr" placeholder="رمز دو مرحله‌ای (اگر دارید)"><button onclick="ubSign()">ورود</button></div>
+<div class="bar"><button onclick="ubQr()" style="background:#566">ورود با QR</button></div>
+<div id="ubqr" style="display:none;background:#fff;padding:8px;border-radius:10px;width:fit-content;max-width:100%"></div>
+<div class="bar" id="ubqrpw" style="display:none"><input id="ubpw2" type="password" dir="ltr" placeholder="رمز دو مرحله‌ای"><button onclick="ubQrPw()">تأیید</button></div>
+<div class="mu">QR: در تلگرام گوشی حساب کمکی: Settings › Devices › Link Desktop Device و اسکن کنید.</div>
+</div>
+<div id="ubin" style="display:none"><div class="bar"><button id="ubtog" onclick="ubToggle()"></button><button onclick="ubLogout()" style="background:#a33">خروج از حساب</button></div></div>
+<div id="ubmsg" class="mu"></div></div>
 </div>
 <script>
 let KEY=sessionStorage.getItem('pk')||'',skip=0,timer=null;
@@ -4839,9 +4899,33 @@ async function refresh(){const d=await api('/api/panel/stats');const c=d.cards;
 $('cards').innerHTML=[['🟢 آنلاین الان',c.online_now,'on'],['آنلاین ۱ ساعت',c.online_1h],['فعال ۲۴ ساعت',c.active_24h],['کل کاربران',c.users],['جدید ۲۴ ساعت',c.new_24h],['جدید ۷ روز',c.new_7d],['مسدود',c.banned],['سفارش فعال',c.active_campaigns],['تسک در انتظار',c.pending],['ریکشن در انتظار',c.count_pending],['تسک پرداخت‌شده',c.paid],['مجموع استارز کاربران',c.points]].map(x=>`<div class="card ${x[2]||''}"><div class="k">${x[0]}</div><div class="v">${n(x[1])}</div></div>`).join('');
 $('online').innerHTML=head+d.online.map(row).join('')||'<tr><td>—</td></tr>';
 $('posts').innerHTML='<tr><th>پست</th><th>تعداد کل</th><th>آخرین آپدیت</th><th>ایموجی ربات</th><th>وضعیت</th></tr>'+d.posts.map(p=>`<tr><td><code>${esc(p.post)}</code></td><td>${n(p.total)}</td><td>${ago(p.updated_at)}</td><td>${esc(p.bot_emoji||'—')}</td><td>${p.nudge_ok===false?'⚠️ '+esc(p.nudge_err||''):'✅'}</td></tr>`).join('');
-$('upd').textContent='· بروزرسانی خودکار هر ۱۰ ثانیه'}
+$('upd').textContent='· بروزرسانی خودکار هر ۱۰ ثانیه';ubStatus().catch(()=>{})}
 async function loadUsers(reset){if(reset)skip=0;const d=await api('/api/panel/users',{q:$('q').value,skip:skip});$('users').innerHTML=(reset?head:$('users').innerHTML)+d.users.map(row).join('')}
 function more(){skip+=30;loadUsers(false)}
+let ubQrTimer=null,ubEn=false;
+async function ub(op,extra){return api('/api/panel/userbot',Object.assign({op:op},extra||{}))}
+function ubMsg(t){$('ubmsg').textContent=t||''}
+async function ubStatus(){const d=await ub('status');const ok=d.configured&&d.libs;
+$('ubnone').style.display=ok?'none':'block';$('ubout').style.display=ok&&!d.logged_in?'block':'none';$('ubin').style.display=ok&&d.logged_in?'block':'none';
+ubEn=d.enabled;$('ubtog').textContent=d.enabled?'⏹ غیرفعال کردن':'▶️ فعال کردن';
+let t=!ok?'تنظیم نشده':(!d.logged_in?'وارد نشده':(d.invalid?'⚠️ نشست نامعتبر؛ دوباره وارد شوید':(d.enabled?(d.healthy?'🟢 فعال و سالم':'🟡 فعال، در حال اتصال'):'⚪ خاموش')));
+if(d.user)t+=' · '+esc(d.user.name)+(d.user.username?' @'+esc(d.user.username):'')+(d.phone?' · '+esc(d.phone):'');
+if(d.enabled)t+=' · آخرین خواندن: '+ago(d.last_ok)+' · پست‌های خوانده‌شده: '+n(d.polled);
+if(d.floods_1h)t+=' · ⚠️ محدودیت تلگرام در ساعت اخیر: '+d.floods_1h;
+if(d.last_error)t+=' · '+esc(d.last_error);$('ubst').innerHTML=t}
+async function ubSend(){ubMsg('در حال ارسال کد…');const d=await ub('send_code',{phone:$('ubphone').value});ubMsg(d.ok?'کد به تلگرام حساب کمکی ارسال شد.':(d.error||'خطا'))}
+async function ubSign(){ubMsg('…');const d=await ub('sign_in',{code:$('ubcode').value,password:$('ubpw1').value});
+if(d.need_password)ubMsg(d.error||'رمز تأیید دو مرحله‌ای را وارد کنید و دوباره «ورود» بزنید.');else if(d.ok){ubMsg('وارد شد. برای شروع «فعال کردن» را بزنید.');ubStatus()}else ubMsg(d.error||'خطا')}
+async function ubQr(){ubMsg('');const d=await ub('qr_start');if(!d.ok){ubMsg(d.error||'خطا');return}ubShowQr(d);clearInterval(ubQrTimer);ubQrTimer=setInterval(ubQrPoll,3000)}
+function ubShowQr(d){const b=$('ubqr');b.style.display='block';b.innerHTML=d.svg?d.svg:'<code style="color:#000;word-break:break-all">'+esc(d.url)+'</code>'}
+async function ubQrPoll(pw){const d=await ub('qr_poll',{password:pw||''});
+if(d.pending){ubShowQr(d);return}
+if(d.need_password){$('ubqrpw').style.display='flex';ubMsg(d.error||'رمز تأیید دو مرحله‌ای را وارد کنید.');return}
+clearInterval(ubQrTimer);$('ubqr').style.display='none';$('ubqrpw').style.display='none';
+if(d.ok){ubMsg('وارد شد. برای شروع «فعال کردن» را بزنید.');ubStatus()}else ubMsg(d.error||'QR منقضی شد؛ دوباره بزنید.')}
+function ubQrPw(){ubQrPoll($('ubpw2').value)}
+async function ubToggle(){const d=await ub('toggle',{enabled:!ubEn});ubMsg(d.ok?'':(d.error||'خطا'));ubStatus()}
+async function ubLogout(){if(!confirm('از حساب کمکی خارج شوید؟'))return;await ub('logout');ubStatus()}
 if(KEY){$('key').value=KEY;go()}
 </script></body></html>"""
 
@@ -4879,6 +4963,14 @@ def panel_stats():
               "nudge_ok": w.get("nudge_ok"), "nudge_err": w.get("nudge_err")}
              for w in db.reaction_watch.find({}).sort("updated_at", -1).limit(20)]
     return jsonify(ok=True, cards=cards, online=online, posts=posts)
+
+
+@app.post("/api/panel/userbot")
+def panel_userbot():
+    if not panel_authorized():
+        return jsonify(error="auth"), 401
+    body = request.get_json(silent=True) or {}
+    return jsonify(UB.op(str(body.get("op") or "status"), body))
 
 
 @app.post("/api/panel/users")
@@ -4932,8 +5024,11 @@ def setup():
     else:
         log.warning("TASKS_CHANNEL is not set; automatic publishing to the showcase channel is disabled")
     threading.Thread(target=worker, daemon=True).start()
+    UB.start()
 
 
+import userbot as _userbot_mod
+UB = _userbot_mod.Manager(db, TG_API_ID, TG_API_HASH, SECRET_KEY, live_reaction_posts, on_reaction_count, userbot_notify)
 setup()
 
 if __name__ == "__main__":
