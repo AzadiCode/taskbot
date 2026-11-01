@@ -18,7 +18,7 @@
   --gold:#ffc759;--gold-soft:rgba(255,199,89,.14);
   --mint:#3ee0b0;--mint-soft:rgba(62,224,176,.14);
   --rose:#ff7a90;--pink:#ff6fc8;--cyan:#4fd6ff;
-  --lv:#ff9f4a;
+  --lv:#2aabee;
   --nav-h:68px;
   --font:"Vazirmatn",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;
 }
@@ -40,7 +40,6 @@ svg.i.fill{fill:currentColor;stroke:none}
 .app{width:min(100%,560px);margin:0 auto;padding:0 16px}
 .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 -16px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:color-mix(in srgb,var(--ink) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 .bar-id{display:flex;align-items:center;gap:10px;min-width:0}
-.bar-id .emb{width:38px;height:38px}
 .bar-name{font-weight:700;font-size:15px;line-height:1.2}
 .bar-sub{font-size:11px;color:var(--muted);line-height:1.3}
 .bal{display:flex;align-items:center;gap:7px;padding:7px 13px 7px 11px;border-radius:999px;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 34%,transparent);color:var(--gold);font-weight:800;font-size:16px}
@@ -217,7 +216,6 @@ main{padding-top:6px}
 
 /* ---------- profile ---------- */
 .me-card{display:flex;align-items:center;gap:14px}
-.me-card .emb{width:64px;height:64px}
 .me-name{font-size:18px;font-weight:800}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .invite-link{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;background:var(--ink);border:1px solid var(--line);direction:ltr;font-size:12px;color:var(--muted);overflow:hidden}
@@ -233,9 +231,19 @@ main{padding-top:6px}
 .toggle.on{background:var(--mint)}
 .toggle.on::after{inset-inline-start:21px}
 
+/* avatar */
+.av{position:relative;width:42px;height:42px;flex:none}
+.av.lg{width:72px;height:72px}
+.av-in{position:relative;width:100%;height:100%;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:color-mix(in srgb,var(--lv) 16%,var(--panel-2));border:2px solid var(--lv);color:var(--lv)}
+.av-in svg.i{width:46%;height:46%}
+.av-in img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.av-lv{position:absolute;inset-inline-end:-5px;bottom:-5px;width:46%;height:46%;border-radius:50%;background:var(--ink)}
+.av-lv .emb{width:100%;height:100%;filter:none}
+
 /* invite banner */
 .banner{border-radius:20px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line-2)}
-.ban-img,.ban-art{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.ban-img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:var(--ink)}
+.ban-art{display:grid;width:100%;aspect-ratio:16/9}
 .ban-art{display:grid;place-items:center;background:radial-gradient(70% 90% at 50% 40%,color-mix(in srgb,var(--lv) 28%,transparent),transparent 70%),var(--panel-2)}
 .ban-art .emb{width:34%;max-width:130px;height:auto}
 .ban-body{display:grid;gap:4px;padding:14px}
@@ -440,7 +448,7 @@ const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot men
 Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.',banner_failed:'Could not send. Open the bot chat first.',bad_image:'Image link must start with https://',bad_image_file:'Pick an image under 8 MB.'});
 Object.assign(apiErrors.fa,{already_claimed:'هدیه‌ی امروز را قبلاً دریافت کرده‌ای.',wheel_locked:'برای باز شدن گردونه امروز 1 تسک انجام بده.',wheel_used:'امروز گردونه را چرخانده‌ای.',banner_failed:'ارسال نشد. اول چت ربات را باز کن.',bad_image:'لینک تصویر باید با https:// شروع شود',bad_image_file:'یک تصویر زیر 8 مگابایت انتخاب کن.'});
 
-const HUES=['#ff9f4a','#4fd6ff','#a98bff','#ff6fc8','#ffd36b'];
+const HUES=['#2aabee','#5b8cff','#8b74ff','#b266ff','#dd5cff'];
 const initData=tg?.initData||'';
 const state={page:'home',sub:'path',lang:'en',user:null,stats:{},tasks:[],campaigns:[],g:null,filter:'all',board:'e',
   tasksChannelUrl:'',channelRequired:false,checkUnavailable:false,type:'join',spinning:false,wheelRot:0,loaded:false,lastFetch:0};
@@ -489,13 +497,18 @@ const lvl=()=>state.g?.level||{idx:state.user?.level||0,done:state.user?.doneTas
 const lvName=i=>lvl().levels[i]?.name||'';
 const typeIcon=k=>k==='join'?'users':k==='react'?'heart':'eye';
 const costs=()=>state.g?.costs||{join:4,react:3,view:2};
+const tgPhoto=tg?.initDataUnsafe?.user?.photo_url||'';
+function avatar(L,cls=''){
+  const ph=tgPhoto?`<img src="${esc(tgPhoto)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:'';
+  return `<div class="av ${cls}"><div class="av-in">${ic('user')}${ph}</div><div class="av-lv">${emblem(L.idx,'live')}</div></div>`;
+}
 function applyHue(){document.documentElement.style.setProperty('--lv',hue(lvl().idx));}
 
 /* ---------- chrome ---------- */
 function renderBar(){
   const u=state.user;if(!u){$('#topbar').innerHTML='';return;}
   const L=lvl();
-  $('#topbar').innerHTML=`<div class="bar-id">${emblem(L.idx,'live')}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${t('levelN',{n:L.idx+1})}${lvName(L.idx)?' · '+esc(lvName(L.idx)):''}</div></div></div>
+  $('#topbar').innerHTML=`<div class="bar-id">${avatar(L)}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${t('levelN',{n:L.idx+1})}${lvName(L.idx)?' · '+esc(lvName(L.idx)):''}</div></div></div>
   <button class="bal" id="balChip" data-act="go" data-p="rewards" aria-label="${t('stars')}">${ic('star','fill')}${N(u.points)}</button>`;
 }
 function renderNav(){
@@ -676,7 +689,7 @@ async function saveBanner(){
 }
 function renderProfile(){
   const u=state.user,g=state.g,L=lvl(),inv=g?.invite;
-  return `<div class="card"><div class="me-card">${emblem(L.idx,'live')}<div class="grow"><div class="me-name">${esc(u.name||t('user'))}</div><div class="muted" style="font-size:12.5px">${u.username?`<span class="num">@${esc(u.username)}</span> · `:''}ID <span class="num">${u.id}</span></div><div class="t-meta"><span class="chip" style="color:var(--lv)">${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div></div></div>
+  return `<div class="card"><div class="me-card">${avatar(L,'lg')}<div class="grow"><div class="me-name">${esc(u.name||t('user'))}</div><div class="muted" style="font-size:12.5px">${u.username?`<span class="num">@${esc(u.username)}</span> · `:''}ID <span class="num">${u.id}</span></div><div class="t-meta"><span class="chip" style="color:var(--lv)">${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div></div></div>
    <div class="grid2"><div class="stat"><b>${N(u.earned)}</b><span>${t('totalEarned')}</span></div><div class="stat"><b>${N(u.hold)}</b><span>${t('onHold')}</span></div></div>
    ${inv&&inv.link?inviteCard(inv,L):''}
    <div class="card" style="margin-top:10px;padding-top:4px;padding-bottom:4px"><div class="set-row"><div><b>${t('language')}</b></div><div class="seg" style="min-width:150px"><button class="${state.lang==='en'?'on':''}" data-act="lang" data-l="en">English</button><button class="${state.lang==='fa'?'on':''}" data-act="lang" data-l="fa">فارسی</button></div></div>
