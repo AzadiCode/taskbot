@@ -90,6 +90,8 @@ class Manager:
         self._polled = 0
         self._qr = None
         self._lead_until = 0.0
+        self._thread = None
+        self._thread_err = ""
         self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ub-bg")
 
     # ───────────────────────── crypto / storage ─────────────────────────
@@ -129,22 +131,41 @@ class Manager:
 
     # ───────────────────────── loop thread ─────────────────────────
     def start(self):
-        if self._started or not (self.configured and self.libs_ok):
+        """Start (or restart) the loop thread. Safe to call on every request: does nothing while the thread is alive."""
+        if not (self.configured and self.libs_ok):
+            return
+        t = getattr(self, "_thread", None)
+        if t is not None and t.is_alive():
             return
         self._started = True
-        threading.Thread(target=self._thread_main, daemon=True, name="userbot").start()
+        self._ready.clear()
+        self._thread = threading.Thread(target=self._thread_main, daemon=True, name="userbot")
+        self._thread.start()
 
     def _thread_main(self):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        self._ready.set()
-        self.loop.create_task(self._main())
-        self.loop.run_forever()
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            # fresh executors owned by us (never the shared/default ones that may already be shut down)
+            self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ub-bg")
+            self.loop.set_default_executor(ThreadPoolExecutor(max_workers=16, thread_name_prefix="ub-dns"))
+            self._thread_err = ""
+            self._ready.set()
+            self.loop.create_task(self._main())
+            self.loop.run_forever()
+        except BaseException as e:
+            self._thread_err = f"{type(e).__name__}: {str(e)[:160]}"
+            log.exception("userbot loop thread crashed")
+        finally:
+            self._ready.clear()
+
+    def _not_running(self):
+        return RuntimeError("userbot loop is not running" + (f" ({self._thread_err})" if getattr(self, "_thread_err", "") else ""))
 
     def call(self, coro, timeout=60):
         if not self._ready.wait(8):
             coro.close()
-            raise RuntimeError("userbot loop is not running")
+            raise self._not_running()
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
     async def _bg(self, fn, *a):
@@ -226,7 +247,7 @@ class Manager:
 
         if not self._ready.wait(8):
             coro.close()
-            raise RuntimeError("userbot loop is not running")
+            raise self._not_running()
         asyncio.run_coroutine_threadsafe(runner(), self.loop)
         return {"ok": True, "job": jid}
 
