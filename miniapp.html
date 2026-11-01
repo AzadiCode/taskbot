@@ -102,8 +102,8 @@ main{padding-top:6px}
 .orbit-core .emb{width:100%;height:100%}
 .orbit-lvl{position:absolute;inset-inline:0;bottom:-2px;text-align:center}
 .orbit-lvl span{display:inline-block;padding:2px 12px;border-radius:99px;background:var(--ink);border:1px solid color-mix(in srgb,var(--lv) 55%,transparent);color:var(--lv);font-weight:800;font-size:12px}
-.orbit-title{text-align:center;font-size:19px;font-weight:800;margin:16px 0 4px}
-.orbit-sub{text-align:center;color:var(--muted);font-size:12.5px;margin:0 auto 14px;max-width:34ch}
+.orbit-title{text-align:center;font-size:20px;font-weight:800;margin:16px 0 8px}
+.orbit-sub{display:flex;justify-content:center;min-height:26px;margin:0 auto 14px}
 .emb{display:block;filter:drop-shadow(0 0 9px color-mix(in srgb,var(--c,var(--lv)) 55%,transparent))}
 
 /* ---------- home blocks ---------- */
@@ -317,18 +317,18 @@ const T={
 en:{
  nav_home:'Home',nav_tasks:'Tasks',nav_grow:'Grow',nav_rewards:'Rewards',nav_profile:'Profile',
  stars:'Stars',levelN:'Level {n}',
- toNext:'{n} tasks to {level}',maxLevel:'You reached the top level',
+ toNext:'{n} tasks to next level',maxLevel:'Top level',
  nextPays:'Reaching it pays +{bonus} Stars and lifts your daily limit to {cap} tasks.',
  maxSub:'Keep your streak alive and climb the weekly board.',
- earnNow:'Start earning',dailyGift:'Daily gift',dayStreak:'day streak',claim:'Claim +{n}',nextGiftIn:'Next gift in {t}',
- today:'Today',ofTasks:'{d} of {c} tasks',wheelReady:'Your wheel spin is ready',wheelLocked:'Finish 1 task to unlock the wheel',wheelUsed:'Wheel used today',
- golden:'Golden hour: rewards x{m} until {h}:00 UTC',
- openTasks:'Open tasks',activeCamps:'Active campaigns',tasksDone:'Tasks done',unlockAt:'Next unlock at {level}',seeAll:'See all',
+ earnNow:'Earn Stars',dailyGift:'Daily gift',dayStreak:'day streak',claim:'Claim +{n}',nextGiftIn:'{t} to next gift',
+ today:'Today',ofTasks:'{d} of {c} tasks',wheelReady:'Wheel ready',wheelLocked:'Wheel locked',wheelUsed:'Wheel spun',
+ golden:'Golden hour · rewards x{m}',
+ openTasks:'Open tasks',activeCamps:'Active campaigns',tasksDone:'Tasks done',unlockAt:'Next: {level}',seeAll:'See all',
  doneCount:'{n} tasks done',tasksTitle:'Tasks',tasksSub:'Open the task, finish it, then verify here.',
  all:'All',join:'Members',react:'Reactions',view:'Views',
- dailyLimit:'Daily limit',start:'Open task',verify:'Verify and claim',openAgain:'Open again',pending:'Verifying',leftN:'{n} left',live:'In progress',
- emptyTasks:'No tasks right now',emptyTasksSub:'New tasks appear here as soon as campaigns go live.',
- joinTitle:'Join the task channel first',joinMsg:'Only members of the official task channel can see and complete tasks. Join, then come back.',joinBtn:'Join task channel',
+ dailyLimit:'Daily limit',start:'Start',verify:'Verify',openAgain:'Open again',pending:'Verifying',leftN:'{n} left',live:'In progress',
+ emptyTasks:'No tasks right now',emptyTasksSub:'Check back soon',
+ joinTitle:'Join the task channel first',joinMsg:'Join to unlock tasks.',joinBtn:'Join task channel',
  checkTitle:'Membership check unavailable',checkMsg:'Telegram could not verify your membership. Try again in a moment.',
  opened:'Task opened. Come back here and verify.',verified:'Task verified',pendingMsg:'Reaction count is being verified. Your reward arrives soon.',youEarned:'You earned',goldenBonus:'Golden hour bonus included',
  growTitle:'Grow your channel',growSub:'Spend Stars on real members, reactions and views.',yourStars:'Your Stars',canBuy:'Enough for up to {n} members',
@@ -338,53 +338,55 @@ en:{
  linkLbl:'Link',hintJoin:'Channel link. The bot must be an admin there.',hintPost:'Link to one specific post.',qtyLbl:'Quantity',max:'Max',windowLbl:'Reaction check window',minN:'{n} min',
  cost:'Cost',after:'Balance after',publish:'Publish campaign',publishing:'Publishing…',published:'Campaign is live in the task channel.',needStars:'You need at least {n} Stars for this type.',earnStars:'Earn Stars',
  rewardsTitle:'Rewards',segPath:'Levels',segDaily:'Daily',segBadges:'Badges',segBoard:'Leaderboard',
- youAreHere:'You are here',needTasks:'{n} tasks',perkBonus:'Level-up bonus +{n} Stars',perkMult:'Daily gift x{m}',perkCap:'Up to {n} tasks per day',soon:'Coming soon',
- giftSub:'Collect every day to grow your streak. Longer streaks pay more.',dayN:'Day {n}',milestoneNote:'Bonus Stars at 7, 14, 30, 60 and 100 days.',claimed:'Collected today',bestStreak:'Best streak: {n}',
- wheelTitle:'Lucky wheel',wheelSub:'One free spin a day, unlocked by your first task.',spin:'Spin',spinning:'Spinning…',youWon:'You won',giftWon:'Daily gift',streakN:'{n} day streak',
+ youAreHere:'You are here',needTasks:'{n} tasks',perkBonus:'Level-up bonus +{n}',perkMult:'Daily gift x{m}',perkCap:'Up to {n} tasks a day',soon:'Coming soon',
+ giftSub:'Collect daily for bigger rewards',dayN:'Day {n}',milestoneNote:'Bonus Stars at 7, 14, 30, 60 and 100 days.',claimed:'Collected today',bestStreak:'Best streak: {n}',
+ wheelTitle:'Lucky wheel',wheelSub:'Once a day, after your first task',spin:'Spin',spinning:'Spinning…',youWon:'You won',giftWon:'Daily gift',streakN:'{n} day streak',
  gTasks:'Tasks',gFriends:'Friends',gStreak:'Streak',gOrders:'Campaigns',badgesCount:'{n} of {t} earned',
  earners:'Top earners',inviters:'Top inviters',resetsIn:'Resets in {t}',yourRank:'Your rank',unranked:'Not ranked yet',boardEmpty:'Nobody on the board yet. Be the first.',weekPrizes:'Weekly prizes in Stars',
  p1:'1st',p2:'2nd',p3:'3rd',you:'You',
  totalEarned:'Total earned',onHold:'On hold',invited:'Friends invited',activeFriends:'Active friends',
- inviteTitle:'Invite friends',inviteSub:'Your friend gets +{w} Stars on joining. You get +{a} Stars once they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Earn free Stars on TaskPlus and grow your channel.',ladderTitle:'Friend milestones',friendsUnit:'friends',
- language:'Language',reminders:'Smart reminders',remindersHelp:'At most one message a day, only when tasks are waiting.',taskChannel:'Task channel',saved:'Saved',
- levelUp:'Level up',levelUpSub:'You reached {level}. Bonus +{b} Stars added.',cont:'Continue',
- authTitle:'Open TaskPlus from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user'
+ inviteTitle:'Invite friends',inviteSub:'Friend gets +{w}. You get +{a} after they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Earn free Stars on TaskPlus and grow your channel.',ladderTitle:'Friend milestones',friendsUnit:'friends',
+ language:'Language',reminders:'Smart reminders',remindersHelp:'One reminder a day',taskChannel:'Task channel',saved:'Saved',
+ levelUp:'Level up',levelUpSub:'Bonus +{b} Stars',cont:'Continue',
+ authTitle:'Open TaskPlus from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user',
+ levelReward:'Level reward'
 },
 fa:{
  nav_home:'خانه',nav_tasks:'تسک‌ها',nav_grow:'رشد',nav_rewards:'جوایز',nav_profile:'پروفایل',
  stars:'استارز',levelN:'سطح {n}',
- toNext:'{n} تسک تا {level}',maxLevel:'به بالاترین سطح رسیدی',
+ toNext:'{n} تسک تا سطح بعد',maxLevel:'بالاترین سطح',
  nextPays:'رسیدن به آن +{bonus} استارز می‌دهد و سقف روزانه‌ات را به {cap} تسک می‌رساند.',
  maxSub:'استریک را نگه دار و در جدول هفتگی بالا برو.',
- earnNow:'شروع کسب استارز',dailyGift:'هدیه‌ی روزانه',dayStreak:'روز استریک',claim:'دریافت +{n}',nextGiftIn:'هدیه‌ی بعدی: {t} دیگر',
- today:'امروز',ofTasks:'{d} از {c} تسک',wheelReady:'چرخش گردونه‌ات آماده است',wheelLocked:'با انجام 1 تسک گردونه باز می‌شود',wheelUsed:'گردونه امروز استفاده شد',
- golden:'ساعت طلایی: پاداش‌ها {m} برابر تا ساعت {h}:00 به وقت UTC',
- openTasks:'تسک‌های باز',activeCamps:'کمپین‌های فعال',tasksDone:'تسک‌های انجام‌شده',unlockAt:'قفل بعدی در {level}',seeAll:'مشاهده همه',
- doneCount:'{n} تسک انجام‌شده',tasksTitle:'تسک‌ها',tasksSub:'تسک را باز کن، انجامش بده و همین‌جا تأیید بگیر.',
+ earnNow:'کسب استارز',dailyGift:'هدیه روزانه',dayStreak:'روز پشت‌سرهم',claim:'دریافت +{n}',nextGiftIn:'{t} تا هدیه بعدی',
+ today:'امروز',ofTasks:'{d} از {c} تسک',wheelReady:'گردونه آماده',wheelLocked:'گردونه قفل',wheelUsed:'گردونه چرخید',
+ golden:'ساعت طلایی · پاداش {m} برابر',
+ openTasks:'تسک‌های باز',activeCamps:'کمپین فعال',tasksDone:'انجام‌شده',unlockAt:'سطح بعد: {level}',seeAll:'همه',
+ doneCount:'{n} تسک',tasksTitle:'تسک‌ها',tasksSub:'تسک را باز کن، انجامش بده و همین‌جا تأیید بگیر.',
  all:'همه',join:'عضویت',react:'واکنش',view:'بازدید',
- dailyLimit:'سقف امروز',start:'باز کردن تسک',verify:'تأیید و دریافت',openAgain:'باز کردن دوباره',pending:'در حال بررسی',leftN:'{n} باقی',live:'در حال انجام',
- emptyTasks:'فعلاً تسکی نیست',emptyTasksSub:'با فعال شدن کمپین‌های جدید، تسک‌ها همین‌جا می‌آیند.',
- joinTitle:'اول عضو کانال تسک‌ها شو',joinMsg:'فقط اعضای کانال رسمی تسک‌ها می‌توانند تسک‌ها را ببینند و انجام دهند. عضو شو و برگرد.',joinBtn:'عضویت در کانال تسک‌ها',
- checkTitle:'بررسی عضویت ممکن نیست',checkMsg:'تلگرام نتوانست عضویتت را بررسی کند. کمی بعد دوباره تلاش کن.',
- opened:'تسک باز شد. بعد از انجام به اینجا برگرد و تأیید بگیر.',verified:'تسک تأیید شد',pendingMsg:'شمارش واکنش در حال بررسی است. پاداش به‌زودی می‌رسد.',youEarned:'دریافت کردی',goldenBonus:'پاداش ساعت طلایی هم اضافه شد',
- growTitle:'رشد کانال',growSub:'استارزت را خرج عضو، واکنش و بازدید واقعی کن.',yourStars:'استارز تو',canBuy:'برای حداکثر {n} عضو کافی است',
- newCamp:'کمپین جدید',myCamps:'کمپین‌های من',emptyCamps:'هنوز کمپینی نداری',emptyCampsSub:'یکی بساز تا برای کانالت عضو، واکنش یا بازدید بگیری.',
- doneOf:'{d} از {t} انجام شد',stActive:'فعال',stPaused:'متوقف موقت',stCompleted:'تکمیل‌شده',stCancelled:'لغوشده',stop:'توقف و بازگشت استارز',confirmStop:'این کمپین متوقف شود و استارز استفاده‌نشده برگردد؟',stopped:'کمپین متوقف شد. {n} استارز برگشت.',
- typeLbl:'چه چیزی لازم داری؟',typeJoin:'عضو',descJoin:'کاربر واقعی عضو کانال یا گروهت می‌شود',typeReact:'واکنش',descReact:'واکنش روی یک پست مشخص',typeView:'بازدید',descView:'بازدید برای یک پست مشخص',perUnit:'هر عدد {c} استارز',
- linkLbl:'لینک',hintJoin:'لینک کانال. ربات باید آنجا مدیر باشد.',hintPost:'لینک یک پست مشخص.',qtyLbl:'تعداد',max:'حداکثر',windowLbl:'بازه بررسی واکنش',minN:'{n} دقیقه',
- cost:'هزینه',after:'موجودی بعد از ثبت',publish:'انتشار کمپین',publishing:'در حال انتشار…',published:'کمپین در کانال تسک‌ها منتشر شد.',needStars:'برای این نوع حداقل {n} استارز لازم است.',earnStars:'کسب استارز',
+ dailyLimit:'سقف امروز',start:'شروع',verify:'تأیید',openAgain:'باز کردن دوباره',pending:'در حال بررسی',leftN:'{n} مانده',live:'در حال انجام',
+ emptyTasks:'تسکی نیست',emptyTasksSub:'کمی بعد سر بزن',
+ joinTitle:'اول عضو کانال تسک‌ها شو',joinMsg:'بعد از عضویت، تسک‌ها باز می‌شوند.',joinBtn:'عضویت',
+ checkTitle:'عضویت بررسی نشد',checkMsg:'دوباره تلاش کن.',
+ opened:'انجامش بده و برگرد',verified:'تأیید شد',pendingMsg:'در حال بررسی',youEarned:'پاداش',goldenBonus:'با پاداش ساعت طلایی',
+ growTitle:'رشد کانال',growSub:'استارزت را خرج عضو، واکنش و بازدید واقعی کن.',yourStars:'استارز تو',canBuy:'تا {n} عضو',
+ newCamp:'کمپین جدید',myCamps:'کمپین‌های من',emptyCamps:'هنوز کمپینی نداری',emptyCampsSub:'اولین کمپینت را بساز',
+ doneOf:'{d} از {t} انجام شد',stActive:'فعال',stPaused:'متوقف موقت',stCompleted:'تکمیل‌شده',stCancelled:'لغوشده',stop:'توقف',confirmStop:'این کمپین متوقف شود و استارز استفاده‌نشده برگردد؟',stopped:'کمپین متوقف شد. {n} استارز برگشت.',
+ typeLbl:'چی می‌خواهی؟',typeJoin:'عضو',descJoin:'برای کانال یا گروه',typeReact:'واکنش',descReact:'برای یک پست',typeView:'بازدید',descView:'برای یک پست',perUnit:'{c} استارز',
+ linkLbl:'لینک',hintJoin:'لینک کانال (ربات باید ادمین باشد)',hintPost:'لینک یک پست',qtyLbl:'تعداد',max:'حداکثر',windowLbl:'مهلت بررسی',minN:'{n} دقیقه',
+ cost:'هزینه',after:'موجودی بعد',publish:'انتشار',publishing:'در حال انتشار…',published:'کمپین منتشر شد',needStars:'حداقل {n} استارز لازم است',earnStars:'کسب استارز',
  rewardsTitle:'جوایز',segPath:'سطح‌ها',segDaily:'روزانه',segBadges:'نشان‌ها',segBoard:'جدول',
- youAreHere:'جایگاه تو',needTasks:'{n} تسک',perkBonus:'پاداش ارتقا +{n} استارز',perkMult:'هدیه‌ی روزانه {m} برابر',perkCap:'تا {n} تسک در روز',soon:'به‌زودی',
- giftSub:'هر روز دریافت کن تا استریکت بالا برود؛ استریک بیشتر یعنی پاداش بیشتر.',dayN:'روز {n}',milestoneNote:'در روزهای 7، 14، 30، 60 و 100 استارز جایزه‌ی ویژه می‌گیری.',claimed:'امروز دریافت شد',bestStreak:'بهترین استریک: {n}',
- wheelTitle:'گردونه‌ی شانس',wheelSub:'هر روز یک چرخش رایگان؛ با اولین تسک باز می‌شود.',spin:'چرخاندن',spinning:'در حال چرخش…',youWon:'برنده شدی',giftWon:'هدیه‌ی روزانه',streakN:'استریک {n} روزه',
+ youAreHere:'الان اینجایی',needTasks:'{n} تسک',perkBonus:'جایزه ارتقا +{n}',perkMult:'هدیه روزانه ×{m}',perkCap:'سقف {n} تسک در روز',soon:'به‌زودی',
+ giftSub:'هر روز بگیر، جایزه بیشتر می‌شود',dayN:'روز {n}',milestoneNote:'روز 7، 14، 30، 60 و 100 جایزه ویژه',claimed:'گرفتی',bestStreak:'رکورد: {n}',
+ wheelTitle:'گردونه‌ی شانس',wheelSub:'روزی یک بار، بعد از اولین تسک',spin:'بچرخان',spinning:'...',youWon:'برنده شدی',giftWon:'هدیه‌ی روزانه',streakN:'استریک {n} روزه',
  gTasks:'تسک‌ها',gFriends:'دوستان',gStreak:'استریک',gOrders:'کمپین‌ها',badgesCount:'{n} از {t} نشان گرفته‌ای',
- earners:'برترین درآمدسازها',inviters:'برترین دعوت‌کننده‌ها',resetsIn:'بازنشانی تا {t} دیگر',yourRank:'رتبه‌ی تو',unranked:'هنوز رتبه‌ای نداری',boardEmpty:'هنوز کسی در جدول نیست؛ اول تو باش.',weekPrizes:'جایزه‌ی هفتگی (استارز)',
+ earners:'برترین درآمدسازها',inviters:'برترین دعوت‌کننده‌ها',resetsIn:'{t} تا پایان هفته',yourRank:'رتبه‌ی تو',unranked:'—',boardEmpty:'هنوز کسی نیست',weekPrizes:'جایزه هفتگی',
  p1:'نفر اول',p2:'نفر دوم',p3:'نفر سوم',you:'تو',
- totalEarned:'کل درآمد',onHold:'در انتظار آزادسازی',invited:'دوستان دعوت‌شده',activeFriends:'دوستان فعال',
- inviteTitle:'دعوت دوستان',inviteSub:'دوستت هنگام ورود +{w} استارز می‌گیرد و تو بعد از انجام {n} تسک توسط او +{a} استارز می‌گیری.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'در تاسک‌پلاس استارز رایگان بگیر و کانالت را رشد بده.',ladderTitle:'پله‌های دعوت',friendsUnit:'دوست',
- language:'زبان',reminders:'یادآوری هوشمند',remindersHelp:'حداکثر روزی یک پیام، آن هم فقط وقتی تسک باز داری.',taskChannel:'کانال تسک‌ها',saved:'ذخیره شد',
- levelUp:'ارتقای سطح',levelUpSub:'به {level} رسیدی. پاداش +{b} استارز اضافه شد.',cont:'ادامه',
- authTitle:'تاسک‌پلاس را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام'
+ totalEarned:'کل درآمد',onHold:'در انتظار',invited:'دعوت‌شده',activeFriends:'فعال',
+ inviteTitle:'دعوت دوستان',inviteSub:'دوستت +{w} می‌گیرد. تو +{a} می‌گیری وقتی او {n} تسک انجام دهد.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'در تاسک‌پلاس استارز بگیر و کانالت را رشد بده',ladderTitle:'پاداش دعوت',friendsUnit:'دوست',
+ language:'زبان',reminders:'یادآوری هوشمند',remindersHelp:'روزی یک یادآوری',taskChannel:'کانال تسک‌ها',saved:'ذخیره شد',
+ levelUp:'سطح جدید',levelUpSub:'جایزه +{b} استارز',cont:'ادامه',
+ authTitle:'تاسک‌پلاس را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام',
+ levelReward:'جایزه سطح'
 }};
 const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
 Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.'});
@@ -420,9 +422,9 @@ function setLang(l){state.lang=l==='fa'?'fa':'en';document.documentElement.lang=
 
 /* ---------- visuals ---------- */
 function emblem(idx,cls=''){
-  const c=hue(idx),n=idx+1;let dots='';
-  for(let k=0;k<n;k++){const a=(-90+k*360/n)*Math.PI/180;dots+=`<circle cx="${(50+42*Math.cos(a)).toFixed(1)}" cy="${(50+42*Math.sin(a)).toFixed(1)}" r="4.4" fill="${c}"/>`;}
-  return `<svg class="emb ${cls}" style="--c:${c}" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="${c}" stroke-opacity=".45" stroke-width="1.6"/><circle cx="50" cy="50" r="27" fill="${c}" fill-opacity=".22"/><circle cx="50" cy="50" r="19" fill="${c}"/><circle cx="50" cy="50" r="8" fill="#fff" fill-opacity=".92"/>${dots}</svg>`;
+  const c=hue(idx),n=idx+1;let bars='';
+  for(let k=0;k<5;k++){const h=14+k*9,x=21+k*13;bars+=`<rect x="${x}" y="${76-h}" width="9" height="${h}" rx="3" fill="${c}" fill-opacity="${k<n?1:.22}"/>`;}
+  return `<svg class="emb ${cls}" style="--c:${c}" viewBox="0 0 100 100" aria-hidden="true"><rect x="6" y="6" width="88" height="88" rx="28" fill="${c}" fill-opacity=".14" stroke="${c}" stroke-opacity=".5" stroke-width="1.6"/>${bars}</svg>`;
 }
 const lvl=()=>state.g?.level||{idx:state.user?.level||0,done:state.user?.doneTasks||0,progress:0,toGo:0,to:null,levels:[]};
 const lvName=i=>lvl().levels[i]?.name||'';
@@ -434,7 +436,7 @@ function applyHue(){document.documentElement.style.setProperty('--lv',hue(lvl().
 function renderBar(){
   const u=state.user;if(!u){$('#topbar').innerHTML='';return;}
   const L=lvl();
-  $('#topbar').innerHTML=`<div class="bar-id">${emblem(L.idx)}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${esc(lvName(L.idx))}${lvName(L.idx)?' · ':''}${t('levelN',{n:L.idx+1})}</div></div></div>
+  $('#topbar').innerHTML=`<div class="bar-id">${emblem(L.idx)}<div><div class="bar-name">${esc(u.name||t('user'))}</div><div class="bar-sub">${t('levelN',{n:L.idx+1})}${lvName(L.idx)?' · '+esc(lvName(L.idx)):''}</div></div></div>
   <button class="bal" id="balChip" data-act="go" data-p="rewards" aria-label="${t('stars')}">${ic('star','fill')}${N(u.points)}</button>`;
 }
 function renderNav(){
@@ -474,20 +476,20 @@ function liveTasks(){return [...state.tasks].sort((a,b)=>(+!!b.started)-(+!!a.st
 function renderHome(){
   const u=state.user,g=state.g,L=lvl();
   const nx=L.levels[L.idx+1];
-  const title=nx?t('toNext',{n:fmt(L.toGo),level:nx.name}):t('maxLevel');
-  const sub=nx?t('nextPays',{bonus:nx.bonus,cap:nx.cap}):t('maxSub');
+  const title=nx?t('toNext',{n:`<span class="num">${fmt(L.toGo)}</span>`}):t('maxLevel');
+  const sub=nx?`<span class="chip gold">${ic('star','sm fill')}${t('levelReward')} <span class="num">+${nx.bonus}</span></span>`:'';
   const gift=g?.gift,daily=g?.daily||{done:0,cap:0},wh=g?.wheel?.state;
   const bars=gift?gift.days.map(d=>`<i class="${d.done?'on':''}"></i>`).join(''):'';
   const giftBtn=gift?(gift.claimed?`<div class="chip" style="margin-top:12px">${ic('clock','sm')}${t('nextGiftIn',{t:dur(gift.secondsToNext)})}</div>`:`<button class="btn gold sm block" style="margin-top:12px" data-act="gift">${ic('gift','sm')}${t('claim',{n:fmt(gift.reward+gift.milestone)})}</button>`):'';
-  const whText=wh==='ready'?t('wheelReady'):wh==='used'?t('wheelUsed'):t('wheelLocked');
+  const whText=wh==='ready'?t('wheelReady'):wh==='used'?t('wheelUsed'):t('wheelLocked');const whIcon=wh==='locked'?'lock':'star';
   const lockPerks=nx?(nx.unlocks||[]).map(x=>x.text).join(' · '):'';
   const preview=liveTasks().slice(0,3);
-  return `<section class="orbit-card"><div class="orbit-wrap"><svg class="ring" viewBox="0 0 208 208" aria-hidden="true"><circle class="trk" cx="104" cy="104" r="96"/><circle class="arc" id="arc" cx="104" cy="104" r="96" stroke-dasharray="603.2" stroke-dashoffset="603.2"/><circle class="sat" id="sat" cx="200" cy="104" r="6.5"/></svg><div class="orbit-core">${emblem(L.idx)}</div><div class="orbit-lvl"><span>${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div>
-   <div class="orbit-title">${title}</div><p class="orbit-sub">${sub}</p><button class="btn primary block" data-act="go" data-p="tasks">${ic('bolt','sm')}${t('earnNow')}</button></section>
-   ${g?.golden?.active?`<div class="gold-banner">${ic('bolt')}<span>${t('golden',{m:g.golden.mult,h:g.golden.endHour})}</span></div>`:''}
+  return `<section class="orbit-card"><div class="orbit-wrap"><svg class="ring" viewBox="0 0 208 208" aria-hidden="true"><circle class="trk" cx="104" cy="104" r="96"/><circle class="arc" id="arc" cx="104" cy="104" r="96" stroke-dasharray="603.2" stroke-dashoffset="603.2"/><circle class="sat" id="sat" cx="200" cy="104" r="6.5"/></svg><div class="orbit-core">${emblem(L.idx)}</div><div class="orbit-lvl"><span>${esc(lvName(L.idx))}</span></div></div>
+   <div class="orbit-title">${title}</div><div class="orbit-sub">${sub}</div><button class="btn primary block" data-act="go" data-p="tasks">${ic('bolt','sm')}${t('earnNow')}</button></section>
+   ${g?.golden?.active?`<div class="gold-banner">${ic('bolt')}<span>${t('golden',{m:`<span class="num">${g.golden.mult}</span>`})}</span></div>`:''}
    ${g?`<div class="duo"><div class="card"><div class="mini-k">${t('dailyGift')}</div><div class="mini-v">${N(gift.streak)} <small>${t('dayStreak')}</small></div><div class="streak">${bars}</div>${giftBtn}</div>
-    <div class="card"><div class="mini-k">${t('today')}</div><div class="mini-v num">${fmt(daily.done)}<small> / ${fmt(daily.cap)}</small></div><div class="bar-track" style="margin-top:12px"><div class="bar-fill gold" style="width:${Math.min(100,daily.cap?daily.done*100/daily.cap:0)}%"></div></div><button class="chip ${wh==='ready'?'gold':''}" style="margin-top:12px;white-space:normal;text-align:start" data-act="wheelgo">${ic('star','sm')}${whText}</button></div></div>`:''}
-   ${nx&&lockPerks?`<div class="next-lock">${emblem(L.idx+1)}<div><b>${t('unlockAt',{level:nx.name})}</b><span>${esc(lockPerks)}</span></div></div>`:''}
+    <div class="card"><div class="mini-k">${t('today')}</div><div class="mini-v num">${fmt(daily.done)}<small> / ${fmt(daily.cap)}</small></div><div class="bar-track" style="margin-top:12px"><div class="bar-fill gold" style="width:${Math.min(100,daily.cap?daily.done*100/daily.cap:0)}%"></div></div><button class="chip ${wh==='ready'?'gold':''}" style="margin-top:12px;white-space:nowrap" data-act="wheelgo">${ic(whIcon,'sm')}${whText}</button></div></div>`:''}
+   ${nx&&lockPerks?`<div class="next-lock">${emblem(L.idx+1)}<div><b>${t('unlockAt',{level:esc(nx.name)})}</b><span>${esc(lockPerks)}</span></div></div>`:''}
    <div class="stats3"><div class="stat"><b>${N(state.stats.availableTasks)}</b><span>${t('openTasks')}</span></div><div class="stat"><b>${N(state.stats.activeCampaigns)}</b><span>${t('activeCamps')}</span></div><div class="stat"><b>${N(state.stats.completedTasks)}</b><span>${t('tasksDone')}</span></div></div>
    <div class="sec"><h2>${t('openTasks')}</h2><button class="link-btn" data-act="go" data-p="tasks">${t('seeAll')}${ic('chev','sm flip')}</button></div>
    ${gate()||(preview.length?preview.map(taskCard).join(''):`<div class="empty"><strong>${t('emptyTasks')}</strong>${t('emptyTasksSub')}</div>`)}`;
@@ -495,7 +497,7 @@ function renderHome(){
 function renderTasks(){
   const list=liveTasks().filter(x=>state.filter==='all'||x.type===state.filter);
   const d=state.g?.daily;
-  return `<h1 class="page-title">${t('tasksTitle')}</h1><p class="page-sub">${t('tasksSub')}</p>
+  return `<h1 class="page-title">${t('tasksTitle')}</h1>
    ${d?`<div class="day-line"><span>${t('dailyLimit')}</span><div class="bar-track"><div class="bar-fill gold" style="width:${Math.min(100,d.cap?d.done*100/d.cap:0)}%"></div></div><b class="num">${fmt(d.done)}/${fmt(d.cap)}</b></div>`:''}
    <div class="filters">${['all','join','react','view'].map(k=>`<button class="${state.filter===k?'on':''}" data-act="filter" data-f="${k}">${t(k)}</button>`).join('')}</div>
    ${gate()||(list.length?list.map(taskCard).join(''):`<div class="empty"><strong>${t('emptyTasks')}</strong>${t('emptyTasksSub')}</div>`)}`;
@@ -503,8 +505,8 @@ function renderTasks(){
 function maxQty(type){const lim=state.g?.limits?.maxQty||500;return Math.max(0,Math.min(lim,Math.floor((state.user?.points||0)/costs()[type])));}
 function renderGrow(){
   const m=maxQty('join');
-  return `<h1 class="page-title">${t('growTitle')}</h1><p class="page-sub">${t('growSub')}</p>
-   <div class="fund"><div class="grow"><div class="muted" style="font-size:12px">${t('yourStars')}</div><b>${N(state.user?.points)}</b><div class="muted" style="font-size:12px">${t('canBuy',{n:fmt(m)})}</div></div><button class="btn primary" data-act="create">${ic('plus','sm')}${t('newCamp')}</button></div>
+  return `<h1 class="page-title">${t('growTitle')}</h1>
+   <div class="fund"><div class="grow"><div class="muted" style="font-size:12px">${t('yourStars')}</div><b>${N(state.user?.points)}</b><div class="muted" style="font-size:12px">${t('canBuy',{n:`<span class="num">${fmt(m)}</span>`})}</div></div><button class="btn primary" data-act="create">${ic('plus','sm')}${t('newCamp')}</button></div>
    <div class="sec"><h2>${t('myCamps')}</h2></div>
    ${state.campaigns.length?state.campaigns.map(campCard).join(''):`<div class="empty"><strong>${t('emptyCamps')}</strong>${t('emptyCampsSub')}</div>`}`;
 }
