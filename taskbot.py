@@ -2131,8 +2131,19 @@ def on_reaction_count(mr, update_id=None):
         set_fields["title"] = chat["title"][:100]
     db.reaction_watch.update_one({"_id": key}, {"$set": set_fields, "$setOnInsert": {"created_at": received_at}}, upsert=True)
 
+    nudge_up = bool(old and old.get("nudge_up"))
     if old_total is not None and total != old_total:
         delta = total - old_total
+        ns, ne = (float(old.get("nudge_start", 0) or 0), float(old.get("nudge_end", 0) or 0)) if old else (0.0, 0.0)
+        if ns and ns - 1 <= event_at <= ne + 15:
+            # The bot's own temporary reaction (+1 then -1) is not a user reaction: take it out of the delta.
+            if delta > 0 and not nudge_up:
+                delta -= 1
+                nudge_up = True
+            elif delta < 0 and nudge_up:
+                delta += 1
+                nudge_up = False
+            db.reaction_watch.update_one({"_id": key}, {"$set": {"nudge_up": nudge_up}})
         if delta > 0:
             credit_id = int(update_id) if update_id is not None else f"{key}:{int(event_at)}:{random.randint(1000, 9999)}"
             try:
@@ -4165,11 +4176,22 @@ def nudge_once(chat_id, mid):
     emoji, why = pick_nudge_emoji(chat_id)
     ok, detail = False, why or ""
     if emoji:
+        # Mark the window of the bot's own temporary reaction so on_reaction_count never turns it into a paid credit.
+        try:
+            t0 = time.time()
+            db.reaction_watch.update_one({"_id": post_key(chat_id, mid)},
+                                         {"$set": {"nudge_start": t0, "nudge_end": t0 + 30, "nudge_up": False}})
+        except Exception:
+            log.exception("nudge window")
         r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": emoji}])
         ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
         if ok:
             time.sleep(2)
             tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[])
+            try:
+                db.reaction_watch.update_one({"_id": post_key(chat_id, mid)}, {"$set": {"nudge_end": time.time()}})
+            except Exception:
+                log.exception("nudge window end")
     if not ok:
         log.warning("nudge_reaction failed for %s/%s: %s", chat_id, mid, detail)
     try:
