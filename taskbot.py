@@ -24,7 +24,8 @@ Deps  : flask pymongo requests gunicorn  (mongomock فقط برای اجرای �
 BOT_TOKEN, BASE_URL, MONGO_URI, SECRET_KEY, ADMIN_IDS, TASKS_CHANNEL, TASKS_CHANNEL_URL (BotFather /setcustomurls may be needed for direct member redirect)
 START_POINTS, HOLD_HOURS, DAILY_TASKS, STRIKE_LIMIT, REF_JOIN_BONUS, REF_ACTIVE_BONUS,
 REF_ACTIVE_TASKS, REF_DAILY_CAP, MAX_QTY, MAX_ACTIVE, REACTION_UPDATE_GRACE,
-REACTION_BASELINE_MAX_AGE, ADMIN_MONITOR_INTERVAL
+REACTION_BASELINE_MAX_AGE, ADMIN_MONITOR_INTERVAL,
+ADMIN_PANEL_KEY (enables /panel), REACTION_REFRESH_SEC, ONLINE_WINDOW_SEC, NUDGE_ABSORB_SEC
 
 Growth engine (v52) — optional env / متغیرهای اختیاری رشد:
 DAILY_REWARDS="1,1,2,2,3,3,5"  WEEKLY_PRIZES="30,20,10"  REF_WELCOME_BONUS=5  REF_HOURLY_MAX=12
@@ -65,7 +66,10 @@ MAX_QTY = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
-NUDGE_ABSORB_SEC = int(os.environ.get("NUDGE_ABSORB_SEC", "600"))   # window in which the bot's own +1/-1 reaction is ignored
+NUDGE_ABSORB_SEC = int(os.environ.get("NUDGE_ABSORB_SEC", "600"))   # window in which the bot's own first +1 reaction is ignored
+REACTION_REFRESH_SEC = int(os.environ.get("REACTION_REFRESH_SEC", "40"))   # how often counters of live reaction orders are refreshed
+ONLINE_WINDOW_SEC = int(os.environ.get("ONLINE_WINDOW_SEC", "300"))        # "online now" = activity in the last 5 minutes
+ADMIN_PANEL_KEY = os.environ.get("ADMIN_PANEL_KEY", "")
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
 VERSION = "v63-memberland"
 
@@ -845,6 +849,7 @@ def admin_home_keyboard(lang):
         [B("👥 کاربران" if fa else "👥 Users", "ad:users:0"), B("🔎 جست‌وجو" if fa else "🔎 Search", "ad:search")],
         [B("📣 سفارش‌ها" if fa else "📣 Orders", "ad:campaigns:0"), B("📢 همه‌پیامی" if fa else "📢 Broadcast", "ad:bc")],
         [B("🧾 تعاملات اخیر" if fa else "🧾 Recent activity", "ad:recent:0"), B("♻️ بازنشر تسک‌ها" if fa else "♻️ Re-post tasks", "ad:rp")],
+    ] + ([[U("🖥 پنل وب" if fa else "🖥 Web panel", f"{BASE_URL}/panel", "primary")]] if ADMIN_PANEL_KEY else []) + [
         [B("↩️ بازگشت به منو" if fa else "↩️ Main menu", "home")],
     ]
 
@@ -862,6 +867,7 @@ def admin_stats_text(lang):
     users = db.users.count_documents({})
     new_24h = db.users.count_documents({"joined": {"$gte": now - 86400}})
     active_24h = db.users.count_documents({"last_seen": {"$gte": now - 86400}})
+    online_now = db.users.count_documents({"last_seen": {"$gte": now - ONLINE_WINDOW_SEC}})
     banned = db.users.count_documents({"banned": True})
     active_c = db.campaigns.count_documents({"status": "active"})
     all_c = db.campaigns.count_documents({})
@@ -871,14 +877,14 @@ def admin_stats_text(lang):
     interactions = db.user_events.count_documents({})
     if lang == "fa":
         msg = ("<b>📊 آمار کلی</b>\n<blockquote>"
-               f"کل کاربران: <code>{users}</code>\nکاربران جدید در ۲۴ ساعت: <code>{new_24h}</code>\n"
+               f"🟢 آنلاین الان: <code>{online_now}</code>\nکل کاربران: <code>{users}</code>\nکاربران جدید در ۲۴ ساعت: <code>{new_24h}</code>\n"
                f"فعال در ۲۴ ساعت: <code>{active_24h}</code>\nمسدودشده‌ها: <code>{banned}</code>\n"
                f"سفارش فعال / کل: <code>{active_c} / {all_c}</code>\n"
                f"تسک‌های در انتظار: <code>{pending}</code>\nتسک‌های پرداخت‌شده: <code>{paid}</code>\n"
                f"تسک‌های برگشتی: <code>{reversed_n}</code>\nرویدادهای ثبت‌شده: <code>{interactions}</code></blockquote>")
     else:
         msg = ("<b>📊 Overview</b>\n<blockquote>"
-               f"Total users: <code>{users}</code>\nNew users (24h): <code>{new_24h}</code>\n"
+               f"🟢 Online now: <code>{online_now}</code>\nTotal users: <code>{users}</code>\nNew users (24h): <code>{new_24h}</code>\n"
                f"Active (24h): <code>{active_24h}</code>\nBanned: <code>{banned}</code>\n"
                f"Active / total orders: <code>{active_c} / {all_c}</code>\n"
                f"Pending tasks: <code>{pending}</code>\nPaid tasks: <code>{paid}</code>\n"
@@ -1723,6 +1729,7 @@ def on_claim(cq, uid, chat, mid, cid_s):
         ans(cq, tb(lang, "a_count_pending"))
         if consume_credit_for_claim(comp):
             return view(chat, mid, H(str(t(lang, "count_ok")) + progress_line(uid, lang)), next_kb(lang, uid))
+        nudge_reaction(c.get("chat_id"), c.get("mid"))          # flush a fresh count right after the claim
         return view(chat, mid, t(lang, "count_pending", reward=c["reward"], window=window_min,
                                  grace=REACTION_UPDATE_GRACE // 60),
                     [[U(tb(lang, "b_back_target"), link_of(c), "primary")], [B(tb(lang, "b_back"), "earn")]])
@@ -3533,6 +3540,7 @@ def worker():
                 if take_lock("tick", 25):
                     tick()
                     growth_tick()
+            refresh_reaction_counters(now)
             pending = pump_broadcasts()
             pending = pump_repost_notices() or pending
         except Exception:
@@ -3947,6 +3955,12 @@ def miniapp_identity():
     user = ensure_user(tg_user)
     if user.get("banned") and int(user.get("_id", 0)) not in ADMINS:
         return None, (jsonify(error="forbidden", message="This account is disabled."), 403)
+    try:                                              # mini-app activity counts as "online" (write at most every 20s)
+        nowt = time.time()
+        if nowt - float(user.get("last_seen", 0) or 0) > 20:
+            db.users.update_one({"_id": int(user["_id"])}, {"$set": {"last_seen": nowt, "last_action": "miniapp"}})
+    except Exception:
+        log.exception("miniapp last_seen")
     return user, None
 
 
@@ -3960,43 +3974,58 @@ def miniapp_type_name(typ, lang):
 
 
 # ═════════════════════ Channel reactions: no waiting for the first count ═════════════════════
-def pick_nudge_emoji(chat_id):
-    """An emoji the channel really allows (a fixed 👍 fails when the channel restricts its reactions)."""
+_emoji_cache = {}
+
+
+def allowed_nudge_emojis(chat_id):
+    """Emoji reactions the channel allows (cached 10 min). Returns (list, error)."""
+    hit = _emoji_cache.get(chat_id)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1], hit[2]
     r = tg("getChat", chat_id=chat_id)
+    prefer = ["\U0001F44D", "\u2764", "\U0001F525", "\U0001F44F", "\U0001F389"]
     if not r.get("ok"):
-        return "\U0001F44D", None
+        return prefer[:2], None
     allowed = (r.get("result") or {}).get("available_reactions")
     if allowed is None:                       # field absent = every emoji reaction is allowed
-        return "\U0001F44D", None
-    emojis = [x.get("emoji") for x in allowed if x.get("type") == "emoji" and x.get("emoji")]
-    if not emojis:
-        return None, "channel reactions are disabled or custom-only"
-    return ("\U0001F44D" if "\U0001F44D" in emojis else emojis[0]), None
+        out, err = prefer[:2], None
+    else:
+        emojis = [x.get("emoji") for x in allowed if x.get("type") == "emoji" and x.get("emoji")]
+        out = [e for e in prefer if e in emojis] + [e for e in emojis if e not in prefer]
+        out, err = out[:2], (None if emojis else "channel reactions are disabled or custom-only")
+    _emoji_cache[chat_id] = (time.time(), out, err)
+    return out, err
 
 
 def nudge_once(chat_id, mid):
-    """Bot adds a reaction and removes it again so Telegram sends a fresh count. Returns (ok, detail) and records it."""
-    emoji, why = pick_nudge_emoji(chat_id)
-    ok, detail = False, why or ""
+    """Keep ONE reaction of the bot on the post and swap its emoji each time. Adding-then-removing within seconds
+    is coalesced by Telegram into 'no change' (no update); swapping changes the per-emoji counts, so Telegram sends a
+    fresh snapshot while the total stays the same (no fake credit). Returns (ok, detail) and records it."""
+    emojis, why = allowed_nudge_emojis(chat_id)
     wkey = post_key(chat_id, mid)
-    if emoji:
-        # The bot's own +1 / -1 must never become a claimable credit: arm a short absorb window for this post.
-        db.reaction_watch.update_one({"_id": wkey}, {"$set": {"nudge_until": time.time() + NUDGE_ABSORB_SEC,
-                                                              "nudge_plus": 1, "nudge_minus": 1}})
-        r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": emoji}])
-        ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
-        if ok:
-            time.sleep(2)
-            tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[])
+    w = db.reaction_watch.find_one({"_id": wkey}) or {}
+    current = w.get("bot_emoji")
+    ok, detail = False, why or ""
+    if emojis:
+        target = next((e for e in emojis if e != current), None)
+        if target is None:
+            detail = "only one reaction emoji is allowed in this channel; cannot swap to refresh"
+        else:
+            if not current:
+                # the first reaction of the bot raises the total by one: never pay it to a user
+                db.reaction_watch.update_one({"_id": wkey}, {"$set": {"nudge_until": time.time() + NUDGE_ABSORB_SEC,
+                                                                      "nudge_plus": 1, "nudge_minus": 0}}, upsert=True)
+            r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": target}])
+            ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
+            if ok:
+                db.reaction_watch.update_one({"_id": wkey}, {"$set": {"bot_emoji": target}}, upsert=True)
+            elif not current:
+                db.reaction_watch.update_one({"_id": wkey}, {"$unset": {"nudge_until": "", "nudge_plus": "", "nudge_minus": ""}})
     if not ok:
         log.warning("nudge_reaction failed for %s/%s: %s", chat_id, mid, detail)
-        try:
-            db.reaction_watch.update_one({"_id": wkey}, {"$unset": {"nudge_until": "", "nudge_plus": "", "nudge_minus": ""}})
-        except Exception:
-            log.exception("nudge disarm")
     try:
-        db.reaction_watch.update_one({"_id": post_key(chat_id, mid)},
-                                     {"$set": {"nudge_at": time.time(), "nudge_ok": ok, "nudge_err": detail[:200]}})
+        db.reaction_watch.update_one({"_id": wkey}, {"$set": {"chat_id": chat_id, "mid": int(mid), "nudge_at": time.time(), "nudge_ok": ok,
+                                                           "nudge_err": detail[:200]}}, upsert=True)
     except Exception:
         log.exception("nudge record")
     return ok, detail
@@ -4013,6 +4042,47 @@ def nudge_reaction(chat_id, mid):
         except Exception:
             log.exception("nudge_reaction")
     threading.Thread(target=run, daemon=True).start()
+
+
+_last_refresh = {"t": 0.0}
+
+
+def live_reaction_posts():
+    """Posts that need a fresh counter right now: active count orders, pending claims, waiting drafts."""
+    posts = {}
+    for c in db.campaigns.find({"type": "react", "mode": "count", "status": "active", "remaining": {"$gt": 0}},
+                               {"chat_id": 1, "mid": 1}).limit(60):
+        if c.get("chat_id") is not None and c.get("mid"):
+            posts[post_key(c["chat_id"], c["mid"])] = (c["chat_id"], int(c["mid"]))
+    for key in db.completions.distinct("post_key", {"status": "count_pending"}):
+        w = db.reaction_watch.find_one({"_id": key}, {"chat_id": 1, "mid": 1}) or {}
+        if w.get("chat_id") is not None and w.get("mid"):
+            posts[key] = (w["chat_id"], int(w["mid"]))
+    for key in db.campaign_drafts.distinct("post_key", {"status": "waiting"}):
+        w = db.reaction_watch.find_one({"_id": key}, {"chat_id": 1, "mid": 1}) or {}
+        if w.get("chat_id") is not None and w.get("mid"):
+            posts[key] = (w["chat_id"], int(w["mid"]))
+    return posts
+
+
+def refresh_reaction_counters(now=None):
+    """Called from the background worker: keep every live reaction order's counter fresh (no waiting for users)."""
+    now = time.time() if now is None else now
+    if now - _last_refresh["t"] < max(15, REACTION_REFRESH_SEC):
+        return
+    _last_refresh["t"] = now
+    if not take_lock("reaction_refresh", max(10, REACTION_REFRESH_SEC - 5)):
+        return
+    for key, (chat_id, mid) in list(live_reaction_posts().items())[:25]:
+        w = db.reaction_watch.find_one({"_id": key}, {"updated_at": 1, "nudge_at": 1}) or {}
+        # skip when a count arrived or a nudge was sent very recently
+        if now - max(float(w.get("updated_at", 0) or 0), float(w.get("nudge_at", 0) or 0)) < REACTION_REFRESH_SEC * 0.8:
+            continue
+        try:
+            nudge_once(chat_id, mid)
+        except Exception:
+            log.exception("refresh_reaction_counters")
+        time.sleep(0.4)
 
 
 def queue_reaction_draft(uid, link, qty, body, d, key):
@@ -4355,6 +4425,7 @@ def miniapp_claim_task(cid_s):
             fresh = db.users.find_one({"_id": uid}) or u
             payload = miniapp_dashboard_data(fresh)
             return jsonify(ok=True, status="paid", reward=int(c.get("reward", 0) or 0), **payload)
+        nudge_reaction(c.get("chat_id"), c.get("mid"))          # flush a fresh count right after the claim
         return jsonify(ok=True, status="pending", message=("در انتظار تأیید افزایش واکنش‌ها" if lang == "fa" else "Waiting for reaction-count verification.")), 202
 
     code, comp = grant(uid, c, "pending")
@@ -4794,6 +4865,122 @@ def hook():
     except Exception:
         log.exception("update error")
     return "ok"
+
+
+
+# ═════════════════════════════ Simple web admin panel (/panel) ═════════════════════════════
+# Protected by the ADMIN_PANEL_KEY environment variable (entered once in the page, kept in the browser tab only).
+_panel_fail = {}
+
+
+def panel_authorized():
+    if not ADMIN_PANEL_KEY:
+        return False
+    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "") or "").split(",")[0].strip()
+    fails, until = _panel_fail.get(ip, (0, 0))
+    if until > time.time():
+        return False
+    key = request.headers.get("X-Panel-Key", "")
+    if key and hmac.compare_digest(key.encode("utf-8"), ADMIN_PANEL_KEY.encode("utf-8")):
+        _panel_fail.pop(ip, None)
+        return True
+    fails += 1
+    _panel_fail[ip] = (fails, time.time() + 60 if fails >= 5 else 0)      # 5 wrong keys -> 1 minute lock
+    return False
+
+
+PANEL_HTML = """<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>پنل مدیریت</title>
+<style>
+:root{--bg:#0f1720;--card:#17212d;--tx:#e8eef5;--mu:#8da0b3;--ac:#3b9cff;--ok:#2ecc71;--wa:#f5a623;--bd:#243244}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.6 system-ui,Tahoma,sans-serif;padding:14px;max-width:980px;margin:auto}
+h1{font-size:18px;margin:6px 0 12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}.k{color:var(--mu);font-size:12px}.v{font-size:24px;font-weight:700}
+.on .v{color:var(--ok)}table{width:100%;border-collapse:collapse;margin-top:6px}th,td{padding:7px 6px;border-bottom:1px solid var(--bd);text-align:right;font-size:13px;white-space:nowrap}
+th{color:var(--mu);font-weight:500}.wrap{overflow-x:auto}input,button{font:inherit;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:9px 12px}
+button{background:var(--ac);border:0;cursor:pointer}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-left:6px}
+.dot.off{background:#566}.sec{margin-top:18px}.bar{display:flex;gap:8px;margin:8px 0}.bar input{flex:1}.mu{color:var(--mu)}code{direction:ltr;unicode-bidi:embed}
+</style></head><body>
+<div id="login"><h1>🛡 پنل مدیریت</h1><div class="bar"><input id="key" type="password" placeholder="کلید پنل (ADMIN_PANEL_KEY)"><button onclick="go()">ورود</button></div><div id="err" class="mu"></div></div>
+<div id="app" style="display:none">
+<h1>🛡 پنل مدیریت <span class="mu" id="upd"></span></h1>
+<div class="grid" id="cards"></div>
+<div class="sec"><b>🟢 آنلاین‌ها</b> <span class="mu">(فعالیت در ۵ دقیقه‌ی اخیر)</span><div class="wrap"><table id="online"></table></div></div>
+<div class="sec"><b>👥 کاربران</b><div class="bar"><input id="q" placeholder="جست‌وجو: نام، یوزرنیم یا آیدی" oninput="loadUsers(true)"></div><div class="wrap"><table id="users"></table></div>
+<div class="bar"><button onclick="more()">بیشتر</button></div></div>
+<div class="sec"><b>🎯 پایش واکنش پست‌ها</b><div class="wrap"><table id="posts"></table></div></div>
+</div>
+<script>
+let KEY=sessionStorage.getItem('pk')||'',skip=0,timer=null;
+const $=id=>document.getElementById(id),n=x=>Number(x||0).toLocaleString('en');
+const ago=t=>{if(!t)return'—';const d=Math.max(0,Date.now()/1000-t);return d<60?Math.round(d)+' ثانیه':d<3600?Math.round(d/60)+' دقیقه':d<86400?Math.round(d/3600)+' ساعت':Math.round(d/86400)+' روز'};
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path,body){const r=await fetch(path,{method:'POST',headers:{'X-Panel-Key':KEY,'Content-Type':'application/json'},body:JSON.stringify(body||{})});if(r.status===401)throw new Error('auth');return r.json();}
+async function go(){KEY=$('key').value.trim();try{await refresh();sessionStorage.setItem('pk',KEY);$('login').style.display='none';$('app').style.display='block';clearInterval(timer);timer=setInterval(refresh,10000);loadUsers(true)}catch(e){$('err').textContent='کلید اشتباه است یا موقتاً قفل شده.'}}
+function row(u){return `<tr><td><span class="dot ${u.online?'':'off'}"></span>${esc(u.name)||'—'}</td><td>${u.username?'@'+esc(u.username):'—'}</td><td><code>${u.id}</code></td><td>${n(u.points)}</td><td>${n(u.done)}</td><td>${ago(u.last_seen)}</td><td>${esc(u.last_action||'')}</td></tr>`}
+const head='<tr><th>نام</th><th>یوزرنیم</th><th>آیدی</th><th>استارز</th><th>تسک</th><th>آخرین فعالیت</th><th>عمل</th></tr>';
+async function refresh(){const d=await api('/api/panel/stats');const c=d.cards;
+$('cards').innerHTML=[['🟢 آنلاین الان',c.online_now,'on'],['آنلاین ۱ ساعت',c.online_1h],['فعال ۲۴ ساعت',c.active_24h],['کل کاربران',c.users],['جدید ۲۴ ساعت',c.new_24h],['جدید ۷ روز',c.new_7d],['مسدود',c.banned],['سفارش فعال',c.active_campaigns],['تسک در انتظار',c.pending],['ریکشن در انتظار',c.count_pending],['تسک پرداخت‌شده',c.paid],['مجموع استارز کاربران',c.points]].map(x=>`<div class="card ${x[2]||''}"><div class="k">${x[0]}</div><div class="v">${n(x[1])}</div></div>`).join('');
+$('online').innerHTML=head+d.online.map(row).join('')||'<tr><td>—</td></tr>';
+$('posts').innerHTML='<tr><th>پست</th><th>تعداد کل</th><th>آخرین آپدیت</th><th>ایموجی ربات</th><th>وضعیت</th></tr>'+d.posts.map(p=>`<tr><td><code>${esc(p.post)}</code></td><td>${n(p.total)}</td><td>${ago(p.updated_at)}</td><td>${esc(p.bot_emoji||'—')}</td><td>${p.nudge_ok===false?'⚠️ '+esc(p.nudge_err||''):'✅'}</td></tr>`).join('');
+$('upd').textContent='· بروزرسانی خودکار هر ۱۰ ثانیه'}
+async function loadUsers(reset){if(reset)skip=0;const d=await api('/api/panel/users',{q:$('q').value,skip:skip});$('users').innerHTML=(reset?head:$('users').innerHTML)+d.users.map(row).join('')}
+function more(){skip+=30;loadUsers(false)}
+if(KEY){$('key').value=KEY;go()}
+</script></body></html>"""
+
+
+@app.get("/panel")
+def panel_page():
+    if not ADMIN_PANEL_KEY:
+        return Response("Set the ADMIN_PANEL_KEY environment variable to enable the admin panel.", status=503, mimetype="text/plain")
+    return Response(PANEL_HTML, mimetype="text/html", headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
+
+
+def panel_user_row(u, now):
+    return {"id": u["_id"], "name": u.get("name") or "", "username": u.get("username") or "",
+            "points": int(u.get("points", 0) or 0), "done": int(u.get("done_tasks", u.get("tasks_done", 0)) or 0),
+            "last_seen": u.get("last_seen"), "last_action": u.get("last_action") or "",
+            "online": bool(u.get("last_seen") and now - float(u["last_seen"]) <= ONLINE_WINDOW_SEC)}
+
+
+@app.post("/api/panel/stats")
+def panel_stats():
+    if not panel_authorized():
+        return jsonify(error="auth"), 401
+    now = time.time()
+    cnt = lambda q: db.users.count_documents(q)
+    points = list(db.users.aggregate([{"$group": {"_id": None, "s": {"$sum": "$points"}}}]))
+    cards = {"online_now": cnt({"last_seen": {"$gte": now - ONLINE_WINDOW_SEC}}), "online_1h": cnt({"last_seen": {"$gte": now - 3600}}),
+             "active_24h": cnt({"last_seen": {"$gte": now - 86400}}), "users": cnt({}),
+             "new_24h": cnt({"joined": {"$gte": now - 86400}}), "new_7d": cnt({"joined": {"$gte": now - 7 * 86400}}),
+             "banned": cnt({"banned": True}), "active_campaigns": db.campaigns.count_documents({"status": "active"}),
+             "pending": db.completions.count_documents({"status": "pending"}),
+             "count_pending": db.completions.count_documents({"status": "count_pending"}),
+             "paid": db.completions.count_documents({"status": "paid"}), "points": int(points[0]["s"]) if points else 0}
+    online = [panel_user_row(u, now) for u in db.users.find({"last_seen": {"$gte": now - ONLINE_WINDOW_SEC}}).sort("last_seen", -1).limit(60)]
+    posts = [{"post": w["_id"], "total": w.get("total"), "updated_at": w.get("updated_at"), "bot_emoji": w.get("bot_emoji"),
+              "nudge_ok": w.get("nudge_ok"), "nudge_err": w.get("nudge_err")}
+             for w in db.reaction_watch.find({}).sort("updated_at", -1).limit(20)]
+    return jsonify(ok=True, cards=cards, online=online, posts=posts)
+
+
+@app.post("/api/panel/users")
+def panel_users():
+    if not panel_authorized():
+        return jsonify(error="auth"), 401
+    body = request.get_json(silent=True) or {}
+    q, skip = str(body.get("q") or "").strip()[:40], max(0, min(int(body.get("skip") or 0), 100000))
+    query = {}
+    if q:
+        if q.lstrip("@").isdigit():
+            query = {"_id": int(q.lstrip("@"))}
+        else:
+            rx = re.compile(re.escape(q.lstrip("@")), re.I)
+            query = {"$or": [{"name": rx}, {"username": rx}]}
+    now = time.time()
+    docs = db.users.find(query).sort([("last_seen", -1), ("joined", -1)]).skip(skip).limit(30)
+    return jsonify(ok=True, users=[panel_user_row(u, now) for u in docs])
 
 
 @app.get("/")
