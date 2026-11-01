@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0c1024">
-<title>TaskPlus</title>
+<title>Grameeting</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
@@ -233,6 +233,23 @@ main{padding-top:6px}
 .toggle.on{background:var(--mint)}
 .toggle.on::after{inset-inline-start:21px}
 
+/* invite banner */
+.banner{border-radius:20px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line-2)}
+.ban-img,.ban-art{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.ban-art{display:grid;place-items:center;background:radial-gradient(70% 90% at 50% 40%,color-mix(in srgb,var(--lv) 28%,transparent),transparent 70%),var(--panel-2)}
+.ban-art .emb{width:34%;max-width:130px;height:auto}
+.ban-body{display:grid;gap:4px;padding:14px}
+.ban-body b{font-size:16px}
+.ban-body>span{font-size:13px;color:var(--muted);line-height:1.7}
+.ban-link{display:flex;align-items:center;gap:7px;margin-top:8px;padding:8px 11px;border-radius:11px;background:var(--ink);direction:ltr;font-size:11.5px;color:var(--brand);overflow:hidden}
+.ban-link span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.invite .t-act{margin-top:12px}
+.inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.inv-stats div{padding:10px 6px;text-align:center;border-radius:14px;background:var(--panel-2)}
+.inv-stats b{display:block;font-size:18px}
+.inv-stats span{font-size:11px;color:var(--muted)}
+.ta{padding:12px 14px;min-height:96px;resize:vertical;line-height:1.7}
+
 /* ---------- nav ---------- */
 .nav{position:fixed;inset-inline:0;bottom:0;z-index:30;padding:0 10px calc(8px + env(safe-area-inset-bottom));pointer-events:none}
 .nav-in{pointer-events:auto;width:min(100%,540px);margin:0 auto;height:var(--nav-h);display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:6px;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--line-2);border-radius:24px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
@@ -357,11 +374,19 @@ en:{
  earners:'Top earners',inviters:'Top inviters',resetsIn:'Resets in {t}',yourRank:'Your rank',unranked:'Not ranked yet',boardEmpty:'Nobody on the board yet. Be the first.',weekPrizes:'Weekly prizes in Stars',
  p1:'1st',p2:'2nd',p3:'3rd',you:'You',
  totalEarned:'Total earned',onHold:'On hold',invited:'Friends invited',activeFriends:'Active friends',
- inviteTitle:'Invite friends',inviteSub:'Friend gets +{w}. You get +{a} after they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Earn free Stars on TaskPlus and grow your channel.',ladderTitle:'Friend milestones',friendsUnit:'friends',
+ inviteTitle:'Invite friends',inviteSub:'Friend gets +{w}. You get +{a} after they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Grow your channel with Grameeting',ladderTitle:'Friend milestones',friendsUnit:'friends',
  language:'Language',reminders:'Smart reminders',remindersHelp:'One reminder a day',taskChannel:'Task channel',saved:'Saved',
  levelUp:'Level up',levelUpSub:'Bonus +{b} Stars',cont:'Continue',
- authTitle:'Open TaskPlus from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user',
- levelReward:'Level reward'
+ authTitle:'Open Grameeting from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user',
+ levelReward:'Level reward',
+ sendBanner:'Send banner to my chat',
+ bannerSent:'Banner sent to your chat. Forward it.',
+ editBanner:'Edit banner',
+ bannerFa:'Persian text',
+ bannerEn:'English text',
+ bannerHint:'First line is the headline',
+ bannerImg:'Image link (https)',
+ save:'Save'
 },
 fa:{
  nav_home:'خانه',nav_tasks:'تسک‌ها',nav_grow:'رشد',nav_rewards:'جوایز',nav_profile:'پروفایل',
@@ -394,15 +419,23 @@ fa:{
  earners:'برترین درآمدسازها',inviters:'برترین دعوت‌کننده‌ها',resetsIn:'{t} تا پایان هفته',yourRank:'رتبه‌ی تو',unranked:'—',boardEmpty:'هنوز کسی نیست',weekPrizes:'جایزه هفتگی',
  p1:'نفر اول',p2:'نفر دوم',p3:'نفر سوم',you:'تو',
  totalEarned:'کل درآمد',onHold:'در انتظار',invited:'دعوت‌شده',activeFriends:'فعال',
- inviteTitle:'دعوت دوستان',inviteSub:'دوستت +{w} می‌گیرد. تو +{a} می‌گیری وقتی او {n} تسک انجام دهد.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'در تاسک‌پلاس استارز بگیر و کانالت را رشد بده',ladderTitle:'پاداش دعوت',friendsUnit:'دوست',
+ inviteTitle:'دعوت دوستان',inviteSub:'دوستت +{w} می‌گیرد. تو +{a} می‌گیری وقتی او {n} تسک انجام دهد.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'کانالت را با Grameeting رشد بده',ladderTitle:'پاداش دعوت',friendsUnit:'دوست',
  language:'زبان',reminders:'یادآوری هوشمند',remindersHelp:'روزی یک یادآوری',taskChannel:'کانال تسک‌ها',saved:'ذخیره شد',
  levelUp:'سطح جدید',levelUpSub:'جایزه +{b} استارز',cont:'ادامه',
- authTitle:'تاسک‌پلاس را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام',
- levelReward:'جایزه سطح'
+ authTitle:'Grameeting را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام',
+ levelReward:'جایزه سطح',
+ sendBanner:'ارسال بنر به چت من',
+ bannerSent:'بنر در چت ربات برایت آمد؛ فوروارد کن',
+ editBanner:'ویرایش بنر',
+ bannerFa:'متن فارسی',
+ bannerEn:'متن انگلیسی',
+ bannerHint:'خط اول عنوان است',
+ bannerImg:'لینک تصویر (https)',
+ save:'ذخیره'
 }};
 const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
-Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.'});
-Object.assign(apiErrors.fa,{already_claimed:'هدیه‌ی امروز را قبلاً دریافت کرده‌ای.',wheel_locked:'برای باز شدن گردونه امروز 1 تسک انجام بده.',wheel_used:'امروز گردونه را چرخانده‌ای.'});
+Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.',banner_failed:'Could not send. Open the bot chat first.',bad_image:'Image link must start with https://'});
+Object.assign(apiErrors.fa,{already_claimed:'هدیه‌ی امروز را قبلاً دریافت کرده‌ای.',wheel_locked:'برای باز شدن گردونه امروز 1 تسک انجام بده.',wheel_used:'امروز گردونه را چرخانده‌ای.',banner_failed:'ارسال نشد. اول چت ربات را باز کن.',bad_image:'لینک تصویر باید با https:// شروع شود'});
 
 const HUES=['#ff9f4a','#4fd6ff','#a98bff','#ff6fc8','#ffd36b'];
 const initData=tg?.initData||'';
@@ -586,12 +619,36 @@ function renderRewards(){
   const body={path:subPath,daily:subDaily,badges:subBadges,board:subBoard}[state.sub]();
   return `<h1 class="page-title">${t('rewardsTitle')}</h1><div class="seg" style="margin:12px 0 16px">${segs.map(([k,l])=>`<button class="${state.sub===k?'on':''}" data-act="sub" data-s="${k}">${t(l)}</button>`).join('')}</div>${body}`;
 }
+function inviteCard(inv,L){
+  const b=inv.banner||{title:'',text:'',image:''};
+  const ladder=`<div class="ladder">${inv.ladder.map(r=>`<div class="${r.have?'have':''}"><b>${r.need}</b>${t('friendsUnit')}<br><span class="num">+${r.reward}</span></div>`).join('')}</div>`;
+  const art=b.image?`<img class="ban-img" src="${esc(b.image)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ban-art',innerHTML:''}))">`:`<div class="ban-art">${emblem(Math.min(4,L.idx+1),'live')}</div>`;
+  return `<div class="card invite"><div class="row" style="margin-bottom:12px"><b class="grow" style="font-size:16px">${t('inviteTitle')}</b><span class="chip gold">${ic('star','sm fill')}<span class="num">+${inv.activeBonus}</span></span></div>
+  <div class="banner">${art}<div class="ban-body"><b>${esc(b.title)}</b>${b.text?`<span>${esc(b.text)}</span>`:''}<div class="ban-link">${ic('link','sm')}<span>${esc(inv.link.replace('https://',''))}</span></div></div></div>
+  <div class="t-act"><button class="btn primary" data-act="share">${ic('share','sm')}${t('share')}</button><button class="btn ghost icon" data-act="copy" aria-label="${t('copyLink')}" title="${t('copyLink')}">${ic('copy','sm')}</button><button class="btn ghost icon" data-act="sendbanner" aria-label="${t('sendBanner')}" title="${t('sendBanner')}">${ic('gift','sm')}</button></div>
+  <div class="inv-stats"><div><b>${N(inv.total)}</b><span>${t('invited')}</span></div><div><b>${N(inv.active)}</b><span>${t('activeFriends')}</span></div><div><b>${N(inv.earned)}</b><span>${t('stars')}</span></div></div>
+  <div class="muted" style="font-size:12px;margin-top:12px">${t('inviteSub',{w:inv.welcomeBonus,a:inv.activeBonus,n:inv.activeTasks})}</div>
+  <div class="ach-group" style="margin-bottom:0">${t('ladderTitle')}</div>${ladder}
+  ${inv.isAdmin?`<button class="btn ghost sm block" style="margin-top:14px" data-act="editbanner">${ic('plus','sm')}${t('editBanner')}</button>`:''}</div>`;
+}
+function sheetBanner(){
+  const s=state.g?.invite?.settings||{text_en:'',text_fa:'',photo:''};
+  return `<div class="sheet-h"><b>${t('editBanner')}</b><button class="x" data-act="closesheet" aria-label="Close">${ic('x')}</button></div>
+  <div class="field" style="margin-top:0"><label for="bFa">${t('bannerFa')}</label><textarea class="inp ta" id="bFa" rows="4" maxlength="600">${esc(s.text_fa)}</textarea></div>
+  <div class="field"><label for="bEn">${t('bannerEn')}</label><textarea class="inp ta" id="bEn" rows="4" maxlength="600" dir="ltr">${esc(s.text_en)}</textarea><div class="hint">${t('bannerHint')}</div></div>
+  <div class="field"><label for="bImg">${t('bannerImg')}</label><input class="inp" id="bImg" type="url" dir="ltr" inputmode="url" placeholder="https://" value="${esc(s.photo)}"></div>
+  <button class="btn primary block" style="margin-top:16px" data-act="savebanner">${t('save')}</button>`;
+}
+async function sendBanner(){try{await api('/api/miniapp/invite/send',{method:'POST',body:{}});toast(t('bannerSent'));haptic();}catch(e){toast(errText(e));}}
+async function saveBanner(){
+  try{const r=await api('/api/miniapp/invite/settings',{method:'POST',body:{text_fa:$('#bFa').value,text_en:$('#bEn').value,photo:$('#bImg').value.trim()}});absorb(r);closeSheet();render();toast(t('saved'));}
+  catch(e){toast(errText(e));}
+}
 function renderProfile(){
   const u=state.user,g=state.g,L=lvl(),inv=g?.invite;
-  const ladder=inv?`<div class="ladder">${inv.ladder.map(r=>`<div class="${r.have?'have':''}"><b>${r.need}</b>${t('friendsUnit')}<br><span class="num">+${r.reward}</span></div>`).join('')}</div>`:'';
   return `<div class="card"><div class="me-card">${emblem(L.idx,'live')}<div class="grow"><div class="me-name">${esc(u.name||t('user'))}</div><div class="muted" style="font-size:12.5px">${u.username?`<span class="num">@${esc(u.username)}</span> · `:''}ID <span class="num">${u.id}</span></div><div class="t-meta"><span class="chip" style="color:var(--lv)">${esc(lvName(L.idx))} · ${t('levelN',{n:L.idx+1})}</span></div></div></div></div>
-   <div class="grid2"><div class="stat"><b>${N(u.earned)}</b><span>${t('totalEarned')}</span></div><div class="stat"><b>${N(u.hold)}</b><span>${t('onHold')}</span></div><div class="stat"><b>${N(u.referrals)}</b><span>${t('invited')}</span></div><div class="stat"><b>${N(inv?inv.active:0)}</b><span>${t('activeFriends')}</span></div></div>
-   ${inv&&inv.link?`<div class="card" style="margin-top:10px"><b style="font-size:16px">${t('inviteTitle')}</b><div class="muted" style="font-size:12.5px;margin:2px 0 12px">${t('inviteSub',{w:inv.welcomeBonus,a:inv.activeBonus,n:inv.activeTasks})}</div><div class="invite-link">${ic('link','sm')}<span>${esc(inv.link)}</span></div><div class="t-act"><button class="btn ghost" data-act="copy">${ic('copy','sm')}${t('copyLink')}</button><button class="btn primary" data-act="share">${ic('share','sm')}${t('share')}</button></div><div class="ach-group" style="margin-bottom:0">${t('ladderTitle')}</div>${ladder}</div>`:''}
+   <div class="grid2"><div class="stat"><b>${N(u.earned)}</b><span>${t('totalEarned')}</span></div><div class="stat"><b>${N(u.hold)}</b><span>${t('onHold')}</span></div></div>
+   ${inv&&inv.link?inviteCard(inv,L):''}
    <div class="card" style="margin-top:10px;padding-top:4px;padding-bottom:4px"><div class="set-row"><div><b>${t('language')}</b></div><div class="seg" style="min-width:150px"><button class="${state.lang==='en'?'on':''}" data-act="lang" data-l="en">English</button><button class="${state.lang==='fa'?'on':''}" data-act="lang" data-l="fa">فارسی</button></div></div>
    <div class="set-row"><div class="grow"><b>${t('reminders')}</b><div class="muted" style="font-size:12px">${t('remindersHelp')}</div></div><button class="toggle ${u.remindersOff?'':'on'}" data-act="remind" role="switch" aria-checked="${!u.remindersOff}" aria-label="${t('reminders')}"></button></div>
    ${state.tasksChannelUrl?`<div class="set-row"><b>${t('taskChannel')}</b><button class="btn ghost sm" data-act="url" data-u="${esc(state.tasksChannelUrl)}">${ic('out','sm')}</button></div>`:''}</div>`;
@@ -748,7 +805,10 @@ document.addEventListener('click',e=>{
     case'lang':if(d.l!==state.lang)patchProfile({language:d.l});break;
     case'remind':patchProfile({remindersOff:!state.user.remindersOff});break;
     case'copy':copyLink();break;
-    case'share':{const l=state.g?.invite?.link;if(l)openLink('https://t.me/share/url?url='+encodeURIComponent(l)+'&text='+encodeURIComponent(t('shareText')));break;}
+    case'sendbanner':sendBanner();break;
+    case'editbanner':openSheet(sheetBanner());break;
+    case'savebanner':saveBanner();break;
+    case'share':{const l=state.g?.invite?.link;if(l)openLink('https://t.me/share/url?url='+encodeURIComponent(l)+'&text='+encodeURIComponent(state.g.invite.banner?.shareText||t('shareText')));break;}
   }
 });
 document.addEventListener('input',e=>{if(e.target.id==='cQty'||e.target.id==='cLink')updateSum();});

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-TaskPlus — ربات دوزبانه‌ی تبادل تسک تلگرام (عضویت / واکنش / بازدید)
-TaskPlus — bilingual (English / Persian) Telegram task-exchange bot
+Grameeting — ربات دوزبانه‌ی تبادل تسک تلگرام (عضویت / واکنش / بازدید)
+Grameeting — bilingual (English / Persian) Telegram task-exchange bot
 
 Stack : Flask + MongoDB (pymongo) + Webhook — تک‌فایل و بدون مینی‌اپ
 Run   : gunicorn taskbot:app
@@ -34,7 +34,7 @@ import os, re, time, html, hashlib, hmac, json, random, logging, threading
 
 import requests
 from urllib.parse import quote, parse_qsl
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, redirect, Response
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
@@ -48,6 +48,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", BOT_TOKEN)
 ADMINS = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""))}
 TASKS_CHANNEL = os.environ.get("TASKS_CHANNEL", "").strip()        # e.g. @MyTasksChannel (bot must be admin)
 TASKS_CHANNEL_URL = os.environ.get("TASKS_CHANNEL_URL", "").strip()
+BRAND = os.environ.get("BRAND_NAME", "Grameeting").strip() or "Grameeting"
 
 START_POINTS = int(os.environ.get("START_POINTS", "13"))
 HOLD_HOURS = float(os.environ.get("HOLD_HOURS", "24"))
@@ -62,7 +63,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v55-miniapp-rewards"
+VERSION = "v56-miniapp-invite"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -305,8 +306,8 @@ S = {
     "lbl_paid": ("Paid reaction", "واکنش پولی"),
     "user_fallback": ("A user", "یک کاربر"),
     "campaign_fallback": ("Order", "سفارش"),
-    "share_text": ("🎁 Free Stars every day! Complete easy tasks, collect daily gifts and grow your channel on autopilot with TaskPlus.",
-                   "🎁 هر روز استارز رایگان! با انجام تسک‌های ساده و هدیه‌ی روزانه، کانال خود را در تاسک‌پلاس به‌صورت خودکار رشد دهید."),
+    "share_text": ("🎁 Free Stars every day! Complete easy tasks, collect daily gifts and grow your channel on autopilot with Grameeting.",
+                   "🎁 هر روز استارز رایگان! با انجام تسک‌های ساده و هدیه‌ی روزانه، کانال خود را در Grameeting به‌صورت خودکار رشد دهید."),
 
     # ───────── Failure reasons (used inside notifications) ─────────
     "r_stopped": ("The order was stopped before verification and the spot was returned.",
@@ -330,7 +331,7 @@ S = {
     "hold_line": ("\n<b>Pending:</b> <code>{hold}</code> Stars", "\n<b>در انتظار تأیید:</b> <code>{hold}</code> استارز"),
 
     "help": (
-        "<b>Help</b>\n<i>How TaskPlus works</i>\n\n"
+        "<b>Help</b>\n<i>How Grameeting works</i>\n\n"
         "<b>⭐ Earn Stars</b>\n"
         "<blockquote>Open a task in the showcase channel, complete it, tap <b>Claim reward</b> under the post and confirm here.\n\n"
         "<b>Join</b> — {r_join} Stars. Membership is verified and paid instantly.\n"
@@ -352,7 +353,7 @@ S = {
         "<blockquote expandable><b>About channel reactions</b>\n"
         "Channel reactions are verified by the increase in the post's total reaction count. This measures how many "
         "reactions were added, not who added them. Telegram may deliver count updates a few minutes late.</blockquote>",
-        "<b>راهنما</b>\n<i>نحوه‌ی کار تاسک‌پلاس</i>\n\n"
+        "<b>راهنما</b>\n<i>نحوه‌ی کار Grameeting</i>\n\n"
         "<b>⭐ کسب استارز</b>\n"
         "<blockquote>تسک را در کانال ویترین انتخاب و انجام دهید، سپس زیر همان پست روی «دریافت پاداش» بزنید و اینجا تأیید کنید.\n\n"
         "<b>عضویت</b> — {r_join} استارز. عضویت بررسی و پاداش بلافاصله واریز می‌شود.\n"
@@ -1205,12 +1206,106 @@ def ref_text(u):
     return H(str(base) + str(ladder_text(u, lang)))
 
 
+# ═════════════════════════════ Invite banner (admin-configurable) ═════════════════════════════
+INVITE_DEFAULT = {
+    "text_en": BRAND + "\nGrow your channel with real members, reactions and views. Collect free Stars every day.",
+    "text_fa": BRAND + "\nکانالت را با عضو، واکنش و بازدید واقعی رشد بده. هر روز استارز رایگان بگیر.",
+    "photo": os.environ.get("INVITE_BANNER", "").strip(),     # https image URL, or a Telegram file_id set via /inviteimage
+}
+
+
+def invite_cfg():
+    cfg = dict(INVITE_DEFAULT)
+    try:
+        cfg.update({k: v for k, v in (db.settings.find_one({"_id": "invite"}) or {}).items() if k in INVITE_DEFAULT and isinstance(v, str)})
+    except Exception:
+        log.exception("invite_cfg")
+    return cfg
+
+
+def invite_set(**kw):
+    db.settings.update_one({"_id": "invite"}, {"$set": kw}, upsert=True)
+
+
+def invite_plain(lang):
+    cfg = invite_cfg()
+    return (cfg["text_fa"] if lang == "fa" else cfg["text_en"]).strip()
+
+
+def invite_parts(lang):
+    """(title, body) - first line is the headline."""
+    lines = invite_plain(lang).split("\n", 1)
+    return lines[0].strip(), (lines[1].strip() if len(lines) > 1 else "")
+
+
+def invite_caption(lang, uid):
+    title, body = invite_parts(lang)
+    link = ref_link(uid)
+    out = f"<b>{html.escape(title)}</b>"
+    if body:
+        out += "\n" + html.escape(body)
+    if link:
+        out += "\n\n" + html.escape(link)
+    return out[:1020]
+
+
+def invite_share_text(lang):
+    title, body = invite_parts(lang)
+    return (title + ("\n" + body if body else ""))[:600]
+
+
+def invite_send_banner(uid, lang):
+    link = ref_link(uid)
+    if not link:
+        return False
+    label = "ورود به ربات" if lang == "fa" else "Open the bot"
+    kb = [[U(label, link, "primary")]]
+    cfg, cap = invite_cfg(), invite_caption(lang, uid)
+    if cfg["photo"]:
+        r = tg("sendPhoto", chat_id=uid, photo=cfg["photo"], caption=cap, parse_mode="HTML", reply_markup={"inline_keyboard": kb})
+        if r.get("ok"):
+            return True
+    return bool(send(uid, cap, kb).get("ok"))
+
+
+def invite_admin_cmd(msg, uid, chat, lang):
+    """/inviteimage (photo caption, reply to a photo, URL argument or 'off'), /invitetext fa|en <text>, /invitereset. Admin only."""
+    raw = (msg.get("text") or msg.get("caption") or "").strip()
+    parts = raw.split(None, 2)
+    cmd = parts[0][1:].split("@")[0].lower() if parts else ""
+    fa = lang == "fa"
+    if cmd == "inviteimage":
+        photos = msg.get("photo") or (msg.get("reply_to_message") or {}).get("photo") or []
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        if photos:
+            invite_set(photo=photos[-1]["file_id"])
+        elif arg.lower() in ("off", "none", "-"):
+            invite_set(photo="")
+        elif arg.lower().startswith("https://"):
+            invite_set(photo=arg)
+        else:
+            return send(chat, "ارسال عکس با کپشن /inviteimage، ریپلای روی عکس، یا /inviteimage https://… ؛ برای حذف: /inviteimage off" if fa else
+                        "Send a photo with the caption /inviteimage, reply to a photo, use /inviteimage https://… or /inviteimage off to remove it.")
+        invite_send_banner(uid, lang)
+        return send(chat, "✅ تصویر بنر ذخیره شد." if fa else "✅ Banner image saved.")
+    if cmd == "invitetext":
+        if len(parts) < 3 or parts[1].lower() not in ("fa", "en"):
+            return send(chat, "فرمت: /invitetext fa متن … (خط اول عنوان است)" if fa else "Usage: /invitetext en your text … (first line is the headline)")
+        invite_set(**{"text_" + parts[1].lower(): parts[2].strip()[:600]})
+        invite_send_banner(uid, lang)
+        return send(chat, "✅ متن بنر ذخیره شد." if fa else "✅ Banner text saved.")
+    if cmd == "invitereset":
+        db.settings.delete_one({"_id": "invite"})
+        return send(chat, "✅ بنر به حالت پیش‌فرض برگشت." if fa else "✅ Banner reset to defaults.")
+    return None
+
+
 def ref_kb(uid, lang):
     link = ref_link(uid)
     rows = []
     if link:
         rows.append([U(tb(lang, "b_share"),
-                       f"https://t.me/share/url?url={quote(link, safe='')}&text={quote(tb(lang, 'share_text'))}", "primary")])
+                       f"https://t.me/share/url?url={quote(link, safe='')}&text={quote(invite_share_text(lang))}", "primary")])
     rows.append([B(tb(lang, "b_back"), "acc")])
     return rows
 
@@ -2817,9 +2912,9 @@ def daily_report():
         return
     new = db.users.count_documents({"joined": {"$gte": start}})
     live = db.campaigns.count_documents({"status": "active", "remaining": {"$gt": 0}})
-    en = (f"<b>📊 Today on TaskPlus</b>\n<blockquote>✅ Tasks completed: <code>{tasks}</code>\n👥 New members: <code>{new}</code>\n"
+    en = (f"<b>📊 Today on Grameeting</b>\n<blockquote>✅ Tasks completed: <code>{tasks}</code>\n👥 New members: <code>{new}</code>\n"
           f"📣 Live orders: <code>{live}</code></blockquote>\nOpen tasks are waiting in this channel 👆")
-    fa = _rtl(f"<b>📊 امروز در تاسک‌پلاس</b>\n<blockquote>✅ تسک‌های انجام‌شده: <code>{tasks}</code>\n👥 اعضای جدید: <code>{new}</code>\n"
+    fa = _rtl(f"<b>📊 امروز در Grameeting</b>\n<blockquote>✅ تسک‌های انجام‌شده: <code>{tasks}</code>\n👥 اعضای جدید: <code>{new}</code>\n"
               f"📣 سفارش‌های فعال: <code>{live}</code></blockquote>\nتسک‌های باز در همین کانال منتظر شما هستند 👆")
     post_to_channel(fa + "\n────────\n" + en)
 
@@ -3334,6 +3429,8 @@ def on_message(msg):
     if u.get("banned") and uid not in ADMINS:
         return send(chat, admin_text(lang, "⛔ Your access to this bot has been disabled.", "⛔ دسترسی شما به ربات غیرفعال شده است."))
 
+    if not text and uid in ADMINS and msg.get("photo") and (msg.get("caption") or "").lower().startswith("/inviteimage"):
+        return invite_admin_cmd(msg, uid, chat, lang)
     if text.startswith("/"):
         parts = text[1:].split()
         cmd, args = (parts[0].split("@")[0].lower() if parts else ""), parts[1:]
@@ -3350,6 +3447,11 @@ def on_message(msg):
             return send(chat, help_text(lang), home_kb(lang))
         if cmd in ("invite", "ref"):
             return send(chat, ref_text(u), ref_kb(uid, lang))
+        if cmd == "banner":
+            invite_send_banner(uid, lang)
+            return None
+        if uid in ADMINS and cmd in ("inviteimage", "invitetext", "invitereset"):
+            return invite_admin_cmd(msg, uid, chat, lang)
         if cmd in ("language", "lang"):
             return send(chat, LANG_PICK, lang_kb())
         if cmd == "gift":
@@ -4184,6 +4286,13 @@ def miniapp_growth_data(u):
     invite = {"link": ref_link(uid), "total": int(u.get("ref_count", 0) or 0),
               "active": int(u.get("ref_active_count", 0) or 0), "earned": int(u.get("ref_earned", 0) or 0),
               "welcomeBonus": REF_WELCOME_BONUS, "activeBonus": REF_ACTIVE_BONUS, "activeTasks": REF_ACTIVE_TASKS, "ladder": ladder}
+    icfg = invite_cfg()
+    ititle, ibody = invite_parts(lang)
+    invite["banner"] = {"title": ititle, "text": ibody, "shareText": invite_share_text(lang),
+                        "image": ("/invite-banner?v=" + hashlib.md5(icfg["photo"].encode()).hexdigest()[:8]) if icfg["photo"] else ""}
+    invite["isAdmin"] = uid in ADMINS
+    if uid in ADMINS:
+        invite["settings"] = {"text_en": icfg["text_en"], "text_fa": icfg["text_fa"], "photo": icfg["photo"] if icfg["photo"].startswith("https://") else ""}
 
     today_done = counter_get(f"d:{uid}:{today}")
     cap = DAILY_TASKS + LEVELS[idx][6]
@@ -4248,6 +4357,57 @@ def miniapp_wheel_spin():
     return jsonify(ok=True, prize=prize, index=prizes.index(prize),
                    **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
 
+
+
+@app.get("/invite-banner")
+def invite_banner_image():
+    """Public on purpose: the banner is marketing material meant to be shared. Streams the configured image without exposing the bot token."""
+    p = invite_cfg()["photo"]
+    if not p:
+        return "", 404
+    if p.startswith("https://"):
+        return redirect(p)
+    info = tg("getFile", file_id=p)
+    if not info.get("ok"):
+        return "", 404
+    try:
+        r = requests.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{info['result']['file_path']}", timeout=20)
+        return Response(r.content, mimetype=r.headers.get("Content-Type", "image/jpeg"), headers={"Cache-Control": "public, max-age=300"})
+    except Exception:
+        return "", 502
+
+
+@app.post("/api/miniapp/invite/send")
+def miniapp_invite_send():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    if not invite_send_banner(int(u["_id"]), lang_of(u)):
+        return jsonify(error="banner_failed"), 502
+    return jsonify(ok=True)
+
+
+@app.post("/api/miniapp/invite/settings")
+def miniapp_invite_settings():
+    u, err = miniapp_identity()
+    if err:
+        return err
+    if int(u["_id"]) not in ADMINS:
+        return jsonify(error="forbidden", message="Admins only."), 403
+    body = request.get_json(silent=True) or {}
+    upd = {}
+    for k in ("text_en", "text_fa"):
+        if isinstance(body.get(k), str) and body[k].strip():
+            upd[k] = body[k].strip()[:600]
+    if isinstance(body.get("photo"), str):
+        ph = body["photo"].strip()
+        if ph and not ph.startswith("https://"):
+            return jsonify(error="bad_image"), 400
+        upd["photo"] = ph
+    if upd:
+        invite_set(**upd)
+    fresh = db.users.find_one({"_id": int(u["_id"])}) or u
+    return jsonify(ok=True, **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
 
 
 @app.post("/hook")
