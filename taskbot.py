@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Grameeting — ربات دوزبانه‌ی تبادل تسک تلگرام (عضویت / واکنش / بازدید)
-Grameeting — bilingual (English / Persian) Telegram task-exchange bot
+Memberland (ممبرلند) — ربات دوزبانه‌ی تبادل تسک تلگرام (عضویت / واکنش / بازدید)
+Memberland (ممبرلند) — bilingual (English / Persian) Telegram task-exchange bot
 
 Stack : Flask + MongoDB (pymongo) + Webhook — تک‌فایل و بدون مینی‌اپ
 Run   : gunicorn taskbot:app
@@ -48,7 +48,10 @@ SECRET_KEY = os.environ.get("SECRET_KEY", BOT_TOKEN)
 ADMINS = {int(x) for x in re.findall(r"\d+", os.environ.get("ADMIN_IDS", ""))}
 TASKS_CHANNEL = os.environ.get("TASKS_CHANNEL", "").strip()        # e.g. @MyTasksChannel (bot must be admin)
 TASKS_CHANNEL_URL = os.environ.get("TASKS_CHANNEL_URL", "").strip()
-BRAND = os.environ.get("BRAND_NAME", "Grameeting").strip() or "Grameeting"
+BRAND = os.environ.get("BRAND_NAME", "Memberland").strip() or "Memberland"          # English display name
+BRAND_FA = os.environ.get("BRAND_NAME_FA", "ممبرلند").strip() or "ممبرلند"            # Persian display name
+BRAND_ID = os.environ.get("BRAND_ID", "mmberland").strip().lstrip("@") or "mmberland"  # public ID shown as @mmberland
+MENU_BUTTON = os.environ.get("MENU_BUTTON", "commands").strip().lower()              # commands (default, keeps the / menu) | webapp
 
 START_POINTS = int(os.environ.get("START_POINTS", "13"))
 HOLD_HOURS = float(os.environ.get("HOLD_HOURS", "24"))
@@ -63,7 +66,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v56-miniapp-invite"
+VERSION = "v59-memberland"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -89,6 +92,8 @@ db.campaigns.create_index([("status", 1), ("remaining", 1)])
 db.campaigns.create_index("owner")
 db.users.create_index("referred_by")
 db.reaction_watch.create_index([("chat_id", 1), ("mid", 1)])
+db.campaign_drafts.create_index([("post_key", 1), ("status", 1)])
+db.campaign_drafts.create_index([("owner", 1), ("status", 1)])
 db.reaction_credits.create_index([("post_key", 1), ("event_at", 1)])
 db.user_events.create_index([("uid", 1), ("t", -1)])
 db.user_events.create_index([("t", -1)])
@@ -130,6 +135,18 @@ def U(text, url, style=None):
     if style in ("primary", "success", "danger"):
         out["style"] = style
     return out
+
+
+def W(text, url, style=None):
+    """Mini App (web_app) inline button. Works in private chats."""
+    out = {"text": str(text), "web_app": {"url": url}}
+    if style in ("primary", "success", "danger"):
+        out["style"] = style
+    return out
+
+
+def miniapp_url():
+    return f"{BASE_URL}/miniapp"
 
 
 def send(chat, text, kb=None):
@@ -258,6 +275,7 @@ def short(s, n=30):
 S = {
     # ───────── Buttons (plain text) ─────────
     "b_menu": ("🏠 Main menu", "🏠 منوی اصلی"),
+    "b_app": ("🚀 Open Memberland App", "🚀 باز کردن مینی‌اپ ممبرلند"),
     "b_back": ("↩️ Back", "↩️ بازگشت"),
     "b_cancel": ("Cancel", "⭕️ انصراف"),
     "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
@@ -306,8 +324,8 @@ S = {
     "lbl_paid": ("Paid reaction", "واکنش پولی"),
     "user_fallback": ("A user", "یک کاربر"),
     "campaign_fallback": ("Order", "سفارش"),
-    "share_text": ("🎁 Free Stars every day! Complete easy tasks, collect daily gifts and grow your channel on autopilot with Grameeting.",
-                   "🎁 هر روز استارز رایگان! با انجام تسک‌های ساده و هدیه‌ی روزانه، کانال خود را در Grameeting به‌صورت خودکار رشد دهید."),
+    "share_text": ("🎁 Memberland — free growth for your Telegram channel! Do quick tasks, earn Stars, then use them to get members, reactions and views. No payment, no catch. @mmberland",
+                   "🎁 ممبرلند؛ رشد رایگان کانال تلگرامی شما! تسک‌های ساده انجام بده، استارز بگیر و با آن عضو، ریکشن و ویو بگیر. بدون پرداخت و بدون شرط. @mmberland"),
 
     # ───────── Failure reasons (used inside notifications) ─────────
     "r_stopped": ("The order was stopped before verification and the spot was returned.",
@@ -322,16 +340,29 @@ S = {
 
     # ───────── Core screens ─────────
     "menu": (
-        "<b>Grameeting👁‍🗨</b>\n<i>Task exchange for Telegram channels and groups</i>\n"
+        "<b>Memberland👁‍🗨</b>\n<i>Free growth for Telegram channels, groups and bots</i>\n"
         "<blockquote><b>Balance:</b> <code>{points}</code> Stars⭐{hold}</blockquote>\n"
-        "Welcome, {name}. Complete tasks to earn Stars, then spend them on orders for your own channel.",
-        "<b>Grameeting👁‍🗨</b>\nپلتفرم نوین عضوگیری، ریکشن پست و ویو سریع؛ حرفه‌ای و رایگان برای تمامی کانال‌ها و گروه‌های تلگرام\n"
+        "Welcome, {name}! Here is exactly how it works:\n"
+        "⭐ <b>Earn</b> — do quick tasks (join, react, view) and collect free Stars.\n"
+        "🚀 <b>Grow</b> — spend your Stars to get members, reactions and views for your own channel.\n"
+        "🎁 <b>Bonus</b> — daily gift, lucky wheel and invite rewards.\n"
+        "<i>No payment needed. Real people complete your tasks, and every price is shown before you confirm.</i>\n"
+        "@" + BRAND_ID,
+        "<b>ممبرلند👁‍🗨</b>\nرشد رایگان کانال، گروه و ربات تلگرامی شما\n"
         "<blockquote><b>موجودی:</b> <code>{points}</code> استارز⭐{hold}</blockquote>\n"
-        "{name} گرامی، خوش آمدید. با انجام تسک و روش های مختلف میتوانید استارز رایگان کسب کنید و از آن برای رشد کانال و یا گروه و ربات و.. خود استفاده نمایید."),
+        "{name} عزیز، به ممبرلند خوش آمدید! روش کار کاملاً ساده و شفاف است:\n"
+        "⭐ <b>کسب استارز</b> — تسک‌های سریع (عضویت، ریکشن، بازدید) را انجام دهید و استارز رایگان بگیرید.\n"
+        "🚀 <b>رشد کانال</b> — با استارزتان برای کانال خودتان عضو، ریکشن و ویو سفارش دهید.\n"
+        "🎁 <b>پاداش‌ها</b> — هدیه‌ی روزانه، گردونه‌ی شانس و جایزه‌ی دعوت دوستان.\n"
+        "<i>بدون پرداخت پول. تسک‌ها را کاربران واقعی انجام می‌دهند و هزینه‌ی هر سفارش پیش از تأیید نمایش داده می‌شود.</i>\n"
+        "@" + BRAND_ID),
+    "app_open": (
+        "<b>Memberland App</b>\nTasks, daily gift, lucky wheel, levels and your campaigns in one place. Tap below to open it.",
+        "<b>مینی‌اپ ممبرلند</b>\nتسک‌ها، هدیه‌ی روزانه، گردونه‌ی شانس، لول‌ها و سفارش‌هایتان در یک صفحه. برای ورود دکمه‌ی زیر را بزنید."),
     "hold_line": ("\n<b>Pending:</b> <code>{hold}</code> Stars", "\n<b>در انتظار تأیید:</b> <code>{hold}</code> استارز"),
 
     "help": (
-        "<b>Help</b>\n<i>How Grameeting works</i>\n\n"
+        "<b>Help</b>\n<i>How Memberland works</i>\n\n"
         "<b>⭐ Earn Stars</b>\n"
         "<blockquote>Open a task in the showcase channel, complete it, tap <b>Claim reward</b> under the post and confirm here.\n\n"
         "<b>Join</b> — {r_join} Stars. Membership is verified and paid instantly.\n"
@@ -353,7 +384,7 @@ S = {
         "<blockquote expandable><b>About channel reactions</b>\n"
         "Channel reactions are verified by the increase in the post's total reaction count. This measures how many "
         "reactions were added, not who added them. Telegram may deliver count updates a few minutes late.</blockquote>",
-        "<b>راهنما</b>\n<i>نحوه‌ی کار Grameeting</i>\n\n"
+        "<b>راهنما</b>\n<i>نحوه‌ی کار ممبرلند</i>\n\n"
         "<b>⭐ کسب استارز</b>\n"
         "<blockquote>تسک را در کانال ویترین انتخاب و انجام دهید، سپس زیر همان پست روی «دریافت پاداش» بزنید و اینجا تأیید کنید.\n\n"
         "<b>عضویت</b> — {r_join} استارز. عضویت بررسی و پاداش بلافاصله واریز می‌شود.\n"
@@ -1080,7 +1111,8 @@ def main_kb(lang, uid=None):
     ready = True
     if uid is not None:
         ready = (db.users.find_one({"_id": int(uid)}, {"daily_last": 1}) or {}).get("daily_last") != day()
-    rows = [[B(tb(lang, "b_earn"), "earn", "primary")],
+    rows = [[W(tb(lang, "b_app"), miniapp_url(), "primary")],
+            [B(tb(lang, "b_earn"), "earn", "success")],
             [B(tb(lang, "b_gift_ready" if ready else "b_gift"), "gift", "success" if ready else None), B(tb(lang, "b_top"), "top")],
             [B(tb(lang, "b_my"), "campaigns"), B(tb(lang, "b_acc"), "acc")]]
     if uid is not None and int(uid) in ADMINS:
@@ -1208,8 +1240,8 @@ def ref_text(u):
 
 # ═════════════════════════════ Invite banner (admin-configurable) ═════════════════════════════
 INVITE_DEFAULT = {
-    "text_en": BRAND + "\nGrow your channel with real members, reactions and views. Collect free Stars every day.",
-    "text_fa": BRAND + "\nکانالت را با عضو، واکنش و بازدید واقعی رشد بده. هر روز استارز رایگان بگیر.",
+    "text_en": BRAND + "\nFree growth for your channel: do quick tasks, earn Stars and spend them on real members, reactions and views. No payment, no catch.",
+    "text_fa": BRAND_FA + "\nرشد رایگان کانالت: تسک‌های ساده انجام بده، استارز بگیر و با آن عضو، ریکشن و ویو واقعی سفارش بده. بدون پرداخت و بدون شرط.",
     "photo": os.environ.get("INVITE_BANNER", "").strip(),     # https image URL, or a Telegram file_id set via /inviteimage
 }
 
@@ -1870,6 +1902,10 @@ def on_reaction_count(mr, update_id=None):
         else:
             invalidate_count_credits(key, -delta)
 
+    try:
+        activate_reaction_drafts(key)
+    except Exception:
+        log.exception("activate_reaction_drafts")
     # If the campaign owner was waiting for the first snapshot, move them on to choosing the time limit.
     latest = db.reaction_watch.find_one({"_id": key}) or {}
     owner = latest.get("calibrating_owner")
@@ -2912,9 +2948,9 @@ def daily_report():
         return
     new = db.users.count_documents({"joined": {"$gte": start}})
     live = db.campaigns.count_documents({"status": "active", "remaining": {"$gt": 0}})
-    en = (f"<b>📊 Today on Grameeting</b>\n<blockquote>✅ Tasks completed: <code>{tasks}</code>\n👥 New members: <code>{new}</code>\n"
+    en = (f"<b>📊 Today on Memberland</b>\n<blockquote>✅ Tasks completed: <code>{tasks}</code>\n👥 New members: <code>{new}</code>\n"
           f"📣 Live orders: <code>{live}</code></blockquote>\nOpen tasks are waiting in this channel 👆")
-    fa = _rtl(f"<b>📊 امروز در Grameeting</b>\n<blockquote>✅ تسک‌های انجام‌شده: <code>{tasks}</code>\n👥 اعضای جدید: <code>{new}</code>\n"
+    fa = _rtl(f"<b>📊 امروز در ممبرلند</b>\n<blockquote>✅ تسک‌های انجام‌شده: <code>{tasks}</code>\n👥 اعضای جدید: <code>{new}</code>\n"
               f"📣 سفارش‌های فعال: <code>{live}</code></blockquote>\nتسک‌های باز در همین کانال منتظر شما هستند 👆")
     post_to_channel(fa + "\n────────\n" + en)
 
@@ -3443,6 +3479,8 @@ def on_message(msg):
             if cmd == "start" and not existed:
                 return send(chat, LANG_PICK, lang_kb())          # first contact: English first, then Persian
             return send(chat, menu_text(u), main_kb(lang, uid))
+        if cmd in ("app", "miniapp", "open"):
+            return send(chat, t(lang, "app_open"), [[W(tb(lang, "b_app"), miniapp_url(), "primary")], [B(tb(lang, "b_menu"), "home")]])
         if cmd == "help":
             return send(chat, help_text(lang), home_kb(lang))
         if cmd in ("invite", "ref"):
@@ -3766,6 +3804,72 @@ def miniapp_type_name(typ, lang):
                 "view": "View" if lang != "fa" else "بازدید"}.get(typ, str(typ))
 
 
+# ═════════════════════ Channel reactions: no waiting for the first count ═════════════════════
+def nudge_reaction(chat_id, mid):
+    """Ask Telegram for a fresh count: the bot adds a reaction to the post and removes it again (net change zero).
+    Runs in the background; at most once a minute per post. Failures are harmless (the draft still activates on any update)."""
+    if not counter_take(f"nudge:{post_key(chat_id, mid)}:{int(time.time() // 60)}", 1):
+        return
+
+    def run():
+        try:
+            r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": "\U0001F44D"}])
+            if r.get("ok"):
+                time.sleep(2)
+                tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[])
+        except Exception:
+            log.exception("nudge_reaction")
+    threading.Thread(target=run, daemon=True).start()
+
+
+def queue_reaction_draft(uid, link, qty, body, d, key):
+    try:
+        window = int(body.get("windowMin", 5))
+    except (TypeError, ValueError):
+        window = 5
+    db.campaign_drafts.delete_many({"owner": uid, "post_key": key, "status": "waiting"})
+    if db.campaign_drafts.count_documents({"owner": uid, "status": "waiting"}) >= 5:
+        return jsonify(error="max_active", message="Too many orders are being prepared. Wait for them to start."), 409
+    db.campaign_drafts.insert_one({"owner": uid, "post_key": key, "link": link, "quantity": qty,
+                                   "windowMin": window if window in (2, 5) else 5, "title": d["title"], "uname": d["uname"],
+                                   "status": "waiting", "created": time.time()})
+    return jsonify(ok=True, status="preparing"), 202
+
+
+def expire_drafts():
+    db.campaign_drafts.update_many({"status": "waiting", "created": {"$lt": time.time() - 3 * 3600}},
+                                   {"$set": {"status": "expired", "error": "expired", "finished": time.time()}})
+
+
+def activate_reaction_drafts(key):
+    """Called when a fresh count for a post has just been stored: start every waiting order for that post."""
+    expire_drafts()
+    for dr in list(db.campaign_drafts.find({"post_key": key, "status": "waiting"})):
+        if not db.campaign_drafts.find_one_and_update({"_id": dr["_id"], "status": "waiting"}, {"$set": {"status": "activating"}}):
+            continue
+        uid = int(dr["owner"])
+        u = db.users.find_one({"_id": uid}) or {"_id": uid}
+        lang = lang_of(u)
+        try:
+            with app.app_context():
+                resp, code = make_campaign(u, {"type": "react", "link": dr["link"], "quantity": dr["quantity"],
+                                               "windowMin": dr["windowMin"]}, activating=True)
+                data = resp.get_json() or {}
+        except Exception:
+            log.exception("activate draft")
+            resp, code, data = None, 500, {"error": "publish_failed"}
+        if code == 201:
+            db.campaign_drafts.update_one({"_id": dr["_id"]}, {"$set": {"status": "done", "finished": time.time()}})
+            send(uid, ("✅ کمپین واکنش شما فعال شد." if lang == "fa" else "✅ Your reaction campaign is now live."))
+        elif data.get("error") == "baseline_pending":
+            db.campaign_drafts.update_one({"_id": dr["_id"]}, {"$set": {"status": "waiting"}})
+        else:
+            db.campaign_drafts.update_one({"_id": dr["_id"]}, {"$set": {"status": "failed", "error": data.get("error", "publish_failed"),
+                                                                       "finished": time.time()}})
+            send(uid, ("❌ کمپین واکنش شروع نشد؛ استارزی کم نشد. " if lang == "fa" else "❌ The reaction campaign could not start; no Stars were charged. ")
+                 + str(data.get("message", ""))[:200])
+
+
 def miniapp_campaign_payload(c, uid, lang, include_actions=False):
     target = max(1, int(c.get("target", 1) or 1))
     remaining = max(0, int(c.get("remaining", 0) or 0))
@@ -3871,12 +3975,19 @@ def miniapp_tasks():
         if not target_url:
             continue
         status = completion.get("status") if completion else ""
+        is_count = c.get("type") == "react" and c.get("mode") == "count"
+        ses = db.sessions.find_one({"_id": f"{uid}:{c['_id']}"})
+        deadline = float(ses.get("task_deadline", 0) or 0) if (ses and is_count) else 0.0
+        live = bool(ses) and (not is_count or time.time() <= deadline)
+        # A count-based reaction task can only start while the post counter is fresh (same rule as the bot).
+        ready = True if (live or status) or not is_count else bool(fresh_reaction_snapshot(c.get("chat_id"), c.get("mid")))
         out.append({"id": str(c["_id"]), "title": ctitle(c), "type": c.get("type"),
                     "typeLabel": miniapp_type_name(c.get("type"), lang), "reward": int(c.get("reward", 0) or 0),
                     "remaining": int(c.get("remaining", 0) or 0), "targetUrl": target_url,
-                    "postUrl": post_url_of(c), "started": bool(db.sessions.find_one({"_id": f"{uid}:{c['_id']}"})),
+                    "postUrl": post_url_of(c), "started": live,
                     "completionStatus": status, "mode": c.get("mode") or "",
-                    "windowMin": int(c.get("window_min", 0) or 0)})
+                    "windowMin": int(c.get("window_min", 0) or 0),
+                    "deadline": deadline if live else 0, "ready": ready})
         if len(out) >= 60:
             break
     # Keep count-based reactions visible while their aggregate reaction increment is still pending.
@@ -3896,9 +4007,10 @@ def miniapp_tasks():
                        "reward": int(comp.get("reward", c.get("reward", 0)) or 0),
                        "remaining": max(0, int(c.get("remaining", 0) or 0)), "targetUrl": target_url,
                        "postUrl": post_url_of(c), "started": True, "completionStatus": "count_pending",
-                       "mode": c.get("mode") or "", "windowMin": int(c.get("window_min", 0) or 0)})
+                       "mode": c.get("mode") or "", "windowMin": int(c.get("window_min", 0) or 0),
+                       "deadline": 0, "ready": True})
         known_ids.add(str(cid))
-    return jsonify(ok=True, tasks=out[:60])
+    return jsonify(ok=True, tasks=out[:60], now=time.time())
 
 
 @app.post("/api/miniapp/tasks/<cid_s>/start")
@@ -3967,7 +4079,10 @@ def miniapp_start_task(cid_s):
         else:
             session = {"t": now}
         db.sessions.update_one({"_id": session_id}, {"$set": session}, upsert=True)
+    cur = db.sessions.find_one({"_id": session_id}) or {}
     return jsonify(ok=True, started=True, targetUrl=target_url,
+                   deadline=float(cur.get("task_deadline", 0) or 0) if c.get("mode") == "count" else 0,
+                   now=time.time(),
                    message="Task opened. Return to this Mini App and verify when finished.")
 
 
@@ -4062,7 +4177,18 @@ def miniapp_campaigns():
         return err
     uid, lang = int(u["_id"]), lang_of(u)
     cs = list(db.campaigns.find({"owner": uid}, sort=[("created", -1)], limit=30))
-    return jsonify(ok=True, campaigns=[miniapp_campaign_payload(c, uid, lang, True) for c in cs])
+    expire_drafts()
+    drafts = []
+    for dr in db.campaign_drafts.find({"owner": uid, "$or": [{"status": {"$in": ["waiting", "activating"]}},
+                                                              {"status": {"$in": ["failed", "expired"]}, "finished": {"$gt": time.time() - 86400}}]},
+                                      sort=[("created", -1)], limit=10):
+        waiting = dr["status"] in ("waiting", "activating")
+        drafts.append({"id": "d-" + str(dr["_id"]), "title": dr.get("title") or dr.get("uname") or "", "type": "react",
+                       "typeLabel": miniapp_type_name("react", lang), "target": int(dr["quantity"]), "remaining": int(dr["quantity"]),
+                       "done": 0, "progress": 0, "reward": TYPES["react"]["reward"], "cost": TYPES["react"]["cost"],
+                       "status": "preparing" if waiting else "failed", "reason": dr.get("error", ""), "pending": 0,
+                       "created": int(dr.get("created", 0)), "postUrl": "", "targetUrl": dr.get("link", ""), "canStop": waiting})
+    return jsonify(ok=True, campaigns=drafts + [miniapp_campaign_payload(c, uid, lang, True) for c in cs])
 
 
 @app.post("/api/miniapp/campaigns")
@@ -4070,8 +4196,13 @@ def miniapp_create_campaign():
     u, err = miniapp_identity()
     if err:
         return err
+    return make_campaign(u, request.get_json(silent=True) or {})
+
+
+def make_campaign(u, body, activating=False):
+    """Validate, charge and publish a campaign. Channel-reaction orders whose post counter is not fresh yet become a
+    'preparing' draft (nothing is charged) that activates by itself when Telegram delivers the count."""
     uid, lang = int(u["_id"]), lang_of(u)
-    body = request.get_json(silent=True) or {}
     typ = str(body.get("type", "")).lower().strip()
     link = str(body.get("link", "")).strip()
     raw_qty = body.get("quantity", 0)
@@ -4125,8 +4256,10 @@ def miniapp_create_campaign():
                 "$addToSet": {"owners": uid}}, upsert=True)
             snap = fresh_reaction_snapshot(d["chat_id"], d["mid"])
             if not snap:
-                db.reaction_watch.update_one({"_id": key}, {"$set": {"calibrating_owner": uid, "calibrating_at": time.time()}})
-                return jsonify(error="baseline_pending", message="The reaction counter is being calibrated. Wait briefly and try again."), 409
+                if activating:
+                    return jsonify(error="baseline_pending", message="The reaction counter is not ready yet."), 409
+                nudge_reaction(d["chat_id"], d["mid"])          # makes Telegram send a fresh count within seconds
+                return queue_reaction_draft(uid, link, qty, body, d, key)
         else:
             return jsonify(error="reaction_destination", message="Use a group or channel post that the bot can inspect."), 400
     total_cost = qty * TYPES[typ]["cost"]
@@ -4176,6 +4309,15 @@ def miniapp_stop_campaign(cid_s):
     if err:
         return err
     uid = int(u["_id"])
+    if cid_s.startswith("d-"):
+        try:
+            did = ObjectId(cid_s[2:])
+        except (InvalidId, TypeError):
+            return jsonify(error="invalid_id"), 400
+        if not db.campaign_drafts.find_one_and_update({"_id": did, "owner": uid, "status": "waiting"},
+                                                      {"$set": {"status": "cancelled", "finished": time.time()}}):
+            return jsonify(error="not_active"), 409
+        return jsonify(ok=True, refunded=0)
     try:
         cid = ObjectId(cid_s)
     except (InvalidId, TypeError):
@@ -4468,16 +4610,21 @@ def setup():
     r = tg("setWebhook", url=f"{BASE_URL}/hook", secret_token=HOOK_SECRET,
            allowed_updates=["message", "callback_query", "message_reaction", "message_reaction_count"])
     commands = {
-        "en": [("start", "Main menu"), ("gift", "Collect your daily gift"), ("top", "Weekly leaderboard"),
+        "en": [("start", "Main menu"), ("app", "Open Memberland App"), ("gift", "Collect your daily gift"), ("top", "Weekly leaderboard"),
                ("invite", "Invite friends and earn"), ("language", "Change language"), ("help", "Help")],
-        "fa": [("start", "منوی اصلی"), ("gift", "دریافت هدیه‌ی روزانه"), ("top", "جدول برترین‌های هفته"),
+        "fa": [("start", "منوی اصلی"), ("app", "باز کردن مینی‌اپ ممبرلند"), ("gift", "دریافت هدیه‌ی روزانه"), ("top", "جدول برترین‌های هفته"),
                ("invite", "دعوت از دوستان و دریافت پاداش"), ("language", "تغییر زبان"), ("help", "راهنما")],
     }
     as_json = lambda items: [{"command": c, "description": d} for c, d in items]
     tg("setMyCommands", commands=as_json(commands["en"]))                       # default (English)
     tg("setMyCommands", commands=as_json(commands["fa"]), language_code="fa")   # Persian clients
-    menu_url = f"{BASE_URL}/miniapp"
-    menu_result = tg("setChatMenuButton", menu_button={"type": "web_app", "text": "Open Mini App", "web_app": {"url": menu_url}})
+    # Telegram allows ONE menu button: either the web app or the "/" commands list. Default keeps the commands list
+    # visible; the Mini App is reachable from the 🚀 button in the main menu and from /app.
+    if MENU_BUTTON == "webapp":
+        menu_btn = {"type": "web_app", "text": "Open App", "web_app": {"url": miniapp_url()}}
+    else:
+        menu_btn = {"type": "commands"}
+    menu_result = tg("setChatMenuButton", menu_button=menu_btn)
     if not menu_result.get("ok"):
         log.warning("setChatMenuButton failed: %s", menu_result.get("description"))
     log.info("webhook: %s | version %s", r, VERSION)
