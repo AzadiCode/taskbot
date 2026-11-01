@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0c1024">
-<title>Grameeting</title>
+<title>Memberland · ممبرلند</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
@@ -260,24 +260,23 @@ main{padding-top:6px}
 .spin{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;animation:spin .8s linear infinite;flex:none}
 .task[data-act]{cursor:pointer}
 
-/* invite banner */
-.banner{border-radius:20px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line-2)}
-.ban-img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:var(--ink)}
-.ban-art{display:grid;width:100%;aspect-ratio:16/9}
-.ban-art{display:grid;place-items:center;background:radial-gradient(70% 90% at 50% 40%,color-mix(in srgb,var(--lv) 28%,transparent),transparent 70%),var(--panel-2)}
-.ban-art .emb{width:34%;max-width:130px;height:auto}
-.ban-body{display:grid;gap:4px;padding:14px}
-.ban-body b{font-size:16px}
-.ban-body>span{font-size:13px;color:var(--muted);line-height:1.7}
-.ban-link{display:flex;align-items:center;gap:7px;margin-top:8px;padding:8px 11px;border-radius:11px;background:var(--ink);direction:ltr;font-size:11.5px;color:var(--brand);overflow:hidden}
+.bar-track.indet{position:relative}
+.bar-track.indet .bar-fill{position:absolute;width:38%;animation:slide 1.4s ease-in-out infinite}
+@keyframes slide{0%{inset-inline-start:-40%}100%{inset-inline-start:100%}}
+.spin.sm{width:12px;height:12px;border-width:2px;vertical-align:-2px}
+
+/* invite banner: compact icon-size preview */
+.banner{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:16px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line-2)}
+.ban-img{display:block;flex:none;width:52px;height:52px;border-radius:13px;object-fit:contain;background:var(--ink)}
+.ban-art{flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:13px;background:radial-gradient(80% 90% at 50% 40%,color-mix(in srgb,var(--lv) 26%,transparent),transparent 72%),var(--panel-2)}
+.ban-art .emb{width:72%;max-width:none;height:auto}
+.ban-body{display:grid;gap:3px;padding:0;min-width:0;flex:1}
+.ban-body b{font-size:14px;line-height:1.4}
+.ban-body>span{font-size:12px;color:var(--muted);line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ban-link{display:flex;align-items:center;gap:6px;margin-top:4px;padding:5px 9px;border-radius:9px;background:var(--ink);direction:ltr;font-size:10.5px;color:var(--brand);overflow:hidden}
 .ban-link span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.invite .t-act{margin-top:12px}
-.inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
-.inv-stats div{padding:10px 6px;text-align:center;border-radius:14px;background:var(--panel-2)}
-.inv-stats b{display:block;font-size:18px}
-.inv-stats span{font-size:11px;color:var(--muted)}
 .up-row{display:flex;gap:12px;align-items:center}
-.up-thumb{width:96px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--panel-2);border:1px dashed var(--line-2);display:grid;place-items:center;color:var(--faint);flex:none}
+.up-thumb{width:52px;height:52px;border-radius:13px;overflow:hidden;background:var(--panel-2);border:1px dashed var(--line-2);display:grid;place-items:center;color:var(--faint);flex:none}
 .up-thumb img{width:100%;height:100%;object-fit:cover}
 .ta{padding:12px 14px;min-height:96px;resize:vertical;line-height:1.7}
 
@@ -405,10 +404,10 @@ en:{
  earners:'Top earners',inviters:'Top inviters',resetsIn:'Resets in {t}',yourRank:'Your rank',unranked:'Not ranked yet',boardEmpty:'Nobody on the board yet. Be the first.',weekPrizes:'Weekly prizes in Stars',
  p1:'1st',p2:'2nd',p3:'3rd',you:'You',
  totalEarned:'Total earned',onHold:'On hold',invited:'Friends invited',activeFriends:'Active friends',
- inviteTitle:'Invite friends',inviteSub:'Friend gets +{w}. You get +{a} after they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Grow your channel with Grameeting',ladderTitle:'Friend milestones',friendsUnit:'friends',
+ inviteTitle:'Invite friends',inviteSub:'Friend gets +{w}. You get +{a} after they finish {n} tasks.',copyLink:'Copy link',share:'Share',copied:'Link copied',shareText:'Grow your channel with Memberland — free Stars, real tasks, zero cost',ladderTitle:'Friend milestones',friendsUnit:'friends',
  language:'Language',reminders:'Smart reminders',remindersHelp:'One reminder a day',taskChannel:'Task channel',saved:'Saved',
  levelUp:'Level up',levelUpSub:'Bonus +{b} Stars',cont:'Continue',
- authTitle:'Open Grameeting from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user',
+ authTitle:'Open Memberland from Telegram',authSub:'Sign-in works only from the bot menu inside Telegram.',retry:'Try again',loadErr:'Could not load data. Check your connection.',netErr:'Connection error. Try again.',error:'Something went wrong',user:'Telegram user',
  levelReward:'Level reward',
  sendBanner:'Send banner to my chat',
  bannerSent:'Banner sent to your chat. Forward it.',
@@ -433,15 +432,13 @@ en:{
  timeUp:'Time is up. Open the task again.',
  pendingInfo:'Waiting for Telegram to update the reaction count. It can take a few minutes. You can leave this page.',
  counterStale:'This post has no fresh reaction data yet. Try again in a few minutes.',
- calTitle:'Prepare the post counter',
- calWhy:'Telegram sends reaction counts to bots with a delay. This one-time step makes verification accurate.',
- calStep1:'Open the post',
- calStep2:'Add or remove any reaction (an admin can too)',
- calStep3:'Wait for the counter to update',
- calWaiting:'Waiting for the update…',
- calReady:'Counter ready. Publishing…',
- openPost:'Open post',
- cancel:'Cancel'
+ cancel:'Cancel',
+ stPreparing:'Preparing',
+ stFailed:'Failed',
+ preparingHint:'Starts automatically. No need to wait here.',
+ preparingToast:'Order received. It goes live automatically.',
+ campLive:'Your campaign is live',
+ noCharge:'No Stars were charged'
 },
 fa:{
  nav_home:'خانه',nav_tasks:'تسک‌ها',nav_grow:'رشد',nav_rewards:'جوایز',nav_profile:'پروفایل',
@@ -474,10 +471,10 @@ fa:{
  earners:'برترین درآمدسازها',inviters:'برترین دعوت‌کننده‌ها',resetsIn:'{t} تا پایان هفته',yourRank:'رتبه‌ی تو',unranked:'—',boardEmpty:'هنوز کسی نیست',weekPrizes:'جایزه هفتگی',
  p1:'نفر اول',p2:'نفر دوم',p3:'نفر سوم',you:'تو',
  totalEarned:'کل درآمد',onHold:'در انتظار',invited:'دعوت‌شده',activeFriends:'فعال',
- inviteTitle:'دعوت دوستان',inviteSub:'دوستت +{w} می‌گیرد. تو +{a} می‌گیری وقتی او {n} تسک انجام دهد.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'کانالت را با Grameeting رشد بده',ladderTitle:'پاداش دعوت',friendsUnit:'دوست',
+ inviteTitle:'دعوت دوستان',inviteSub:'دوستت +{w} می‌گیرد. تو +{a} می‌گیری وقتی او {n} تسک انجام دهد.',copyLink:'کپی لینک',share:'اشتراک‌گذاری',copied:'لینک کپی شد',shareText:'کانالت را با ممبرلند رشد بده؛ استارز رایگان، تسک واقعی، بدون هزینه',ladderTitle:'پاداش دعوت',friendsUnit:'دوست',
  language:'زبان',reminders:'یادآوری هوشمند',remindersHelp:'روزی یک یادآوری',taskChannel:'کانال تسک‌ها',saved:'ذخیره شد',
  levelUp:'سطح جدید',levelUpSub:'جایزه +{b} استارز',cont:'ادامه',
- authTitle:'Grameeting را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام',
+ authTitle:'ممبرلند را از تلگرام باز کن',authSub:'ورود فقط از منوی ربات داخل تلگرام ممکن است.',retry:'تلاش دوباره',loadErr:'دریافت اطلاعات ناموفق بود. اتصال را بررسی کن.',netErr:'خطا در ارتباط. دوباره تلاش کن.',error:'خطایی رخ داد',user:'کاربر تلگرام',
  levelReward:'جایزه سطح',
  sendBanner:'ارسال بنر به چت من',
  bannerSent:'بنر در چت ربات برایت آمد؛ فوروارد کن',
@@ -502,15 +499,13 @@ fa:{
  timeUp:'زمان تمام شد. دوباره باز کن.',
  pendingInfo:'منتظر به‌روزرسانی شمارش واکنش در تلگرام هستیم؛ چند دقیقه طول می‌کشد. می‌توانی از صفحه خارج شوی.',
  counterStale:'اطلاعات تازه‌ی واکنش این پست هنوز نیامده. چند دقیقه بعد دوباره امتحان کن.',
- calTitle:'آماده‌سازی شمارنده پست',
- calWhy:'تلگرام شمارش واکنش را با تأخیر برای ربات می‌فرستد. این مرحله یک‌بار انجام می‌شود تا تأیید دقیق باشد.',
- calStep1:'پست را باز کن',
- calStep2:'یک واکنش بزن یا بردار (ادمین هم می‌تواند)',
- calStep3:'منتظر به‌روزرسانی شمارنده بمان',
- calWaiting:'منتظر به‌روزرسانی…',
- calReady:'شمارنده آماده شد. در حال انتشار…',
- openPost:'باز کردن پست',
- cancel:'انصراف'
+ cancel:'انصراف',
+ stPreparing:'در حال آماده‌سازی',
+ stFailed:'ناموفق',
+ preparingHint:'خودکار شروع می‌شود؛ لازم نیست منتظر بمانی.',
+ preparingToast:'سفارش ثبت شد؛ خودکار فعال می‌شود.',
+ campLive:'کمپین فعال شد',
+ noCharge:'استارزی کم نشد'
 }};
 const apiErrors={en:{auth_required:'Open this Mini App from the Telegram bot menu to sign in.',forbidden:'This account is disabled.',quantity:'Enter a whole-number quantity.',type:'Choose a supported task type.',link:'Enter a valid Telegram link.',max_active:'You have reached the active campaign limit.',restricted:'Your account cannot create campaigns right now.',quantity_range:'The quantity exceeds your available points or allowed limit.',link_format:'For membership, enter a channel link. For reactions and views, enter a specific post link.',chat_not_found:'Telegram could not find that channel or post.',bot_admin_required:'The bot must be an administrator in the destination channel.',baseline_pending:'Reaction data is being prepared. Wait briefly and try again.',reaction_destination:'Use a group or channel post that the bot can inspect.',admin_check_unavailable:'Could not verify bot permissions. Try again shortly.',insufficient_points:'Your balance changed or is insufficient. Refresh and try again.',publish_failed:'The campaign could not be published. Unused points were refunded.',invalid_id:'Invalid campaign ID.',not_active:'This campaign is no longer active.',language:'Choose English or Persian.',empty:'No profile changes were provided.',invalid_id:'Invalid task.',membership_check_unavailable:'Telegram could not verify channel membership. Try again.',task_channel_required:'Join the official task channel first.',task_unavailable:'This mission is no longer available.',own_task:'You cannot complete your own campaign.',already_done:'You have already completed this mission.',account_restricted:'Your account cannot claim tasks right now.',task_paused:'This campaign is temporarily paused.',target_unavailable:'The mission link is unavailable.',reaction_data_unavailable:'Reaction data is not available right now.',open_task_first:'Open the mission first, then verify it here.',not_member:'Telegram does not show you as a member yet.',not_reacted:'Your reaction has not been detected yet. React to the post, then try again.',reaction_window_expired:'The reaction verification window expired. Reopen the mission to try again.',limit:'You have reached your daily task limit.',full:'This mission has just filled up.',dup:'This task was already claimed.'},fa:{auth_required:'برای ورود، مینی‌اپ را از منوی ربات تلگرام باز کن.',forbidden:'دسترسی این حساب غیرفعال است.',quantity:'تعداد را به‌صورت عدد صحیح وارد کن.',type:'نوع تسک معتبر را انتخاب کن.',link:'لینک تلگرام معتبر وارد کن.',max_active:'به سقف کمپین‌های فعال رسیده‌ای.',restricted:'فعلاً امکان ساخت کمپین برای حسابت وجود ندارد.',quantity_range:'تعداد واردشده از موجودی یا سقف مجاز بیشتر است.',link_format:'برای عضویت لینک کانال و برای واکنش یا بازدید لینک یک پست مشخص را وارد کن.',chat_not_found:'کانال یا پست در تلگرام پیدا نشد.',bot_admin_required:'ربات باید در کانال مقصد مدیر باشد.',baseline_pending:'داده‌های واکنش در حال آماده‌سازی است؛ کمی صبر کن و دوباره تلاش کن.',reaction_destination:'یک پست از گروه یا کانالی وارد کن که ربات بتواند آن را بررسی کند.',admin_check_unavailable:'بررسی دسترسی ربات ناموفق بود؛ کمی بعد دوباره تلاش کن.',insufficient_points:'موجودی تغییر کرده یا کافی نیست؛ اطلاعات را تازه‌سازی کن.',publish_failed:'انتشار کمپین انجام نشد و امتیاز استفاده‌نشده برگشت.',invalid_id:'شناسه کمپین معتبر نیست.',not_active:'این کمپین دیگر فعال نیست.',language:'زبان انگلیسی یا فارسی را انتخاب کن.',empty:'تغییری برای ذخیره ارسال نشده است.',invalid_id:'تسک معتبر نیست.',membership_check_unavailable:'تلگرام نتوانست عضویت را بررسی کند؛ دوباره تلاش کن.',task_channel_required:'ابتدا عضو کانال رسمی تسک‌ها شو.',task_unavailable:'این مأموریت دیگر در دسترس نیست.',own_task:'نمی‌توانی کمپین خودت را انجام بدهی.',already_done:'این مأموریت را قبلاً تکمیل کرده‌ای.',account_restricted:'فعلاً امکان دریافت پاداش برای حسابت وجود ندارد.',task_paused:'این کمپین موقتاً متوقف شده است.',target_unavailable:'لینک مقصد مأموریت در دسترس نیست.',reaction_data_unavailable:'اطلاعات واکنش در حال حاضر در دسترس نیست.',open_task_first:'ابتدا مأموریت را باز کن و سپس همین‌جا تأیید بگیر.',not_member:'هنوز عضویت تو در تلگرام تأیید نشده است.',not_reacted:'واکنش تو هنوز شناسایی نشده؛ به پست واکنش بده و دوباره امتحان کن.',reaction_window_expired:'زمان بررسی واکنش تمام شد؛ مأموریت را دوباره باز کن.',limit:'به سقف روزانهٔ انجام تسک رسیده‌ای.',full:'ظرفیت این مأموریت همین حالا تکمیل شد.',dup:'این تسک قبلاً ثبت شده است.'}};
 Object.assign(apiErrors.en,{already_claimed:'Today\'s gift is already collected.',wheel_locked:'Finish one task today to unlock the wheel.',wheel_used:'You already spun the wheel today.',banner_failed:'Could not send. Open the bot chat first.',bad_image:'Image link must start with https://',bad_image_file:'Pick an image under 8 MB.'});
@@ -598,11 +593,13 @@ function taskCard(x){
    <div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}${gold>1?' · <span class="num">x'+gold+'</span>':''}</small></div></div>${act}</article>`;
 }
 function campCard(c){
-  const st={active:['mint',t('stActive')],paused:['brand',t('stPaused')],completed:['',t('stCompleted')],cancelled:['rose',t('stCancelled')]}[c.status]||['',c.status];
-  return `<article class="camp"><div class="t-top"><div class="t-ico ${esc(c.type)}">${ic(typeIcon(c.type))}</div><div class="grow"><div class="t-title">${esc(c.title)}</div><div class="t-meta"><span class="chip">${esc(c.typeLabel)}</span><span class="chip ${st[0]}">${st[1]}</span></div></div></div>
-   <div class="bar-track"><div class="bar-fill mint" style="width:${c.progress}%"></div></div>
-   <div class="camp-foot"><span>${t('doneOf',{d:fmt(c.done),t:fmt(c.target)})}</span><span>${c.progress}%</span></div>
-   ${c.canStop?`<div class="t-act"><button class="btn ghost sm" data-act="stop" data-id="${esc(c.id)}">${ic('stop','sm')}${t('stop')}</button></div>`:''}</article>`;
+  const st={active:['mint',t('stActive')],paused:['brand',t('stPaused')],completed:['',t('stCompleted')],cancelled:['rose',t('stCancelled')],preparing:['brand',t('stPreparing')],failed:['rose',t('stFailed')]}[c.status]||['',c.status];
+  const prep=c.status==='preparing',fail=c.status==='failed';
+  const bar=prep?`<div class="bar-track indet"><div class="bar-fill"></div></div><div class="camp-foot"><span>${prep?`<span class="spin sm"></span> ${t('preparingHint')}`:''}</span></div>`
+    :fail?`<div class="tk-msg err" style="margin:10px 0 0"><span>${esc(apiErrors[state.lang][c.reason]||t('error'))} · ${t('noCharge')}</span></div>`
+    :`<div class="bar-track"><div class="bar-fill mint" style="width:${c.progress}%"></div></div><div class="camp-foot"><span>${t('doneOf',{d:fmt(c.done),t:fmt(c.target)})}</span><span>${c.progress}%</span></div>`;
+  return `<article class="camp"><div class="t-top"><div class="t-ico ${esc(c.type)}">${ic(typeIcon(c.type))}</div><div class="grow"><div class="t-title">${esc(c.title)}</div><div class="t-meta"><span class="chip">${esc(c.typeLabel)}</span><span class="chip ${st[0]}">${st[1]}</span>${prep?`<span class="chip">${fmt(c.target)}</span>`:''}</div></div></div>
+   ${bar}${c.canStop?`<div class="t-act"><button class="btn ghost sm" data-act="stop" data-id="${esc(c.id)}">${ic('stop','sm')}${prep?t('cancel'):t('stop')}</button></div>`:''}</article>`;
 }
 function gate(){
   if(state.channelRequired)return `<div class="empty"><strong>${t('joinTitle')}</strong>${t('joinMsg')}</div>${state.tasksChannelUrl?`<button class="btn primary block" style="margin-top:12px" data-act="url" data-u="${esc(state.tasksChannelUrl)}">${ic('out','sm')}${t('joinBtn')}</button>`:''}`;
@@ -792,7 +789,7 @@ function checkLevelUp(prev,silent){
   try{localStorage.setItem('tp_lvl_'+state.user.id,String(cur));}catch(_){}
 }
 function openSheet(html){$('#sheet').innerHTML=html;$('#sheetVeil').classList.add('show');}
-function closeSheet(){$('#sheetVeil').classList.remove('show');clearInterval(tkTimer);stopCalib();state.taskId=null;state.tmsg=null;state.tbusy=false;}
+function closeSheet(){$('#sheetVeil').classList.remove('show');clearInterval(tkTimer);state.taskId=null;state.tmsg=null;state.tbusy=false;}
 function sheetCreate(){
   const ty=state.type,c=costs(),max=maxQty(ty),react=ty==='react';
   const opt=k=>`<button type="button" class="type-opt ${ty===k?'on':''}" data-act="ctype" data-k="${k}"><div class="t-ico ${k}">${ic(typeIcon(k))}</div><div class="grow"><div class="row"><b>${t('type'+k[0].toUpperCase()+k.slice(1))}</b><span class="chip gold" style="margin-inline-start:auto">${t('perUnit',{c:c[k]})}</span></div><span>${t('desc'+k[0].toUpperCase()+k.slice(1))}</span></div></button>`;
@@ -899,8 +896,9 @@ async function tVerify(){
 /* count-based reactions are confirmed by Telegram a few minutes later: watch for it instead of leaving the user guessing */
 function schedulePoll(){
   clearTimeout(pollTimer);
-  if(document.hidden||!state.user||!state.tasks.some(x=>x.completionStatus==='count_pending'))return;
-  pollTimer=setTimeout(pollPending,6000);
+  if(document.hidden||!state.user)return;
+  const fast=state.campaigns.some(c=>c.status==='preparing');
+  if(fast||state.tasks.some(x=>x.completionStatus==='count_pending'))pollTimer=setTimeout(pollPending,fast?4000:6000);
 }
 const pendingIds=()=>state.tasks.filter(x=>x.completionStatus==='count_pending').map(x=>x.id);
 async function afterPendingResolved(oldPend,beforePts,prevLevel){
@@ -912,11 +910,14 @@ async function afterPendingResolved(oldPend,beforePts,prevLevel){
   return true;
 }
 async function pollPending(){
-  const oldPend=pendingIds(),beforePts=state.user.points,prev=state.user.level;
+  const oldPend=pendingIds(),beforePts=state.user.points,prev=state.user.level,oldPrep=state.campaigns.filter(c=>c.status==='preparing').length;
   try{
-    const [d,tk2]=await Promise.all([api('/api/miniapp/dashboard'),api('/api/miniapp/tasks')]);
+    const [d,tk2,cp]=await Promise.all([api('/api/miniapp/dashboard'),api('/api/miniapp/tasks'),oldPrep?api('/api/miniapp/campaigns'):Promise.resolve(null)]);
     state.user=d.user;state.stats=d.stats;state.tasks=tk2.tasks||[];if(tk2.now)state.skew=tk2.now-Date.now()/1000;
+    let live=false;
+    if(cp){state.campaigns=cp.campaigns||[];live=state.campaigns.filter(c=>c.status==='preparing').length<oldPrep&&state.campaigns.some(c=>c.status==='active');}
     if(!await afterPendingResolved(oldPend,beforePts,prev)){render();refreshTaskSheet();}
+    if(live){toast(t('campLive'));haptic();}
   }catch(_){}
   schedulePoll();
 }
@@ -938,42 +939,13 @@ async function spin(){
     setTimeout(()=>{absorb(r);state.spinning=false;render();bumpBal();celebrate({k:t('youWon'),v:'+'+r.prize,s:t('wheelTitle')});},reduce?200:4400);
   }catch(e){state.spinning=false;render();toast(errText(e));loadAll(true);}
 }
-let calibTimer=null;
-function stopCalib(){clearInterval(calibTimer);calibTimer=null;state.calib=null;}
-function sheetCalib(){
-  const c=state.calib;if(!c)return '';
-  const li=(n,label,st,extra='')=>`<li class="${st}"><i>${st==='done'?ic('check','sm'):n}</i><div><b>${label}</b>${extra}</div></li>`;
-  const status=c.err?`<div class="tk-msg err"><span>${esc(c.err)}</span></div>`:c.ready?`<div class="tk-msg ok">${ic('check','sm')}<span>${t('calReady')}</span></div>`:`<div class="tk-msg info"><span class="spin"></span><span>${t('calWaiting')}${c.total!=null?` · <span class="num">${fmt(c.total)}</span>`:''}</span></div>`;
-  return `<div class="sheet-h"><b>${t('calTitle')}</b><button class="x" data-act="calcancel" aria-label="Close">${ic('x')}</button></div>
-  <p class="muted" style="font-size:12.5px;margin:0 0 4px">${t('calWhy')}</p>
-  <ol class="steps">${li(1,t('calStep1'),c.opened?'done':'cur',`<button class="btn ghost sm" style="margin-top:8px" data-act="calopen">${ic('out','sm')}${t('openPost')}</button>`)}${li(2,t('calStep2'),c.opened?'cur':'')}${li(3,t('calStep3'),c.ready?'done':'')}</ol>
-  ${status}<button class="btn ghost block" style="margin-top:14px" data-act="calcancel">${t('cancel')}</button>`;
-}
-function refreshCalib(){if(state.calib&&$('#sheetVeil').classList.contains('show'))$('#sheet').innerHTML=sheetCalib();}
-function startCalib(body){
-  stopCalib();state.calib={body,ready:false,total:null,postUrl:'',err:'',opened:false,busy:false};
-  openSheet(sheetCalib());calibCheck();calibTimer=setInterval(calibCheck,5000);
-}
-async function calibCheck(){
-  const c=state.calib;if(!c||c.busy||c.ready)return;c.busy=true;
+async function submitCampaign(body,btn){
   try{
-    const r=await api('/api/miniapp/campaigns/baseline',{method:'POST',body:{link:c.body.link}});
-    c.postUrl=r.postUrl||c.postUrl;c.total=r.total;
-    if(r.ready){c.ready=true;clearInterval(calibTimer);refreshCalib();haptic();c.busy=false;await submitCampaign(c.body,true);return;}
-  }catch(e){c.err=errText(e);clearInterval(calibTimer);}
-  c.busy=false;refreshCalib();
-}
-async function submitCampaign(body,fromCalib,btn){
-  try{
-    await api('/api/miniapp/campaigns',{method:'POST',body});
-    stopCalib();closeSheet();toast(t('published'));haptic();await loadAll(true);go('grow');
+    const r=await api('/api/miniapp/campaigns',{method:'POST',body});
+    closeSheet();haptic();
+    toast(r.status==='preparing'?t('preparingToast'):t('published'));
+    await loadAll(true);go('grow');
   }catch(e){
-    if(e.code==='baseline_pending'){
-      if(!fromCalib)startCalib(body);
-      else if(state.calib){state.calib.ready=false;state.calib.busy=false;clearInterval(calibTimer);calibTimer=setInterval(calibCheck,5000);refreshCalib();}
-      return;
-    }
-    if(fromCalib&&state.calib){state.calib.err=errText(e);state.calib.ready=false;refreshCalib();return;}
     if(btn){btn.disabled=false;btn.textContent=t('publish');}
     toast(errText(e));
   }
@@ -984,7 +956,7 @@ async function publish(){
   if(!Number.isInteger(qty)||qty<1||qty>maxQty(ty)){toast(apiErrors[state.lang].quantity_range);return;}
   const body={type:ty,link,quantity:qty};if(ty==='react'){const on=$('#cWin .on');body.windowMin=Number(on?.dataset.m||5);}
   btn.disabled=true;btn.textContent=t('publishing');
-  await submitCampaign(body,false,btn);
+  await submitCampaign(body,btn);
 }
 async function stopCampaign(id){
   const ok=await new Promise(res=>{if(tg?.showConfirm)tg.showConfirm(t('confirmStop'),res);else res(confirm(t('confirmStop')));});if(!ok)return;
@@ -1014,8 +986,6 @@ document.addEventListener('click',e=>{
     case'task':openTaskSheet(d.id);break;
     case'tstart':tStart();break;
     case'tverify':tVerify();break;
-    case'calopen':{const c=state.calib;if(c){c.opened=true;refreshCalib();openLink(c.postUrl||c.body.link);}break;}
-    case'calcancel':closeSheet();break;
     case'gift':claimGift();break;
     case'spin':spin();break;
     case'create':state.type='join';openSheet(sheetCreate());updateSum();break;
