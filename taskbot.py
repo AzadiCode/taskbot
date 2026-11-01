@@ -66,7 +66,7 @@ MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
-VERSION = "v61-memberland"
+VERSION = "v63-memberland"
 
 # reward for the doer / cost per unit for the campaign owner / minimum wait (seconds)
 TYPES = {
@@ -279,6 +279,7 @@ S = {
     "b_add_channel": ("➕ Add to channel", "➕ افزودن به کانال"),
     "b_add_group": ("➕ Add to group", "➕ افزودن به گروه"),
     "b_added": ("✅ Done, next step", "✅ انجام شد، مرحله بعد"),
+    "b_skip": ("Skip", "رد کردن"),
     "b_back": ("↩️ Back", "↩️ بازگشت"),
     "b_cancel": ("Cancel", "⭕️ انصراف"),
     "b_earn": ("⭐ Earn Stars", "⭐ کسب استارز"),
@@ -601,6 +602,12 @@ S = {
         "2️⃣ دسترسی‌های ادمین را تأیید کنید.\n"
         "3️⃣ به همین‌جا برگردید و روی <b>انجام شد</b> بزنید.\n"
         "<blockquote>⚠️ تا پایان کامل سفارش، ربات را ادمین نگه دارید. اگر زودتر حذفش کنید، سفارش متوقف می‌شود.</blockquote>"),
+    "ask_desc_skipped": ("Description skipped ✓", "توضیحی ثبت نشد ✓"),
+    "ask_desc": (
+        "<b>Short description</b> <i>(optional)</i>\n\nWrite up to 2 short lines about your channel or task. It is shown together with your task.\n"
+        "<i>Max 100 characters, no links.</i>",
+        "<b>توضیح کوتاه</b> <i>(اختیاری)</i>\n\nحداکثر دو خط کوتاه درباره‌ی کانال یا تسکتان بنویسید؛ همراه تسک نمایش داده می‌شود.\n"
+        "<i>حداکثر ۱۰۰ کاراکتر، بدون لینک.</i>"),
     "prompt_join": (
         "<b>Step 2 · Channel or group link</b>\n\nSend the public username or link, for example <code>@mychannel</code>.\n"
         "<i>It must be public. Stars are charged only after you confirm.</i>",
@@ -738,13 +745,13 @@ S = {
 
     # ───────── Campaign / showcase post ─────────
     "listing": (
-        "<b>{type}</b>{tag} · {target}\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        "<b>{type}</b>{tag} · {target}{desc}\n<blockquote><b>Reward:</b> <code>{reward}</code> Stars⭐\n"
         "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}\n{progress}</blockquote>\n{instruction}",
-        "<b>{type}</b>{tag} · {target}\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
+        "<b>{type}</b>{tag} · {target}{desc}\n<blockquote><b>پاداش:</b> <code>{reward}</code> استارز⭐\n"
         "<b>ظرفیت باقی‌مانده:</b> <code>{remaining}</code>\n<b>وضعیت:</b> {state}\n{progress}</blockquote>\n{instruction}"),
     "tag_repost": ("Reposted", "بازنشر"),
     "listing_q": (
-        "<b>🌐 English translation · ترجمه انگلیسی</b>\n<b>{type}</b>{tag} · {target}\n<b>Reward:</b> <code>{reward}</code> Stars⭐\n"
+        "<b>🌐 English translation · ترجمه انگلیسی</b>\n<b>{type}</b>{tag} · {target}{desc}\n<b>Reward:</b> <code>{reward}</code> Stars⭐\n"
         "<b>Remaining spots:</b> <code>{remaining}</code>\n<b>Status:</b> {state}\n{progress}\n{instruction}",
         ""),
     "ins_done": ("This task is complete 🎉 New tasks are posted in this channel regularly.",
@@ -1205,6 +1212,22 @@ def ctitle(c):
     return short(c.get("title") or c.get("uname") or "", 60)
 
 
+DESC_MAX = 100
+_URL_RE = re.compile(r"(?:https?://|www\.|t\.me/|telegram\.me/)\S+|@\w{3,}", re.I)
+
+
+def clean_desc(text):
+    """Owner's short task description: max 2 short lines, {DESC_MAX} chars, links and @mentions removed."""
+    lines = [re.sub(r"[ \t]+", " ", _URL_RE.sub("", ln)).strip() for ln in str(text or "").replace("\r", "").split("\n")]
+    out = "\n".join([ln for ln in lines if ln][:2]).strip()
+    return out[:DESC_MAX].strip()
+
+
+def desc_html(c):
+    d = clean_desc(c.get("desc"))
+    return H("\n<i>" + html.escape(d, quote=False) + "</i>") if d else H("")
+
+
 def menu_text(u):
     lang = lang_of(u)
     hold = t(lang, "hold_line", hold=u["hold"]) if u.get("hold") else H("")
@@ -1414,7 +1437,7 @@ def campaign_listing_text(c):
     tag = (lambda lg: H(" · ♻️ <i>" + tb(lg, "tag_repost") + "</i>")) if reposted else H("")
     state = (lambda lg: tb(lg, state_key) + (" ♻️" if reposted and state_key == "st_active" else ""))
     ty = lambda lg: tn(lg, typ) if typ in TYPES else tb(lg, "campaign_fallback")
-    common = dict(target=ctitle(c), reward=c.get("reward", 0), remaining=remaining, progress=progress, tag=tag, state=state)
+    common = dict(target=ctitle(c), desc=desc_html(c), reward=c.get("reward", 0), remaining=remaining, progress=progress, tag=tag, state=state)
 
     def block(key, lang):
         return str(t(lang, key, type=ty(lang), instruction=t(lang, ins, window=int(c.get("window_min", 5))), **common))
@@ -2178,6 +2201,19 @@ def pick_type(cq, uid, lang, chat, mid, typ):
     view(chat, mid, t(lang, "prompt_post", bot=bot), cancel_kb(lang))
 
 
+def skip_desc(cq, uid, lang, chat, mid):
+    st = db.states.find_one({"_id": uid})
+    if not st or st.get("step") != "desc":
+        ans(cq, tb(lang, "a_step_expired"), True)
+        return view(chat, mid, t(lang, "e_restart"), main_kb(lang, uid))
+    d = st.get("d", {})
+    d["desc"], d["desc_done"] = "", True
+    set_state(uid, "qty", d)
+    ans(cq)
+    view(chat, mid, t(lang, "ask_desc_skipped"))
+    return ask_qty(uid, lang, d, TYPES[d["type"]]["cost"])
+
+
 def after_admin_step(cq, uid, lang, chat, mid, typ):
     st = db.states.find_one({"_id": uid})
     if typ not in TYPES or not st or st.get("step") != "link" or (st.get("d") or {}).get("type") != typ:
@@ -2188,6 +2224,9 @@ def after_admin_step(cq, uid, lang, chat, mid, typ):
 
 
 def ask_qty(chat, lang, d, cost):
+    if not d.get("desc_done"):                 # optional short description comes right before the quantity
+        set_state(chat, "desc", d)
+        return send(chat, t(lang, "ask_desc"), [[B(tb(lang, "b_skip"), "ds", "primary")], [B(tb(lang, "b_cancel"), "home", "danger")]])
     u = db.users.find_one({"_id": chat}) or {}
     mx = min(MAX_QTY, u.get("points", 0) // cost)
     if mx < 1:
@@ -2238,6 +2277,7 @@ def on_state_text(uid, chat, text, st, lang):
                     "$addToSet": {"owners": uid}}, upsert=True)
                 snap = fresh_reaction_snapshot(d["chat_id"], d["mid"])
                 if not snap:
+                    nudge_reaction(d["chat_id"], d["mid"])
                     db.reaction_watch.update_one({"_id": key}, {"$set": {"calibrating_owner": uid,
                                                                           "calibrating_at": time.time()}})
                     set_state(uid, "count_baseline", d)
@@ -2246,6 +2286,11 @@ def on_state_text(uid, chat, text, st, lang):
                 return send(chat, t(lang, "window_ready", total=snap.get("total", 0)), window_kb(lang))
             else:
                 return send(chat, t(lang, "err_react_dest"), cancel_kb(lang))
+        set_state(uid, "qty", d)
+        return ask_qty(uid, lang, d, cost)
+
+    if step == "desc":
+        d["desc"], d["desc_done"] = clean_desc(text), True
         set_state(uid, "qty", d)
         return ask_qty(uid, lang, d, cost)
 
@@ -2334,7 +2379,7 @@ def confirm_new(cq, uid, lang, chat, mid):
                 "mid": d.get("mid"), "mode": d.get("mode"), "target": d["qty"], "remaining": d["qty"],
                 "cost": cfg["cost"], "reward": cfg["reward"], "status": "active", "created": time.time(),
                 "admin_required": admin_required, "admin_paused": False,
-                "admin_checked_at": time.time() if admin_required else None}
+                "admin_checked_at": time.time() if admin_required else None, "desc": clean_desc(d.get("desc"))}
     if typ == "react" and d.get("mode") == "count":
         campaign.update(window_min=int(d.get("window_min", 5)), base_count=int(snap.get("total", 0)),
                         base_updated_at=float(snap.get("updated_at", time.time())),
@@ -2415,6 +2460,36 @@ def cancel_campaign(cq, uid, lang, chat, mid, cid_s, sure):
 
 
 # ═════════════════════════════ Admin commands ═════════════════════════════
+def reactcheck(chat, lang, link):
+    """Admin diagnostic: /reactcheck https://t.me/channel/123 - why does a reaction order not move?"""
+    m = POST_RE.search(link or "")
+    if not m:
+        return send(chat, admin_text(lang, "Usage: /reactcheck https://t.me/channel/123", "فرمت: /reactcheck https://t.me/channel/123"))
+    ch = resolve_chat(m[1])
+    if not ch:
+        return send(chat, admin_text(lang, "❌ Chat not found (must be public).", "❌ کانال پیدا نشد (باید عمومی باشد)."))
+    mid, cid = int(m[2]), ch["id"]
+    esc = lambda v: html.escape(str(v), quote=False)
+    st = bot_admin_status(cid)
+    ar = ch.get("available_reactions")
+    ar_txt = "all" if ar is None else (" ".join(x.get("emoji", "custom") for x in ar) or "none")
+    ok, detail = nudge_once(cid, mid)
+    w = db.reaction_watch.find_one({"_id": post_key(cid, mid)}) or {}
+    age = int(time.time() - w["updated_at"]) if w.get("updated_at") else None
+    lines = [
+        f"🔎 <b>{esc(ch.get('title') or m[1])}</b> · {esc(ch.get('type'))} · post {mid}",
+        f"{'✅' if st else '❌'} bot admin: {esc(st)}",
+        f"{'✅' if ar != [] else '❌'} allowed reactions: {esc(ar_txt)}",
+        f"{'✅' if ok else '❌'} bot reaction test: {'ok' if ok else esc(detail)}",
+        f"{'✅' if age is not None and age < 900 else '⚠️'} last count update: " + (f"{age // 60}m {age % 60}s ago · total {w.get('total')}" if age is not None else "never received"),
+        f"{'✅' if m[1] and w.get('chat_id') else '⚠️'} registered in watch list: {'yes' if w.get('chat_id') else 'no'}",
+        "",
+        "Wait ~1 minute, then send the same command again: a fresh 'last count update' means Telegram delivers counts.",
+        "If it stays 'never received' while admin and reaction test are ✅, Telegram is not sending counts for this post.",
+    ]
+    return send(chat, "\n".join(lines))
+
+
 def admin_cmd(uid, chat, cmd, args, lang):
     if uid not in ADMINS:
         return send(chat, admin_text(lang, "Access denied.", "دسترسی مجاز نیست."))
@@ -2422,6 +2497,8 @@ def admin_cmd(uid, chat, cmd, args, lang):
         return admin_home(chat, lang)
     if cmd == "reactwatch":
         return send(chat, reaction_watch_text(uid, lang, all_admin=True))
+    if cmd == "reactcheck":
+        return reactcheck(chat, lang, " ".join(args))
     if cmd in ("broadcast", "bc"):
         return admin_bc_home(chat, lang)
     if cmd == "stats":
@@ -3764,6 +3841,8 @@ def on_callback(cq):
         return start_new(cq, lang, chat, mid)
     if data.startswith("nt:"):
         return pick_type(cq, uid, lang, chat, mid, data[3:])
+    if data == "ds":
+        return skip_desc(cq, uid, lang, chat, mid)
     if data.startswith("na:"):
         return after_admin_step(cq, uid, lang, chat, mid, data[3:])
     if data == "ok":
@@ -3842,18 +3921,48 @@ def miniapp_type_name(typ, lang):
 
 
 # ═════════════════════ Channel reactions: no waiting for the first count ═════════════════════
+def pick_nudge_emoji(chat_id):
+    """An emoji the channel really allows (a fixed 👍 fails when the channel restricts its reactions)."""
+    r = tg("getChat", chat_id=chat_id)
+    if not r.get("ok"):
+        return "\U0001F44D", None
+    allowed = (r.get("result") or {}).get("available_reactions")
+    if allowed is None:                       # field absent = every emoji reaction is allowed
+        return "\U0001F44D", None
+    emojis = [x.get("emoji") for x in allowed if x.get("type") == "emoji" and x.get("emoji")]
+    if not emojis:
+        return None, "channel reactions are disabled or custom-only"
+    return ("\U0001F44D" if "\U0001F44D" in emojis else emojis[0]), None
+
+
+def nudge_once(chat_id, mid):
+    """Bot adds a reaction and removes it again so Telegram sends a fresh count. Returns (ok, detail) and records it."""
+    emoji, why = pick_nudge_emoji(chat_id)
+    ok, detail = False, why or ""
+    if emoji:
+        r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": emoji}])
+        ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
+        if ok:
+            time.sleep(2)
+            tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[])
+    if not ok:
+        log.warning("nudge_reaction failed for %s/%s: %s", chat_id, mid, detail)
+    try:
+        db.reaction_watch.update_one({"_id": post_key(chat_id, mid)},
+                                     {"$set": {"nudge_at": time.time(), "nudge_ok": ok, "nudge_err": detail[:200]}})
+    except Exception:
+        log.exception("nudge record")
+    return ok, detail
+
+
 def nudge_reaction(chat_id, mid):
-    """Ask Telegram for a fresh count: the bot adds a reaction to the post and removes it again (net change zero).
-    Runs in the background; at most once a minute per post. Failures are harmless (the draft still activates on any update)."""
+    """Background nudge, at most once a minute per post. Failures are logged and stored (see /reactcheck)."""
     if not counter_take(f"nudge:{post_key(chat_id, mid)}:{int(time.time() // 60)}", 1):
         return
 
     def run():
         try:
-            r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": "\U0001F44D"}])
-            if r.get("ok"):
-                time.sleep(2)
-                tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[])
+            nudge_once(chat_id, mid)
         except Exception:
             log.exception("nudge_reaction")
     threading.Thread(target=run, daemon=True).start()
@@ -3868,7 +3977,7 @@ def queue_reaction_draft(uid, link, qty, body, d, key):
     if db.campaign_drafts.count_documents({"owner": uid, "status": "waiting"}) >= 5:
         return jsonify(error="max_active", message="Too many orders are being prepared. Wait for them to start."), 409
     db.campaign_drafts.insert_one({"owner": uid, "post_key": key, "link": link, "quantity": qty,
-                                   "windowMin": window if window in (2, 5) else 5, "title": d["title"], "uname": d["uname"],
+                                   "windowMin": window if window in (2, 5) else 5, "title": d["title"], "uname": d["uname"], "desc": clean_desc(body.get("desc")),
                                    "status": "waiting", "created": time.time()})
     return jsonify(ok=True, status="preparing"), 202
 
@@ -3890,7 +3999,7 @@ def activate_reaction_drafts(key):
         try:
             with app.app_context():
                 resp, code = make_campaign(u, {"type": "react", "link": dr["link"], "quantity": dr["quantity"],
-                                               "windowMin": dr["windowMin"]}, activating=True)
+                                               "windowMin": dr["windowMin"], "desc": dr.get("desc", "")}, activating=True)
                 data = resp.get_json() or {}
         except Exception:
             log.exception("activate draft")
@@ -3920,7 +4029,7 @@ def miniapp_campaign_payload(c, uid, lang, include_actions=False):
     if c.get("admin_paused") and campaign_needs_admin(c):
         state = "paused"
     out = {
-        "id": str(c.get("_id")), "title": ctitle(c), "type": c.get("type"),
+        "id": str(c.get("_id")), "title": ctitle(c), "desc": clean_desc(c.get("desc")), "type": c.get("type"),
         "typeLabel": miniapp_type_name(c.get("type"), lang), "target": target,
         "remaining": remaining, "done": min(done, target), "progress": min(100, round(done * 100 / target)),
         "reward": int(c.get("reward", 0) or 0), "cost": int(c.get("cost", 0) or 0),
@@ -4019,7 +4128,9 @@ def miniapp_tasks():
         live = bool(ses) and (not is_count or time.time() <= deadline)
         # A count-based reaction task can only start while the post counter is fresh (same rule as the bot).
         ready = True if (live or status) or not is_count else bool(fresh_reaction_snapshot(c.get("chat_id"), c.get("mid")))
-        out.append({"id": str(c["_id"]), "title": ctitle(c), "type": c.get("type"),
+        if is_count and not ready:
+            nudge_reaction(c.get("chat_id"), c.get("mid"))          # refresh the counter so the task becomes available
+        out.append({"id": str(c["_id"]), "title": ctitle(c), "desc": clean_desc(c.get("desc")), "type": c.get("type"),
                     "typeLabel": miniapp_type_name(c.get("type"), lang), "reward": int(c.get("reward", 0) or 0),
                     "remaining": int(c.get("remaining", 0) or 0), "targetUrl": target_url,
                     "postUrl": post_url_of(c), "started": live,
@@ -4040,7 +4151,7 @@ def miniapp_tasks():
         target_url = link_of(c)
         if not target_url:
             continue
-        out.insert(0, {"id": str(cid), "title": ctitle(c), "type": c.get("type"),
+        out.insert(0, {"id": str(cid), "title": ctitle(c), "desc": clean_desc(c.get("desc")), "type": c.get("type"),
                        "typeLabel": miniapp_type_name(c.get("type"), lang),
                        "reward": int(comp.get("reward", c.get("reward", 0)) or 0),
                        "remaining": max(0, int(c.get("remaining", 0) or 0)), "targetUrl": target_url,
@@ -4315,7 +4426,7 @@ def make_campaign(u, body, activating=False):
                 "mid": d.get("mid"), "mode": d.get("mode"), "target": qty, "remaining": qty,
                 "cost": TYPES[typ]["cost"], "reward": TYPES[typ]["reward"], "status": "active",
                 "created": time.time(), "admin_required": admin_required, "admin_paused": False,
-                "admin_checked_at": time.time() if admin_required else None}
+                "admin_checked_at": time.time() if admin_required else None, "desc": clean_desc(body.get("desc"))}
     if typ == "react" and d.get("mode") == "count":
         try:
             requested_window = int(body.get("windowMin", 5))
