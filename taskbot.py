@@ -65,6 +65,7 @@ MAX_QTY = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
+NUDGE_ABSORB_SEC = int(os.environ.get("NUDGE_ABSORB_SEC", "600"))   # window in which the bot's own +1/-1 reaction is ignored
 ADMIN_MONITOR_INTERVAL = int(os.environ.get("ADMIN_MONITOR_INTERVAL", "60"))
 VERSION = "v63-memberland"
 
@@ -299,6 +300,7 @@ S = {
     "b_back_target": ("Back to destination", "بازگشت به مقصد"),
     "b_target": ("🎯 Target", "مقصد"),
     "b_claim": ("🎁 Claim", "پاداش"),
+    "b_order": ("🛒 Place order", "🛒 ثبت سفارش"),
     "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
     "b_yes_cancel": ("Yes, cancel order", "بله، سفارش لغو شود"),
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
@@ -1195,6 +1197,17 @@ def bot_deep_link(cid):
     return f"https://t.me/{username}?start=task_{cid}" if username else ""
 
 
+def order_deep_link():
+    username = _me.get("username") or ""
+    return f"https://t.me/{username}?start=order" if username else ""
+
+
+def order_button_row():
+    """'Place order' button shown on every channel task card (active and completed)."""
+    link = order_deep_link()
+    return [U(bi_btn("b_order"), link, "primary")] if link else []
+
+
 def ref_link(uid):
     username = _me.get("username") or ""
     return f"https://t.me/{username}?start=ref_{uid}" if username else ""
@@ -1446,16 +1459,17 @@ def campaign_listing_text(c):
 
 
 def campaign_listing_keyboard(c):
+    order_row = order_button_row()
     if is_legacy(c):
-        return [[B(bi_btn("b_legacy"), "noop")]]
+        return [[B(bi_btn("b_legacy"), "noop")]] + ([order_row] if order_row else [])
     available = (c.get("status") == "active" and int(c.get("remaining", 0)) > 0
                  and not (c.get("admin_paused") and campaign_needs_admin(c)))
     if not available:
-        return [[B(bi_btn("b_full"), "noop", "danger")]]
+        return [[B(bi_btn("b_full"), "noop", "danger")]] + ([order_row] if order_row else [])
     rows = [U(bi_btn("b_target"), link_of(c), "primary")]
     if bot_deep_link(c.get("_id")):
         rows.append(B(bi_btn("b_claim"), f"rp:{c['_id']}", "success"))
-    return [rows]
+    return [rows] + ([order_row] if order_row else [])
 
 
 def publish_campaign(c):
@@ -1880,6 +1894,21 @@ def expire_count_claims(now):
     db.reaction_events.delete_many({"received_at": {"$lt": now - 14 * 86400}})
 
 
+def absorb_nudge(key, old, delta, now):
+    """Remove the bot's own nudge (+1 then -1) from a count change so it never pays or cancels a real user's credit."""
+    if not old or not delta or float(old.get("nudge_until", 0) or 0) < now:
+        return delta
+    if delta > 0 and int(old.get("nudge_plus", 0)) > 0:
+        cut = min(delta, int(old["nudge_plus"]))
+        db.reaction_watch.update_one({"_id": key}, {"$inc": {"nudge_plus": -cut}})
+        return delta - cut
+    if delta < 0 and int(old.get("nudge_minus", 0)) > 0:
+        cut = min(-delta, int(old["nudge_minus"]))
+        db.reaction_watch.update_one({"_id": key}, {"$inc": {"nudge_minus": -cut}})
+        return delta + cut
+    return delta
+
+
 def on_reaction_count(mr, update_id=None):
     """Store the channel's aggregate count snapshot and map each unit of increase to at most one claim."""
     chat = mr.get("chat") or {}
@@ -1932,7 +1961,7 @@ def on_reaction_count(mr, update_id=None):
     db.reaction_watch.update_one({"_id": key}, {"$set": set_fields, "$setOnInsert": {"created_at": received_at}}, upsert=True)
 
     if old_total is not None and total != old_total:
-        delta = total - old_total
+        delta = absorb_nudge(key, old, total - old_total, received_at)
         if delta > 0:
             credit_id = int(update_id) if update_id is not None else f"{key}:{int(event_at)}:{random.randint(1000, 9999)}"
             try:
@@ -1942,7 +1971,7 @@ def on_reaction_count(mr, update_id=None):
             except DuplicateKeyError:
                 pass
             process_count_claims(key, event_at, old_total, total, delta)
-        else:
+        elif delta < 0:
             invalidate_count_credits(key, -delta)
 
     try:
@@ -2182,6 +2211,14 @@ def start_new(cq, lang, chat, mid):
     ans(cq)
     rows = [[B(tb(lang, "type_btn", name=tn(lang, k), cost=v["cost"]), f"nt:{k}")] for k, v in TYPES.items()]
     view(chat, mid, t(lang, "new"), rows + [[B(tb(lang, "b_back"), "campaigns")]])
+
+
+def send_order_screen(chat, lang):
+    """Deep link from the channel cards: open the order screen (type selection) directly in the bot."""
+    rows = [[B(tb(lang, "type_btn", name=tn(lang, k), cost=v["cost"]), f"nt:{k}")] for k, v in TYPES.items()]
+    rows.append([W(tb(lang, "b_app"), miniapp_url(), "primary")])
+    rows.append([B(tb(lang, "b_menu"), "home")])
+    return send(chat, t(lang, "new"), rows)
 
 
 def pick_type(cq, uid, lang, chat, mid, typ):
@@ -3586,6 +3623,8 @@ def on_message(msg):
             db.states.delete_one({"_id": uid})
             if cmd == "start" and args and args[0].startswith("task_"):
                 return open_linked_task(uid, chat, args[0][5:])
+            if cmd == "start" and args and args[0] == "order":
+                return send_order_screen(chat, lang)
             if cmd == "start" and args and args[0].startswith("ref_") and not existed:
                 ref_register(uid, args[0][4:], msg["from"].get("first_name"))
             if cmd == "start" and not existed:
@@ -3939,7 +3978,11 @@ def nudge_once(chat_id, mid):
     """Bot adds a reaction and removes it again so Telegram sends a fresh count. Returns (ok, detail) and records it."""
     emoji, why = pick_nudge_emoji(chat_id)
     ok, detail = False, why or ""
+    wkey = post_key(chat_id, mid)
     if emoji:
+        # The bot's own +1 / -1 must never become a claimable credit: arm a short absorb window for this post.
+        db.reaction_watch.update_one({"_id": wkey}, {"$set": {"nudge_until": time.time() + NUDGE_ABSORB_SEC,
+                                                              "nudge_plus": 1, "nudge_minus": 1}})
         r = tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[{"type": "emoji", "emoji": emoji}])
         ok, detail = bool(r.get("ok")), ("" if r.get("ok") else str(r.get("description", "failed")))
         if ok:
@@ -3947,6 +3990,10 @@ def nudge_once(chat_id, mid):
             tg("setMessageReaction", chat_id=chat_id, message_id=int(mid), reaction=[])
     if not ok:
         log.warning("nudge_reaction failed for %s/%s: %s", chat_id, mid, detail)
+        try:
+            db.reaction_watch.update_one({"_id": wkey}, {"$unset": {"nudge_until": "", "nudge_plus": "", "nudge_minus": ""}})
+        except Exception:
+            log.exception("nudge disarm")
     try:
         db.reaction_watch.update_one({"_id": post_key(chat_id, mid)},
                                      {"$set": {"nudge_at": time.time(), "nudge_ok": ok, "nudge_err": detail[:200]}})
