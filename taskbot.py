@@ -2516,14 +2516,14 @@ def reactcheck(chat, lang, link):
     esc = lambda v: html.escape(str(v), quote=False)
     st = bot_admin_status(cid)
     ar = ch.get("available_reactions")
-    ar_txt = "all" if ar is None else (" ".join(x.get("emoji", "custom") for x in ar) or "none")
+    ar_txt = "all" if ar is None else json.dumps(ar, ensure_ascii=False)[:150]
     ok, detail = nudge_once(cid, mid)
     w = db.reaction_watch.find_one({"_id": post_key(cid, mid)}) or {}
     age = int(time.time() - w["updated_at"]) if w.get("updated_at") else None
     lines = [
         f"🔎 <b>{esc(ch.get('title') or m[1])}</b> · {esc(ch.get('type'))} · post {mid}",
         f"{'✅' if st else '❌'} bot admin: {esc(st)}",
-        f"{'✅' if ar != [] else '❌'} allowed reactions: {esc(ar_txt)}",
+        f"{'✅' if ar != [] else '⚠️'} allowed reactions (raw from Telegram): {esc(ar_txt)}",
         f"{'✅' if ok else '❌'} bot reaction test: {'ok' if ok else esc(detail)}",
         f"{'✅' if age is not None and age < 900 else '⚠️'} last count update: " + (f"{age // 60}m {age % 60}s ago · total {w.get('total')}" if age is not None else "never received"),
         f"{'✅' if m[1] and w.get('chat_id') else '⚠️'} registered in watch list: {'yes' if w.get('chat_id') else 'no'}",
@@ -3992,7 +3992,7 @@ def allowed_nudge_emojis(chat_id):
     else:
         emojis = [x.get("emoji") for x in allowed if x.get("type") == "emoji" and x.get("emoji")]
         out = [e for e in prefer if e in emojis] + [e for e in emojis if e not in prefer]
-        out, err = out[:4], (None if emojis else "channel reactions are disabled or custom-only")
+        out, err = (out[:4] if emojis else prefer[:4]), None      # empty list from getChat: still try, Telegram gives the real answer
     _emoji_cache[chat_id] = (time.time(), out, err)
     return out, err
 
