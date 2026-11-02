@@ -603,6 +603,8 @@ S = {
     "claim_progress_fail": ("<b>❌ Reaction not detected</b>\n\nReact to the post, then press the button again.", "<b>❌ ریکشن شناسایی نشد</b>\n\nبه پست ریکشن بده و دوباره دکمه را بزن."),
     "b_checking": ("⏳ Check", "بررسی"),
     "a_mission_first": ("Press “Mission” first, do the task, then press “Claim”.", "اول دکمه‌ی «ماموریت» را بزن، تسک را انجام بده، بعد «پاداش» را بزن."),
+    "b_view": ("👁 View", "👁 بازدید"),
+    "claim_view_page": ("<b>👁 View the post</b>\n\nTap the button, then go back to the channel and press “Claim”.", "<b>👁 بازدید از پست</b>\n\nروی دکمه بزن، بعد به کانال برگرد و دکمه‌ی «پاداش» را بزن."),
     "a_claim_wait": ("⏳ Your previous check is still running.", "⏳ بررسی قبلی تو هنوز در حال انجام است."),
     "a_window_only": ("Only 15 seconds or 1 minute can be selected.", "فقط ۱۵ ثانیه یا ۱ دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
@@ -2180,6 +2182,8 @@ def open_linked_task(uid, chat, cid_s):
     else:
         ses = {"t": time.time()}
     db.sessions.update_one({"_id": f"{uid}:{cid}"}, {"$set": ses}, upsert=True)
+    if c.get("type") == "view":                                   # one button only: go and view, then claim in the channel
+        return send(chat, tb(lang, "claim_view_page"), [[U(tb(lang, "b_view"), link_of(c), "primary")]])
     reacted = tb(lang, "claim_reacted") if c.get("type") == "react" else ""
     return send(chat, t(lang, "claim_page", reacted=reacted),
                 [[B(tb(lang, "b_done"), f"c:{cid}", "success")],
