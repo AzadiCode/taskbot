@@ -601,8 +601,7 @@ S = {
     "claim_progress": ("<b>⏳ Checking your reaction</b>\n\n<code>{bar}</code> {pct}%\n<i>Please wait a few seconds…</i>", "<b>⏳ در حال بررسی ریکشن</b>\n\n<code>{bar}</code> {pct}٪\n<i>چند ثانیه صبر کن…</i>"),
     "claim_progress_ok": ("<b>✅ Verified!</b>\n\n<code>{bar}</code> 100%\n+{reward} ⭐ added to your balance.", "<b>✅ تأیید شد!</b>\n\n<code>{bar}</code> ۱۰۰٪\n+{reward} ⭐ به موجودی‌ات اضافه شد."),
     "claim_progress_fail": ("<b>❌ Reaction not detected</b>\n\nReact to the post, then press the button again.", "<b>❌ ریکشن شناسایی نشد</b>\n\nبه پست ریکشن بده و دوباره دکمه را بزن."),
-    "b_checking": ("⏳ Check", "بررسی"),
-    "a_mission_first": ("Press “Mission” first, do the task, then press “Claim”.", "اول دکمه‌ی «ماموریت» را بزن، تسک را انجام بده، بعد «پاداش» را بزن."),
+        "a_mission_first": ("Press “Mission” first, do the task, then press “Claim”.", "اول دکمه‌ی «ماموریت» را بزن، تسک را انجام بده، بعد «پاداش» را بزن."),
     "b_view": ("👁 View", "👁 بازدید"),
     "claim_view_page": ("<b>👁 View the post</b>\n\nTap the button, then go back to the channel and press “Claim”.", "<b>👁 بازدید از پست</b>\n\nروی دکمه بزن، بعد به کانال برگرد و دکمه‌ی «پاداش» را بزن."),
     "a_claim_wait": ("⏳ Your previous check is still running.", "⏳ بررسی قبلی تو هنوز در حال انجام است."),
@@ -1688,8 +1687,7 @@ def campaign_listing_keyboard(c):
         mission_url = bot_deep_link(c["_id"])
     rows = [U(bi_btn("b_target"), mission_url, "primary")]
     if bot_deep_link(c.get("_id")):
-        checking = float(c.get("checking_until") or 0) > time.time()      # a claim is being verified right now
-        rows.append(B(bi_btn("b_checking" if checking else "b_claim"), f"rp:{c['_id']}", "success"))
+        rows.append(B(bi_btn("b_claim"), f"rp:{c['_id']}", "success"))
     return [rows] + ([order_row] if order_row else [])
 
 
@@ -1958,37 +1956,12 @@ def on_claim(cq, uid, chat, mid, cid_s):
     return view(chat, mid, H(str(t(lang, "task_paid", reward=c["reward"])) + progress_line(uid, lang)), next_kb(lang, uid))
 
 
-def mark_checking(c):
-    """Shows 'Checking…' on the channel button while claims are verified (shared by everyone for those seconds)."""
-    until = time.time() + CHANNEL_WAIT_SEC + 3
-    was = float(c.get("checking_until") or 0) > time.time()
-    db.campaigns.update_one({"_id": c["_id"]}, {"$max": {"checking_until": until}})
-    if not was:
-        refresh_campaign_listing(c["_id"])
-
-
-def end_checking(cid):
-    """Puts the normal 'Claim' label back once no claim is being verified (only the last one edits the post)."""
-    for _ in range(6):
-        doc = db.campaigns.find_one({"_id": cid}) or {}
-        left = float(doc.get("checking_until") or 0) - time.time()
-        if left <= 0:
-            break
-        time.sleep(min(left + 0.2, 4))
-    if db.campaigns.find_one_and_update({"_id": cid, "checking_until": {"$gt": 0, "$lte": time.time()}},
-                                        {"$set": {"checking_until": 0}}):
-        refresh_campaign_listing(cid)
-
-
 def _channel_wait_result(cq, comp, lang, reward, until, c=None, inbot=False):
     """Waits (in a thread) for the claim to resolve. The channel button gets its result in a pop-up box (answered
     first, the moment the result is known); the progress bar runs in the bot chat in the background."""
-    cid = comp.get("cid")
     dm = None
     ok = False
     try:
-        if c:
-            mark_checking(c)                                              # button shows the short 'Check' label
         r = send(comp["uid"], tb(lang, "claim_progress", bar=bar(0, 100), pct=0))   # needs a started bot; else skipped
         if r.get("ok"):
             dm = (comp["uid"], r["result"]["message_id"])
@@ -2023,12 +1996,6 @@ def _channel_wait_result(cq, comp, lang, reward, until, c=None, inbot=False):
                else str(tb(lang, "claim_progress_fail")))
     except Exception:
         log.exception("channel claim answer")
-    try:
-        if cid:
-            end_checking(cid)
-    except Exception:
-        log.exception("end_checking")
-
 
 def channel_count_claim(cq, uid, lang, c, inbot=False):
     """Count-based reaction claim from the channel button. The button shows 'Checking…' while it works, the result
