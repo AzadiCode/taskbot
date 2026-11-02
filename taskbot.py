@@ -601,6 +601,7 @@ S = {
     "claim_progress": ("<b>⏳ Checking your reaction</b>\n\n<code>{bar}</code> {pct}%\n<i>Please wait a few seconds…</i>", "<b>⏳ در حال بررسی ریکشن</b>\n\n<code>{bar}</code> {pct}٪\n<i>چند ثانیه صبر کن…</i>"),
     "claim_progress_ok": ("<b>✅ Verified!</b>\n\n<code>{bar}</code> 100%\n+{reward} ⭐ added to your balance.", "<b>✅ تأیید شد!</b>\n\n<code>{bar}</code> ۱۰۰٪\n+{reward} ⭐ به موجودی‌ات اضافه شد."),
     "claim_progress_fail": ("<b>❌ Reaction not detected</b>\n\nReact to the post, then press the button again.", "<b>❌ ریکشن شناسایی نشد</b>\n\nبه پست ریکشن بده و دوباره دکمه را بزن."),
+    "b_checking": ("⏳ Checking…", "در حال بررسی…"),
     "a_claim_wait": ("⏳ Your previous check is still running.", "⏳ بررسی قبلی تو هنوز در حال انجام است."),
     "a_window_only": ("Only 15 seconds or 1 minute can be selected.", "فقط ۱۵ ثانیه یا ۱ دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
@@ -1681,7 +1682,8 @@ def campaign_listing_keyboard(c):
         return [[B(bi_btn("b_full"), "noop", "danger")]] + ([order_row] if order_row else [])
     rows = [U(bi_btn("b_target"), link_of(c), "primary")]
     if bot_deep_link(c.get("_id")):
-        rows.append(B(bi_btn("b_claim"), f"rp:{c['_id']}", "success"))
+        checking = float(c.get("checking_until") or 0) > time.time()      # a claim is being verified right now
+        rows.append(B(bi_btn("b_checking" if checking else "b_claim"), f"rp:{c['_id']}", "success"))
     return [rows] + ([order_row] if order_row else [])
 
 
@@ -1950,12 +1952,37 @@ def on_claim(cq, uid, chat, mid, cid_s):
     return view(chat, mid, H(str(t(lang, "task_paid", reward=c["reward"])) + progress_line(uid, lang)), next_kb(lang, uid))
 
 
+def mark_checking(c):
+    """Shows 'Checking…' on the channel button while claims are verified (shared by everyone for those seconds)."""
+    until = time.time() + CHANNEL_WAIT_SEC + 3
+    was = float(c.get("checking_until") or 0) > time.time()
+    db.campaigns.update_one({"_id": c["_id"]}, {"$max": {"checking_until": until}})
+    if not was:
+        refresh_campaign_listing(c["_id"])
+
+
+def end_checking(cid):
+    """Puts the normal 'Claim' label back once no claim is being verified (only the last one edits the post)."""
+    for _ in range(6):
+        doc = db.campaigns.find_one({"_id": cid}) or {}
+        left = float(doc.get("checking_until") or 0) - time.time()
+        if left <= 0:
+            break
+        time.sleep(min(left + 0.2, 4))
+    if db.campaigns.find_one_and_update({"_id": cid, "checking_until": {"$gt": 0, "$lte": time.time()}},
+                                        {"$set": {"checking_until": 0}}):
+        refresh_campaign_listing(cid)
+
+
 def _channel_wait_result(cq, comp, lang, reward, until, dm=None):
-    """Waits (in a thread) for the count claim to resolve. With `dm` (chat, message_id) the result is shown as a
-    live progress bar in the user's private chat; without it the channel button is answered at the end."""
+    """Waits (in a thread) for the claim to resolve. The channel button gets its result in a pop-up box; the live
+    progress bar (if the user can be messaged) runs in the bot chat in the background."""
+    cid = comp.get("cid")
+
     def show(text):
         if dm:
             tg("editMessageText", chat_id=dm[0], message_id=dm[1], text=text, parse_mode="HTML")
+    ok = False
     try:
         start = time.time()
         span = max(until - start, 1.0)
@@ -1973,50 +2000,49 @@ def _channel_wait_result(cq, comp, lang, reward, until, dm=None):
         if cur and cur.get("status") == "count_pending":
             fail_count_claim(cur, "r_no_increase")                       # atomic: loses the race if it was just paid
             cur = db.completions.find_one({"_id": comp["_id"]})
-        ok = bool(cur and cur.get("status") != "count_pending")
+        ok = bool(cur and cur.get("status") in ("settling", "paid", "pending"))   # a failed claim is deleted
+    except Exception:
+        log.exception("channel claim result")
+    try:
         if dm:
             show(str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=reward)) if ok
                  else str(tb(lang, "claim_progress_fail")))
-        else:
-            ans(cq, tb(lang, "a_claim_ok", reward=reward) if ok else tb(lang, "a_claim_fail"))
+        if cq:
+            ans(cq, tb(lang, "a_claim_ok", reward=reward) if ok else tb(lang, "a_claim_fail"), True)
     except Exception:
-        log.exception("channel claim result")
-        try:
-            if dm:
-                show(str(tb(lang, "claim_progress_fail")))
-            else:
-                ans(cq, tb(lang, "a_claim_fail"))
-        except Exception:
-            pass
+        log.exception("channel claim answer")
+    try:
+        if cid:
+            end_checking(cid)
+    except Exception:
+        log.exception("end_checking")
 
 
 def channel_count_claim(cq, uid, lang, c, inbot=False):
-    """Count-based reaction claim. The bot DMs a live progress bar and the channel button opens the bot chat at once
-    (no /start needed). Users who never started the bot get the /start link instead (inbot=True is that second run)."""
-    def say(text, alert=False):
-        if dm:
-            return tg("editMessageText", chat_id=dm[0], message_id=dm[1], text=str(text), parse_mode="HTML")
+    """Count-based reaction claim from the channel button. The button shows 'Checking…' while it works, the result
+    arrives in a pop-up box, and (if the bot can message the user) a live progress bar runs in the bot chat without
+    pulling the user out of the channel. inbot=True is the same check started from a bot link (no pop-up)."""
+    def say(text, alert=True):
         return send(uid, text) if inbot else ans(cq, text, alert)
-    dm = None
     u = db.users.find_one({"_id": uid}) or {}
     if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
-        return say(tb(lang, "a_cant"), True)
+        return say(tb(lang, "a_cant"))
     if campaign_needs_admin(c):
         if c.get("admin_paused"):
-            return say(tb(lang, "a_paused"), True)
+            return say(tb(lang, "a_paused"))
         status = bot_admin_status(c.get("chat_id"))
         if status is None:
-            return say(tb(lang, "a_admin_unavail"), True)
+            return say(tb(lang, "a_admin_unavail"))
         if not status:
             pause_for_admin_loss(c)
-            return say(tb(lang, "a_paused_now"), True)
+            return say(tb(lang, "a_paused_now"))
     prior = db.completions.find_one({"uid": uid, "cid": c["_id"]})
     if prior:
-        return say(tb(lang, "a_claim_wait" if prior.get("status") == "count_pending" else "a_dup"), True)
+        return say(tb(lang, "a_claim_wait" if prior.get("status") == "count_pending" else "a_dup"))
     snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
     if not snap:
         nudge_reaction(c.get("chat_id"), c.get("mid"))
-        return say(tb(lang, "a_count_stale"), True)
+        return say(tb(lang, "a_count_stale"))
     now = time.time()
     window_min = float(c.get("window_min", 5))
     extra = {"post_key": post_key(c["chat_id"], c["mid"]),
@@ -2024,25 +2050,55 @@ def channel_count_claim(cq, uid, lang, c, inbot=False):
              "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
              "task_started": now - window_min * 60, "task_deadline": now + CHANNEL_WAIT_SEC,
              "claim_expires": now + CHANNEL_WAIT_SEC, "day_key": f"d:{uid}:{day()}"}
-    r = send(uid, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))   # progress lives in the bot chat
-    if r.get("ok"):
-        dm = (uid, r["result"]["message_id"])
-    elif not inbot:                                                       # never started the bot: it can't message them yet
-        link = bot_deep_link(c["_id"])
-        return ans(cq, url=link.replace("?start=task_", "?start=claim_")) if link else say(tb(lang, "a_claim_wait"), True)
     code, comp = grant(uid, c, "count_pending", extra=extra)
     if code != "ok":
-        return say(claim_alert(lang, code, uid), True)
+        return say(claim_alert(lang, code, uid))
     if consume_credit_for_claim(comp):                                    # the increase was already recorded
-        return say(str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=c["reward"])))
-    if dm and not inbot:
-        link = bot_deep_link(c["_id"])                                    # the documented ?start= form: it opens the bot chat
-        if link:
-            ans(cq, url=link.replace("?start=task_", "?start=claim_"))
-        else:
-            ans(cq, tb(lang, "a_claim_checking"))
-    threading.Thread(target=_channel_wait_result, args=(cq if not dm else None, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC, dm),
-                     daemon=True).start()
+        return say(tb(lang, "a_claim_ok", reward=c["reward"]), True) if not inbot else \
+            send(uid, str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=c["reward"])))
+    dm = None
+    r = send(uid, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))     # background progress bar (needs a started bot)
+    if r.get("ok"):
+        dm = (uid, r["result"]["message_id"])
+    mark_checking(c)
+    threading.Thread(target=_channel_wait_result, args=(None if inbot else cq, comp, lang, c["reward"],
+                                                         now + CHANNEL_WAIT_SEC, dm), daemon=True).start()
+
+
+def channel_instant_claim(cq, uid, lang, c):
+    """Join / group-reaction tasks are checked on the spot, so the claim button can verify them right in the channel
+    and show the result in a pop-up (no trip to the bot)."""
+    u = db.users.find_one({"_id": uid}) or {}
+    if is_legacy(c):
+        return ans(cq, tb(lang, "a_legacy"), True)
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            return ans(cq, tb(lang, "a_paused"), True)
+        status = bot_admin_status(c.get("chat_id"))
+        if status is None:
+            return ans(cq, tb(lang, "a_admin_unavail"), True)
+        if not status:
+            pause_for_admin_loss(c)
+            return ans(cq, tb(lang, "a_paused_now"), True)
+    if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
+        return ans(cq, tb(lang, "a_cant"), True)
+    if db.completions.find_one({"uid": uid, "cid": c["_id"]}):
+        return ans(cq, tb(lang, "a_dup"), True)
+    if c["type"] == "join":
+        r = tg("getChatMember", chat_id=c["chat_id"], user_id=uid)
+        if not r.get("ok"):
+            return ans(cq, tb(lang, "a_check_unavail"), True)
+        if not member_ok(r["result"]):
+            return ans(cq, tb(lang, "a_not_member"), True)
+    else:
+        d = db.reacts.find_one({"_id": f"{c['chat_id']}:{c['mid']}:{uid}"})
+        if not (d and d.get("on")):
+            return ans(cq, tb(lang, "a_no_react"), True)
+    code, comp = grant(uid, c, "pending")
+    if code != "ok":
+        return ans(cq, claim_alert(lang, code, uid), True)
+    settle_instantly(comp)
+    return ans(cq, tb(lang, "a_paid"), True)
 
 
 def bot_count_claim(uid, chat, cid_s):
@@ -4214,7 +4270,9 @@ def on_callback(cq):
             return ans(cq, tb(lang, "a_inactive"), True)
         if c.get("type") == "react" and c.get("mode") == "count":
             return channel_count_claim(cq, uid, lang, c)             # progress bar goes to the user's chat with the bot, no /start needed
-        deep = bot_deep_link(cid)
+        if c.get("type") == "join" or (c.get("type") == "react" and c.get("mode") == "auto"):
+            return channel_instant_claim(cq, uid, lang, c)            # verified on the spot, result in a pop-up
+        deep = bot_deep_link(cid)                                     # view / other tasks need the bot (waiting time)
         if not deep:
             return ans(cq, tb(lang, "a_no_deeplink"), True)
         return ans(cq, url=deep)                                 # opens the bot deep link directly in Telegram
