@@ -602,6 +602,7 @@ S = {
     "claim_progress_ok": ("<b>✅ Verified!</b>\n\n<code>{bar}</code> 100%\n+{reward} ⭐ added to your balance.", "<b>✅ تأیید شد!</b>\n\n<code>{bar}</code> ۱۰۰٪\n+{reward} ⭐ به موجودی‌ات اضافه شد."),
     "claim_progress_fail": ("<b>❌ Reaction not detected</b>\n\nReact to the post, then press the button again.", "<b>❌ ریکشن شناسایی نشد</b>\n\nبه پست ریکشن بده و دوباره دکمه را بزن."),
     "b_checking": ("⏳ Check", "بررسی"),
+    "a_mission_first": ("Press “Mission” first, do the task, then press “Claim”.", "اول دکمه‌ی «ماموریت» را بزن، تسک را انجام بده، بعد «پاداش» را بزن."),
     "a_claim_wait": ("⏳ Your previous check is still running.", "⏳ بررسی قبلی تو هنوز در حال انجام است."),
     "a_window_only": ("Only 15 seconds or 1 minute can be selected.", "فقط ۱۵ ثانیه یا ۱ دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
@@ -1680,7 +1681,10 @@ def campaign_listing_keyboard(c):
                  and not (c.get("admin_paused") and campaign_needs_admin(c)))
     if not available:
         return [[B(bi_btn("b_full"), "noop", "danger")]] + ([order_row] if order_row else [])
-    rows = [U(bi_btn("b_target"), link_of(c), "primary")]
+    mission_url = link_of(c)
+    if c.get("type") == "view" and bot_deep_link(c.get("_id")):         # view tasks: the press must be recorded by the bot
+        mission_url = bot_deep_link(c["_id"])
+    rows = [U(bi_btn("b_target"), mission_url, "primary")]
     if bot_deep_link(c.get("_id")):
         checking = float(c.get("checking_until") or 0) > time.time()      # a claim is being verified right now
         rows.append(B(bi_btn("b_checking" if checking else "b_claim"), f"rp:{c['_id']}", "success"))
@@ -1990,7 +1994,7 @@ def _channel_wait_result(cq, comp, lang, reward, until, c=None, inbot=False):
         span = max(until - start, 1.0)
         last = -1
         while time.time() < until:
-            time.sleep(0.8)
+            time.sleep(0.5)
             cur = db.completions.find_one({"_id": comp["_id"]})
             if not cur or cur.get("status") != "count_pending":
                 break
@@ -2028,7 +2032,7 @@ def channel_count_claim(cq, uid, lang, c, inbot=False):
     """Count-based reaction claim from the channel button. The button shows 'Checking…' while it works, the result
     arrives in a pop-up box, and (if the bot can message the user) a live progress bar runs in the bot chat without
     pulling the user out of the channel. inbot=True is the same check started from a bot link (no pop-up)."""
-    t0 = time.time()
+    t0 = min(time.time(), getattr(_req, "t0", None) or time.time())   # the callback clock starts when the update arrived
 
     def say(text, alert=True):
         return send(uid, text) if inbot else ans(cq, text, alert)
@@ -2052,7 +2056,7 @@ def channel_count_claim(cq, uid, lang, c, inbot=False):
         nudge_reaction(c.get("chat_id"), c.get("mid"))
         return say(tb(lang, "a_count_stale"))
     now = t0                                                              # the callback clock starts at the press
-    wait = min(CHANNEL_WAIT_SEC, 9)                                       # answer must reach Telegram well inside its limit
+    wait = min(CHANNEL_WAIT_SEC, 7)                                       # failed checks need ~2 s more to wrap up; stay well inside Telegram's limit
     window_min = float(c.get("window_min", 5))
     extra = {"post_key": post_key(c["chat_id"], c["mid"]),
              "baseline_total": int(c.get("base_count", snap.get("total", 0))),
@@ -2089,12 +2093,17 @@ def channel_instant_claim(cq, uid, lang, c):
         return ans(cq, tb(lang, "a_cant"), True)
     if db.completions.find_one({"uid": uid, "cid": c["_id"]}):
         return ans(cq, tb(lang, "a_dup"), True)
+    is_view = c["type"] == "view"
     if c["type"] == "join":
         r = tg("getChatMember", chat_id=c["chat_id"], user_id=uid)
         if not r.get("ok"):
             return ans(cq, tb(lang, "a_check_unavail"), True)
         if not member_ok(r["result"]):
             return ans(cq, tb(lang, "a_not_member"), True)
+    elif is_view:                                                     # the Mission button (bot link) must have been pressed
+        ses = db.sessions.find_one({"_id": f"{uid}:{c['_id']}"})
+        if not ses or time.time() - float(ses.get("t", 0) or 0) > 86400:
+            return ans(cq, tb(lang, "a_mission_first"), True)
     else:
         d = db.reacts.find_one({"_id": f"{c['chat_id']}:{c['mid']}:{uid}"})
         if not (d and d.get("on")):
@@ -2102,8 +2111,13 @@ def channel_instant_claim(cq, uid, lang, c):
     code, comp = grant(uid, c, "pending")
     if code != "ok":
         return ans(cq, claim_alert(lang, code, uid), True)
-    settle_instantly(comp)
-    return ans(cq, tb(lang, "a_paid"), True)
+    settle_instantly(comp, **({"verified_at": time.time(), "due": time.time()} if is_view else {}))
+    res = ans(cq, tb(lang, "a_paid"), True)                           # pop-up first, then the receipt in the bot chat
+    try:
+        send(uid, H(str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=c["reward"]))))
+    except Exception:
+        log.exception("instant claim receipt")
+    return res
 
 
 def bot_count_claim(uid, chat, cid_s):
@@ -4275,7 +4289,7 @@ def on_callback(cq):
             return ans(cq, tb(lang, "a_inactive"), True)
         if c.get("type") == "react" and c.get("mode") == "count":
             return channel_count_claim(cq, uid, lang, c)             # progress bar goes to the user's chat with the bot, no /start needed
-        if c.get("type") == "join" or (c.get("type") == "react" and c.get("mode") == "auto"):
+        if c.get("type") in ("join", "view") or (c.get("type") == "react" and c.get("mode") == "auto"):
             return channel_instant_claim(cq, uid, lang, c)            # verified on the spot, result in a pop-up
         deep = bot_deep_link(cid)                                     # view / other tasks need the bot (waiting time)
         if not deep:
@@ -5290,10 +5304,14 @@ def miniapp_invite_upload():
     return jsonify(ok=True, **miniapp_dashboard_data(fresh), growth=miniapp_growth_data(fresh))
 
 
+_req = threading.local()
+
+
 @app.post("/hook")
 def hook():
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != HOOK_SECRET:
         return "forbidden", 403
+    _req.t0 = time.time()                                    # when this update reached us (callback answers are time-limited)
     upd = request.get_json(silent=True) or {}
     try:
         if "callback_query" in upd:
