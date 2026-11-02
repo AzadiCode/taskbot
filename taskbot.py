@@ -2036,8 +2036,11 @@ def channel_count_claim(cq, uid, lang, c, inbot=False):
     if consume_credit_for_claim(comp):                                    # the increase was already recorded
         return say(str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=c["reward"])))
     if dm and not inbot:
-        un = _me.get("username")
-        ans(cq, url=f"https://t.me/{un}") if un else ans(cq, tb(lang, "a_claim_checking"))   # opens the bot chat at once
+        link = bot_deep_link(c["_id"])                                    # the documented ?start= form: it opens the bot chat
+        if link:
+            ans(cq, url=link.replace("?start=task_", "?start=claim_"))
+        else:
+            ans(cq, tb(lang, "a_claim_checking"))
     threading.Thread(target=_channel_wait_result, args=(cq if not dm else None, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC, dm),
                      daemon=True).start()
 
@@ -2054,6 +2057,9 @@ def bot_count_claim(uid, chat, cid_s):
         return send(chat, t(lang, "e_no_capacity"), main_kb(lang, uid))
     if not (c.get("type") == "react" and c.get("mode") == "count"):
         return open_linked_task(uid, chat, cid_s)
+    prior = db.completions.find_one({"uid": uid, "cid": c["_id"]})
+    if prior and (prior.get("status") == "count_pending" or time.time() - float(prior.get("t", 0) or 0) < 180):
+        return None          # the channel button just started this claim: its progress message is already in this chat
     return channel_count_claim(None, uid, lang, c, inbot=True)
 
 
@@ -2086,6 +2092,7 @@ def open_linked_task(uid, chat, cid_s):
     if u.get("strikes", 0) >= STRIKE_LIMIT:
         return send(chat, t(lang, "e_strikes"), main_kb(lang, uid))
     if c.get("type") == "react" and c.get("mode") == "count":
+        touch_post_active(c.get("chat_id"), c.get("mid"), kick=True, min_gap=20)
         snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
         if not snap:
             return send(chat, t(lang, "e_count_stale"), main_kb(lang, uid))
@@ -2263,6 +2270,11 @@ def on_reaction_count(mr, update_id=None):
         set_fields["uname"] = chat["username"]
     if chat.get("title"):
         set_fields["title"] = chat["title"][:100]
+    if update_id is not None:                                     # Telegram itself reports activity on this post
+        set_fields["last_active"] = received_at
+        set_fields["kick_at"] = received_at
+    elif old and old.get("total") is not None and int(old["total"]) != total:   # the helper saw the counter move
+        set_fields["last_active"] = received_at
     db.reaction_watch.update_one({"_id": key}, {"$set": set_fields, "$setOnInsert": {"created_at": received_at}}, upsert=True)
 
     nudge_up = bool(old and old.get("nudge_up"))
@@ -4364,6 +4376,22 @@ def nudge_reaction(chat_id, mid):
     threading.Thread(target=run, daemon=True).start()
 
 
+def touch_post_active(chat_id, mid, kick=False, min_gap=60):
+    """Marks a count-order post as 'in demand' so the helper account reads it more often for a while.
+    Cheap and throttled: it only writes when the last mark is older than `min_gap` seconds."""
+    try:
+        now = time.time()
+        q = {"_id": post_key(chat_id, mid)}
+        if not kick:
+            q["last_active"] = {"$not": {"$gt": now - min_gap}}
+        upd = {"last_active": now}
+        if kick:
+            upd["kick_at"] = now
+        db.reaction_watch.update_one(q, {"$set": upd})
+    except Exception:
+        log.exception("touch_post_active")
+
+
 def live_reaction_posts():
     """Posts the helper account must read: active count orders (warm), pending claims / waiting drafts / calibration (hot)."""
     posts = {}
@@ -4374,20 +4402,29 @@ def live_reaction_posts():
             chat_id, mid = int(chat_id), int(mid)
         except (TypeError, ValueError):
             return
-        p = posts.setdefault(key, {"chat_id": chat_id, "mid": mid, "uname": None, "hot": False})
+        p = posts.setdefault(key, {"chat_id": chat_id, "mid": mid, "uname": None, "hot": False,
+                                   "active_at": 0.0, "kick_at": 0.0})
         p["hot"] = p["hot"] or hot
         p["uname"] = p["uname"] or uname
 
     for c in db.campaigns.find({"type": "react", "mode": "count", "status": "active", "remaining": {"$gt": 0}},
-                               {"chat_id": 1, "mid": 1, "uname": 1}).limit(80):
+                               {"chat_id": 1, "mid": 1, "uname": 1, "listed_at": 1}).limit(80):
         if c.get("chat_id") is not None and c.get("mid"):
             add(post_key(c["chat_id"], c["mid"]), False, c.get("uname"))
+            posts[post_key(c["chat_id"], c["mid"])]["active_at"] = max(posts[post_key(c["chat_id"], c["mid"])]["active_at"],
+                                                                         float(c.get("listed_at") or 0))
     for key in db.completions.distinct("post_key", {"status": "count_pending"}):
         add(key, True)
     for d in db.campaign_drafts.find({"status": {"$in": ["waiting", "activating"]}}, {"post_key": 1, "uname": 1}):
         add(d.get("post_key"), True, d.get("uname"))
     for w in db.reaction_watch.find({"calibrating_owner": {"$exists": True}}, {"uname": 1}):
         add(w["_id"], True, w.get("uname"))
+    if posts:                                                    # demand signals: last change / app visit / bot update
+        for w in db.reaction_watch.find({"_id": {"$in": list(posts)}}, {"last_active": 1, "kick_at": 1}):
+            p = posts.get(w["_id"])
+            if p:
+                p["active_at"] = max(p["active_at"], float(w.get("last_active") or 0))
+                p["kick_at"] = float(w.get("kick_at") or 0)
     return posts
 
 
@@ -4561,6 +4598,8 @@ def miniapp_tasks():
         ready = True if (live or status) or not is_count else bool(fresh_reaction_snapshot(c.get("chat_id"), c.get("mid")))
         if is_count and not ready:
             nudge_reaction(c.get("chat_id"), c.get("mid"))          # refresh the counter so the task becomes available
+        if is_count:
+            touch_post_active(c.get("chat_id"), c.get("mid"))       # someone is looking at this task: keep its counter fresh
         out.append({"id": str(c["_id"]), "title": ctitle(c), "desc": clean_desc(c.get("desc")), "type": c.get("type"),
                     "typeLabel": miniapp_type_name(c.get("type"), lang), "reward": int(c.get("reward", 0) or 0),
                     "remaining": int(c.get("remaining", 0) or 0), "targetUrl": target_url,
@@ -4647,6 +4686,7 @@ def miniapp_start_task(cid_s):
         session_valid = session_valid and now <= float(existing.get("task_deadline", 0) or 0)
     if not session_valid:
         if c.get("type") == "react" and c.get("mode") == "count":
+            touch_post_active(c.get("chat_id"), c.get("mid"), kick=True, min_gap=20)   # user is about to react: refresh now
             snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
             if not snap:
                 return jsonify(error="reaction_data_unavailable"), 409

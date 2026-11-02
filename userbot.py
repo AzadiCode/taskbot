@@ -33,7 +33,12 @@ from pymongo.errors import DuplicateKeyError
 log = logging.getLogger("userbot")
 
 HOT_SEC = float(os.environ.get("UB_HOT_SEC", "8"))
-WARM_SEC = float(os.environ.get("UB_WARM_SEC", "45"))
+WARM_SEC = float(os.environ.get("UB_WARM_SEC", "45"))          # post with recent demand/activity
+IDLE_AFTER = float(os.environ.get("UB_IDLE_AFTER", "1800"))    # no demand for this long -> slower reads
+IDLE_SEC = float(os.environ.get("UB_IDLE_SEC", "120"))
+DEEP_AFTER = float(os.environ.get("UB_DEEP_AFTER", "7200"))    # no demand for this long -> slowest reads
+DEEP_SEC = float(os.environ.get("UB_DEEP_SEC", "300"))         # hard ceiling: a counter is never older than ~5 min
+KICK_GAP = 6.0                                                 # min seconds between two "demand" reads of one post
 MAX_PER_MIN = int(os.environ.get("UB_MAX_PER_MIN", "20"))
 MIN_GAP = (1.5, 2.5)          # seconds between two requests (random)
 FEED_REFRESH_SEC = 45         # unchanged totals are re-sent at most this often (keeps the snapshot "fresh")
@@ -81,6 +86,7 @@ class Manager:
         self._bad = {}                        # chat_id -> retry-after timestamp (unreachable)
         self._next = {}                       # post key -> next due time
         self._last = {}                       # post key -> (total, fed_at)
+        self._read_at = {}                    # post key -> when it was last requested
         self._req = deque()                   # timestamps of requests (last minute)
         self._flood_until = 0.0
         self._floods = deque()
@@ -585,8 +591,13 @@ class Manager:
         posts = await self._bg(self.live_posts)
         now = time.time()
         # a post that just became hot (someone pressed the reward button) is read right away, not at its slow schedule
-        due = [(0 if p.get("hot") else 1, k, p) for k, p in posts.items()
-               if (self._next.get(k, 0) <= now or (p.get("hot") and self._next.get(k, 0) - now > HOT_SEC * 1.5))
+        def kicked(k, p):        # demand signal newer than our last read (app visit, Telegram update, task start)
+            last = self._read_at.get(k, 0)
+            return float(p.get("kick_at") or 0) > last and now - last >= KICK_GAP
+
+        due = [(0 if (p.get("hot") or kicked(k, p)) else 1, k, p) for k, p in posts.items()
+               if (self._next.get(k, 0) <= now or kicked(k, p)
+                   or (p.get("hot") and self._next.get(k, 0) - now > HOT_SEC * 1.5))
                and self._bad.get(p["chat_id"], 0) <= now]
         due.sort(key=lambda x: x[0])
         chats = {}
@@ -600,6 +611,21 @@ class Manager:
         for k in [k for k in self._next if k not in posts]:                    # forget finished posts
             self._next.pop(k, None)
             self._last.pop(k, None)
+            self._read_at.pop(k, None)
+
+    @staticmethod
+    def _interval(p, hot):
+        """Read pace of one post: fast while someone is claiming, calm while it is in demand, slower and slower
+        while nobody touches it (demand = reaction change, app visit, Telegram update, task start)."""
+        if hot:
+            return HOT_SEC
+        act = float(p.get("active_at") or 0)
+        if not act:
+            return WARM_SEC
+        idle = time.time() - act
+        if idle < IDLE_AFTER:
+            return WARM_SEC
+        return IDLE_SEC if idle < DEEP_AFTER else DEEP_SEC
 
     async def _poll_chat(self, chat_id, items):
         from telethon import errors
@@ -608,6 +634,8 @@ class Manager:
         try:
             ent = await self._entity(chat_id, uname)
             self._req.append(time.time())
+            for k, _p in items:
+                self._read_at[k] = time.time()
             msgs = await self.client.get_messages(ent, ids=[p["mid"] for _, p in items])
         except errors.FloodWaitError as e:
             await self._on_flood(int(getattr(e, "seconds", 60) or 60))
@@ -626,7 +654,7 @@ class Manager:
         self._ents.setdefault(chat_id, ent)
         for (k, p), m in zip(items, msgs or []):
             hot = bool(p.get("hot"))
-            self._next[k] = time.time() + (HOT_SEC if hot else WARM_SEC) * self._slow * random.uniform(0.85, 1.25)
+            self._next[k] = time.time() + self._interval(p, hot) * self._slow * random.uniform(0.85, 1.25)
             if m is None:                                                       # deleted post
                 self._next[k] = time.time() + 300
                 continue
