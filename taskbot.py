@@ -1990,28 +1990,30 @@ def _channel_wait_result(cq, comp, lang, reward, until, dm=None):
             pass
 
 
-def channel_count_claim(cq, uid, lang, c):
-    """Channel button of a count-based reaction task: verify in place, no trip to the bot.
-    The button spinner is the loading indicator; the result shows as the top notification."""
+def channel_count_claim(cq, uid, lang, c, chat=None):
+    """Count-based reaction claim. From the channel (chat=None) the button opens the bot at once and the check
+    runs there with a live progress bar; with `chat` it is that in-bot run (alerts become normal messages)."""
+    def say(text, alert=False):
+        return send(chat, text) if chat else ans(cq, text, alert)
     u = db.users.find_one({"_id": uid}) or {}
     if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
-        return ans(cq, tb(lang, "a_cant"), True)
+        return say(tb(lang, "a_cant"), True)
     if campaign_needs_admin(c):
         if c.get("admin_paused"):
-            return ans(cq, tb(lang, "a_paused"), True)
+            return say(tb(lang, "a_paused"), True)
         status = bot_admin_status(c.get("chat_id"))
         if status is None:
-            return ans(cq, tb(lang, "a_admin_unavail"), True)
+            return say(tb(lang, "a_admin_unavail"), True)
         if not status:
             pause_for_admin_loss(c)
-            return ans(cq, tb(lang, "a_paused_now"), True)
+            return say(tb(lang, "a_paused_now"), True)
     prior = db.completions.find_one({"uid": uid, "cid": c["_id"]})
     if prior:
-        return ans(cq, tb(lang, "a_claim_wait" if prior.get("status") == "count_pending" else "a_dup"), True)
+        return say(tb(lang, "a_claim_wait" if prior.get("status") == "count_pending" else "a_dup"), True)
     snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
     if not snap:
         nudge_reaction(c.get("chat_id"), c.get("mid"))
-        return ans(cq, tb(lang, "a_count_stale"), True)
+        return say(tb(lang, "a_count_stale"), True)
     now = time.time()
     window_min = float(c.get("window_min", 5))
     extra = {"post_key": post_key(c["chat_id"], c["mid"]),
@@ -2021,16 +2023,31 @@ def channel_count_claim(cq, uid, lang, c):
              "claim_expires": now + CHANNEL_WAIT_SEC, "day_key": f"d:{uid}:{day()}"}
     code, comp = grant(uid, c, "count_pending", extra=extra)
     if code != "ok":
-        return ans(cq, claim_alert(lang, code, uid), True)
+        return say(claim_alert(lang, code, uid), True)
     if consume_credit_for_claim(comp):                                    # the increase was already recorded
-        return ans(cq, tb(lang, "a_claim_ok", reward=c["reward"]))
+        return say(tb(lang, "a_claim_ok", reward=c["reward"]))
     dm = None
-    r = send(uid, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))   # visible progress, so the press never feels dead
-    if r.get("ok"):
-        dm = (uid, r["result"]["message_id"])
-        ans(cq, tb(lang, "a_claim_checking"))
+    if chat:
+        r = send(chat, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))
+        if r.get("ok"):
+            dm = (chat, r["result"]["message_id"])
     threading.Thread(target=_channel_wait_result, args=(cq, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC, dm),
                      daemon=True).start()
+
+
+def bot_count_claim(uid, chat, cid_s):
+    """Deep link from the channel button of a count-based reaction task: verify right here with a progress bar."""
+    u = db.users.find_one({"_id": uid}) or {}
+    lang = lang_of(u)
+    try:
+        c = db.campaigns.find_one({"_id": ObjectId(cid_s)})
+    except (InvalidId, TypeError):
+        c = None
+    if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
+        return send(chat, t(lang, "e_no_capacity"), main_kb(lang, uid))
+    if not (c.get("type") == "react" and c.get("mode") == "count"):
+        return open_linked_task(uid, chat, cid_s)
+    return channel_count_claim(None, uid, lang, c, chat=chat)
 
 
 def open_linked_task(uid, chat, cid_s):
@@ -3922,6 +3939,8 @@ def on_message(msg):
             db.states.delete_one({"_id": uid})
             if cmd == "start" and args and args[0].startswith("task_"):
                 return open_linked_task(uid, chat, args[0][5:])
+            if cmd == "start" and args and args[0].startswith("claim_"):
+                return bot_count_claim(uid, chat, args[0][6:])
             if cmd == "start" and args and args[0] == "order":
                 return send_order_screen(chat, lang)
             if cmd == "start" and args and args[0].startswith("ref_") and not existed:
@@ -4175,7 +4194,10 @@ def on_callback(cq):
         if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
             return ans(cq, tb(lang, "a_inactive"), True)
         if c.get("type") == "react" and c.get("mode") == "count":
-            return channel_count_claim(cq, uid, lang, c)             # verified right here, the spinner is the loading bar
+            link = bot_deep_link(cid)
+            if link:                                                 # open the bot at once; the check + progress bar run there
+                return ans(cq, url=link.replace("?start=task_", "?start=claim_"))
+            return channel_count_claim(cq, uid, lang, c)
         deep = bot_deep_link(cid)
         if not deep:
             return ans(cq, tb(lang, "a_no_deeplink"), True)
