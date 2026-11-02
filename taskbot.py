@@ -66,6 +66,8 @@ MAX_QTY = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
 REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "25"))   # extra seconds after the time limit for Telegram's count to arrive
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
+CLAIM_WAIT_SEC = max(3, int(os.environ.get("CLAIM_WAIT_SEC", "15")))            # Mini App: length of the verification bar
+CHANNEL_WAIT_SEC = max(3, min(13, int(os.environ.get("CHANNEL_WAIT_SEC", "12"))))   # channel button: Telegram drops callback answers after ~15 s
 
 
 def fmt_secs(lang, sec):
@@ -593,6 +595,9 @@ S = {
     "a_step_expired": ("This step has expired. Place the order again.",
                        "این مرحله منقضی شده است. ثبت سفارش را دوباره شروع کنید."),
     "a_window_bad": ("Invalid time limit.", "مهلت نامعتبر است."),
+    "a_claim_ok": ("✅ Verified! +{reward} ⭐ added to your balance.", "✅ تأیید شد! +{reward} ⭐ به موجودی‌ات اضافه شد."),
+    "a_claim_fail": ("❌ Reaction not detected. React to the post, then press the button again.", "❌ ریکشن شناسایی نشد؛ ریکشن نزده‌ای. به پست ریکشن بده و دوباره دکمه را بزن."),
+    "a_claim_wait": ("⏳ Your previous check is still running.", "⏳ بررسی قبلی تو هنوز در حال انجام است."),
     "a_window_only": ("Only 15 seconds or 1 minute can be selected.", "فقط ۱۵ ثانیه یا ۱ دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
                       "شمارش قدیمی است. برای به‌روزرسانی، یک واکنش اضافه یا حذف کنید."),
@@ -1939,6 +1944,68 @@ def on_claim(cq, uid, chat, mid, cid_s):
     settle_instantly(comp, **({"verified_at": time.time(), "due": time.time()} if c["type"] == "view" else {}))
     ans(cq, tb(lang, "a_paid"))
     return view(chat, mid, H(str(t(lang, "task_paid", reward=c["reward"])) + progress_line(uid, lang)), next_kb(lang, uid))
+
+
+def _channel_wait_result(cq, comp, lang, reward, until):
+    """Waits (in a thread) for the count claim to resolve, then answers the channel button with the result."""
+    try:
+        while time.time() < until:
+            time.sleep(1)
+            cur = db.completions.find_one({"_id": comp["_id"]})
+            if not cur or cur.get("status") != "count_pending":
+                break
+        cur = db.completions.find_one({"_id": comp["_id"]})
+        if cur and cur.get("status") == "count_pending":
+            fail_count_claim(cur, "r_no_increase")                       # atomic: loses the race if it was just paid
+            cur = db.completions.find_one({"_id": comp["_id"]})
+        if cur and cur.get("status") != "count_pending":
+            ans(cq, tb(lang, "a_claim_ok", reward=reward))
+        else:
+            ans(cq, tb(lang, "a_claim_fail"))
+    except Exception:
+        log.exception("channel claim result")
+        try:
+            ans(cq, tb(lang, "a_claim_fail"))
+        except Exception:
+            pass
+
+
+def channel_count_claim(cq, uid, lang, c):
+    """Channel button of a count-based reaction task: verify in place, no trip to the bot.
+    The button spinner is the loading indicator; the result shows as the top notification."""
+    u = db.users.find_one({"_id": uid}) or {}
+    if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
+        return ans(cq, tb(lang, "a_cant"), True)
+    if campaign_needs_admin(c):
+        if c.get("admin_paused"):
+            return ans(cq, tb(lang, "a_paused"), True)
+        status = bot_admin_status(c.get("chat_id"))
+        if status is None:
+            return ans(cq, tb(lang, "a_admin_unavail"), True)
+        if not status:
+            pause_for_admin_loss(c)
+            return ans(cq, tb(lang, "a_paused_now"), True)
+    prior = db.completions.find_one({"uid": uid, "cid": c["_id"]})
+    if prior:
+        return ans(cq, tb(lang, "a_claim_wait" if prior.get("status") == "count_pending" else "a_dup"), True)
+    snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
+    if not snap:
+        nudge_reaction(c.get("chat_id"), c.get("mid"))
+        return ans(cq, tb(lang, "a_count_stale"), True)
+    now = time.time()
+    window_min = float(c.get("window_min", 5))
+    extra = {"post_key": post_key(c["chat_id"], c["mid"]),
+             "baseline_total": int(c.get("base_count", snap.get("total", 0))),
+             "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
+             "task_started": now - window_min * 60, "task_deadline": now + CHANNEL_WAIT_SEC,
+             "claim_expires": now + CHANNEL_WAIT_SEC, "day_key": f"d:{uid}:{day()}"}
+    code, comp = grant(uid, c, "count_pending", extra=extra)
+    if code != "ok":
+        return ans(cq, claim_alert(lang, code, uid), True)
+    if consume_credit_for_claim(comp):                                    # the increase was already recorded
+        return ans(cq, tb(lang, "a_claim_ok", reward=c["reward"]))
+    threading.Thread(target=_channel_wait_result, args=(cq, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC),
+                     daemon=True).start()
 
 
 def open_linked_task(uid, chat, cid_s):
@@ -3732,7 +3799,7 @@ def worker():
     while True:
         try:
             now = time.time()
-            if now - last_exp >= 5:
+            if now - last_exp >= 3:
                 last_exp = now
                 expire_count_claims(now)                        # atomic per claim: safe on every worker
             if now - last_tick >= 30:
@@ -4082,6 +4149,8 @@ def on_callback(cq):
         c = db.campaigns.find_one({"_id": cid})
         if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
             return ans(cq, tb(lang, "a_inactive"), True)
+        if c.get("type") == "react" and c.get("mode") == "count":
+            return channel_count_claim(cq, uid, lang, c)             # verified right here, the spinner is the loading bar
         deep = bot_deep_link(cid)
         if not deep:
             return ans(cq, tb(lang, "a_no_deeplink"), True)
@@ -4564,7 +4633,8 @@ def miniapp_claim_task(cid_s):
     prior = db.completions.find_one({"uid": uid, "cid": cid}) or {}
     if prior:
         if prior.get("status") == "count_pending":
-            return jsonify(ok=True, status="pending", message="Reaction count is still being verified."), 202
+            left = max(1.0, float(prior.get("claim_expires", 0) or 0) - time.time())
+            return jsonify(ok=True, status="pending", waitSec=round(left, 1), message="Reaction count is still being verified."), 202
         return jsonify(error="already_done"), 409
     if c.get("status") != "active" or int(c.get("remaining", 0) or 0) < 1:
         return jsonify(error="task_unavailable"), 409
@@ -4611,7 +4681,8 @@ def miniapp_claim_task(cid_s):
             return jsonify(error="reaction_data_unavailable"), 409
         extra = {"post_key": ses["post_key"], "baseline_total": int(ses["baseline_total"]),
                  "baseline_at": float(ses.get("baseline_at", 0)), "task_started": started,
-                 "task_deadline": deadline, "claim_expires": deadline, "day_key": f"d:{uid}:{day()}"}
+                 "task_deadline": now + CLAIM_WAIT_SEC, "claim_expires": now + CLAIM_WAIT_SEC,
+                 "day_key": f"d:{uid}:{day()}"}
         code, comp = grant(uid, c, "count_pending", extra=extra)
         if code != "ok":
             return jsonify(error=code, message=claim_alert(lang, code, uid)), 409
@@ -4619,7 +4690,31 @@ def miniapp_claim_task(cid_s):
             fresh = db.users.find_one({"_id": uid}) or u
             payload = miniapp_dashboard_data(fresh)
             return jsonify(ok=True, status="paid", reward=int(c.get("reward", 0) or 0), **payload)
-        return jsonify(ok=True, status="pending", message=("در انتظار تأیید افزایش واکنش‌ها" if lang == "fa" else "Waiting for reaction-count verification.")), 202
+        return jsonify(ok=True, status="pending", waitSec=CLAIM_WAIT_SEC,
+                       message=("در انتظار تأیید افزایش واکنش‌ها" if lang == "fa" else "Waiting for reaction-count verification.")), 202
+
+
+@app.get("/api/miniapp/tasks/<cid_s>/claim-status")
+def miniapp_claim_status(cid_s):
+    """Result of a count-based claim: pending | paid | failed (a failed claim is closed here at its deadline)."""
+    u, err = miniapp_identity()
+    if err:
+        return err
+    uid = int(u["_id"])
+    try:
+        cid = ObjectId(cid_s)
+    except (InvalidId, TypeError):
+        return jsonify(error="invalid_id"), 400
+    comp = db.completions.find_one({"uid": uid, "cid": cid})
+    if comp and comp.get("status") == "count_pending" and time.time() >= float(comp.get("claim_expires", 0) or 0):
+        fail_count_claim(comp, "r_no_increase")                         # atomic; if it was just paid this does nothing
+        comp = db.completions.find_one({"uid": uid, "cid": cid})
+    if not comp:
+        return jsonify(ok=True, status="failed")
+    if comp.get("status") == "count_pending":
+        return jsonify(ok=True, status="pending", left=max(0.0, float(comp.get("claim_expires", 0) or 0) - time.time()))
+    fresh = db.users.find_one({"_id": uid}) or u
+    return jsonify(ok=True, status="paid", reward=int(comp.get("reward", 0) or 0), **miniapp_dashboard_data(fresh))
 
     code, comp = grant(uid, c, "pending")
     if code != "ok":

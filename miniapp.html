@@ -259,6 +259,13 @@ main{padding-top:6px}
 .tk-msg.info{background:rgba(123,140,255,.12);color:var(--brand)}
 .tk-msg.ok{background:var(--mint-soft);color:var(--mint)}
 .tk-msg svg{margin-top:3px}
+.vf{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:12px;color:var(--muted);font-weight:700}
+.vf-bar{flex:1;height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.vf-bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--cyan));transition:width .25s linear}
+.vf-s{min-width:28px;text-align:end;color:var(--text);font-variant-numeric:tabular-nums}
+.vf-msg{margin-top:12px;padding:10px 13px;border-radius:13px;font-size:12.5px;line-height:1.6;font-weight:700}
+.vf-msg.err{background:rgba(255,122,144,.12);color:var(--rose)}
+.vf-msg.ok{background:var(--mint-soft);color:var(--mint)}
 .spin{display:inline-block;width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;animation:spin .8s linear infinite;flex:none}
 .task[data-act]{cursor:pointer}
 
@@ -408,7 +415,7 @@ en:{
  newCamp:'New campaign',myCamps:'My campaigns',emptyCamps:'No campaigns yet',emptyCampsSub:'Create one to bring members, reactions or views to your channel.',
  doneOf:'{d} of {t} done',stActive:'Active',stPaused:'Paused',stCompleted:'Completed',stCancelled:'Cancelled',stop:'Stop and refund',confirmStop:'Stop this campaign and refund unused Stars?',stopped:'Campaign stopped. Refunded {n} Stars.',
  typeLbl:'What do you need?',typeJoin:'Members',descJoin:'Real people join your channel or group',typeReact:'Reactions',descReact:'Reactions on one post',typeView:'Views',descView:'Views on one post',perUnit:'{c} Stars each',
- linkLbl:'Link',descLbl:'Short description (optional)',descPh:'e.g. Daily tech news and tips',descHint:'Up to 2 lines, 100 characters, no links. Shown with your task.',admTitle:'Add the bot as admin',admText:'Tap a button, pick your channel or group, then confirm the admin permissions.',addChannel:'Add to channel',addGroup:'Add to group',admKeep:'Keep the bot as admin until the order is fully completed.',hintJoin:'Public channel or group link. Stars are charged only after you publish.',hintPost:'Link to one specific post. Stars are charged only after you publish.',qtyLbl:'Quantity',max:'Max',windowLbl:'Reaction check window',minN:'{n} min',secN:'{n} sec',
+ linkLbl:'Link',descLbl:'Short description (optional)',descPh:'e.g. Daily tech news and tips',descHint:'Up to 2 lines, 100 characters, no links. Shown with your task.',admTitle:'Add the bot as admin',admText:'Tap a button, pick your channel or group, then confirm the admin permissions.',addChannel:'Add to channel',addGroup:'Add to group',admKeep:'Keep the bot as admin until the order is fully completed.',hintJoin:'Public channel or group link. Stars are charged only after you publish.',hintPost:'Link to one specific post. Stars are charged only after you publish.',qtyLbl:'Quantity',max:'Max',windowLbl:'Reaction check window',minN:'{n} min',secN:'{n} sec',vfChecking:'Checking your reaction…',vfFail:'Reaction not detected. React to the post, then verify again.',
  cost:'Cost',after:'Balance after',publish:'Publish campaign',publishing:'Publishing…',published:'Campaign is live in the task channel.',needStars:'You need at least {n} Stars for this type.',earnStars:'Earn Stars',
  rewardsTitle:'Rewards',segPath:'Levels',segDaily:'Daily',segBadges:'Badges',segBoard:'Leaderboard',
  youAreHere:'You are here',needTasks:'{n} tasks',perkBonus:'Level-up bonus +{n}',perkMult:'Daily gift x{m}',perkCap:'Up to {n} tasks a day',soon:'Coming soon',
@@ -475,7 +482,7 @@ fa:{
  newCamp:'کمپین جدید',myCamps:'کمپین‌های من',emptyCamps:'هنوز کمپینی نداری',emptyCampsSub:'اولین کمپینت را بساز',
  doneOf:'{d} از {t} انجام شد',stActive:'فعال',stPaused:'متوقف موقت',stCompleted:'تکمیل‌شده',stCancelled:'لغوشده',stop:'توقف',confirmStop:'این کمپین متوقف شود و استارز استفاده‌نشده برگردد؟',stopped:'کمپین متوقف شد. {n} استارز برگشت.',
  typeLbl:'چی می‌خواهی؟',typeJoin:'عضو',descJoin:'برای کانال یا گروه',typeReact:'واکنش',descReact:'برای یک پست',typeView:'بازدید',descView:'برای یک پست',perUnit:'{c} استارز',
- linkLbl:'لینک',descLbl:'توضیح کوتاه (اختیاری)',descPh:'مثلاً اخبار و نکات روزانه‌ی تکنولوژی',descHint:'حداکثر ۲ خط و ۱۰۰ کاراکتر، بدون لینک. همراه تسک نمایش داده می‌شود.',admTitle:'ادمین کردن ربات',admText:'یکی از دکمه‌ها را بزن، کانال یا گروهت را انتخاب کن و دسترسی ادمین را تأیید کن.',addChannel:'افزودن به کانال',addGroup:'افزودن به گروه',admKeep:'تا پایان کامل سفارش، ربات را ادمین نگه دار.',hintJoin:'لینک عمومی کانال یا گروه. استارز فقط بعد از ثبت کم می‌شود.',hintPost:'لینک یک پست مشخص. استارز فقط بعد از ثبت کم می‌شود.',qtyLbl:'تعداد',max:'حداکثر',windowLbl:'مهلت بررسی',minN:'{n} دقیقه',secN:'{n} ثانیه',
+ linkLbl:'لینک',descLbl:'توضیح کوتاه (اختیاری)',descPh:'مثلاً اخبار و نکات روزانه‌ی تکنولوژی',descHint:'حداکثر ۲ خط و ۱۰۰ کاراکتر، بدون لینک. همراه تسک نمایش داده می‌شود.',admTitle:'ادمین کردن ربات',admText:'یکی از دکمه‌ها را بزن، کانال یا گروهت را انتخاب کن و دسترسی ادمین را تأیید کن.',addChannel:'افزودن به کانال',addGroup:'افزودن به گروه',admKeep:'تا پایان کامل سفارش، ربات را ادمین نگه دار.',hintJoin:'لینک عمومی کانال یا گروه. استارز فقط بعد از ثبت کم می‌شود.',hintPost:'لینک یک پست مشخص. استارز فقط بعد از ثبت کم می‌شود.',qtyLbl:'تعداد',max:'حداکثر',windowLbl:'مهلت بررسی',minN:'{n} دقیقه',secN:'{n} ثانیه',vfChecking:'در حال بررسی ریکشن…',vfFail:'ریکشن شناسایی نشد؛ ریکشن بزن و دوباره تأیید کن.',
  cost:'هزینه',after:'موجودی بعد',publish:'انتشار',publishing:'در حال انتشار…',published:'کمپین منتشر شد',needStars:'حداقل {n} استارز لازم است',earnStars:'کسب استارز',
  rewardsTitle:'جوایز',segPath:'سطح‌ها',segDaily:'روزانه',segBadges:'نشان‌ها',segBoard:'جدول',
  youAreHere:'الان اینجایی',needTasks:'{n} تسک',perkBonus:'جایزه ارتقا +{n}',perkMult:'هدیه روزانه ×{m}',perkCap:'سقف {n} تسک در روز',soon:'به‌زودی',
@@ -604,7 +611,7 @@ function taskCard(x){
   else act=`<div class="t-act"><button class="btn primary" data-act="task" data-id="${esc(x.id)}">${live?t('continueBtn'):t('start')}${ic('chev','sm flip')}</button></div>`;
   return `<article class="task ${live||pend?'live':''}" data-act="task" data-id="${esc(x.id)}"><div class="t-top"><div class="t-ico ${esc(x.type)}">${ic(typeIcon(x.type))}</div>
    <div class="grow"><div class="t-title">${esc(x.title)}</div>${x.desc?`<div class="t-desc">${esc(x.desc)}</div>`:''}<div class="t-meta"><span class="chip">${esc(x.typeLabel||t(x.type))}</span><span class="chip">${t('leftN',{n:fmt(x.remaining)})}</span>${live?`<span class="chip brand">${t('live')}</span>`:''}</div></div>
-   <div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}${gold>1?' · <span class="num">x'+gold+'</span>':''}</small></div></div>${act}</article>`;
+   <div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}${gold>1?' · <span class="num">x'+gold+'</span>':''}</small></div></div>${act}${vfBar(x)}</article>`;
 }
 function campCard(c){
   const st={active:['mint',t('stActive')],paused:['brand',t('stPaused')],completed:['',t('stCompleted')],cancelled:['rose',t('stCancelled')],preparing:['brand',t('stPreparing')],failed:['rose',t('stFailed')]}[c.status]||['',c.status];
@@ -845,7 +852,52 @@ function absorb(r){if(r.user){state.user=r.user;state.stats=r.stats||state.stats
 
 /* ---------- actions ---------- */
 /* ---------- task flow: open -> do -> verify, all inside one sheet ---------- */
-let tkTimer=null,pollTimer=null;
+let tkTimer=null,pollTimer=null,vfTimer=null;const vfs={};
+function vfBar(x){
+  const v=vfs[x.id];if(!v)return '';
+  if(v.msg)return `<div class="vf-msg ${v.msg.k}">${esc(v.msg.text)}</div>`;
+  const p=Math.max(0,Math.min(1,(Date.now()-v.from)/(v.until-v.from))),s=Math.max(0,Math.ceil((v.until-Date.now())/1000));
+  return `<div class="vf" data-vf="${esc(x.id)}"><div class="vf-bar"><i style="width:${(p*100).toFixed(1)}%"></i></div><span>${t('vfChecking')}</span><b class="vf-s">${s}s</b></div>`;
+}
+function vfTick(){
+  const now=Date.now();let any=false;
+  for(const id in vfs){
+    const v=vfs[id];if(!v.until||v.msg)continue;any=true;
+    const p=Math.min(1,(now-v.from)/(v.until-v.from));
+    document.querySelectorAll('[data-vf]').forEach(el=>{if(el.dataset.vf!==id)return;const i=el.querySelector('i');if(i)i.style.width=(p*100)+'%';const s=el.querySelector('.vf-s');if(s)s.textContent=Math.max(0,Math.ceil((v.until-now)/1000))+'s';});
+    if(p>=1&&!v.resolving){v.resolving=true;vfResolve(id);}
+  }
+  if(!any&&vfTimer){clearInterval(vfTimer);vfTimer=null;}
+}
+function vfStart(x,sec){
+  vfs[x.id]={from:Date.now(),until:Date.now()+Math.max(1,sec)*1000};
+  x.completionStatus='count_pending';
+  if(!vfTimer)vfTimer=setInterval(vfTick,200);
+  render();refreshTaskSheet();
+}
+function vfFail(id){
+  const x=state.tasks.find(v=>v.id===id);if(x)x.completionStatus='';
+  vfs[id]={msg:{k:'err',text:t('vfFail')}};haptic('error');render();refreshTaskSheet();
+  setTimeout(()=>{if(vfs[id]&&vfs[id].msg){delete vfs[id];render();refreshTaskSheet();}},7000);
+}
+async function vfResolve(id){
+  for(let i=0;i<8;i++){
+    try{
+      const r=await api(`/api/miniapp/tasks/${encodeURIComponent(id)}/claim-status`);
+      if(r.status==='paid'){
+        const prev=state.user.level;
+        delete vfs[id];absorb(r);state.tasks=state.tasks.filter(v=>v.id!==id);await reloadGrowth();
+        if(state.taskId===id)closeSheet();render();bumpBal();
+        const gold=state.g?.golden?.active;
+        celebrate({k:t('verified'),v:'+'+fmt(r.reward*(gold?state.g.golden.mult:1)),s:gold?t('goldenBonus'):t('youEarned')+' '+t('stars')});
+        $('#celeVeil').dataset.after=String(prev);return;
+      }
+      if(r.status==='failed'){vfFail(id);return;}
+    }catch(e){}
+    await new Promise(res=>setTimeout(res,1500));
+  }
+  vfFail(id);
+}
 const tk=()=>state.tasks.find(x=>x.id===state.taskId);
 const nowSrv=()=>Date.now()/1000+(state.skew||0);
 const mmss=s=>{s=Math.max(0,Math.ceil(s));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
@@ -868,7 +920,7 @@ function sheetTask(){
   else cta=`<button class="btn primary block" data-act="tstart">${ic('out','sm')}${open}</button>`;
   return `<div class="sheet-h"><b>${esc(x.typeLabel||t(x.type))}</b><button class="x" data-act="closesheet" aria-label="Close">${ic('x')}</button></div>
   <div class="tk-head"><div class="t-ico ${esc(x.type)}">${ic(typeIcon(x.type))}</div><div class="grow"><div class="t-title">${esc(x.title)}</div>${x.desc?`<div class="t-desc">${esc(x.desc)}</div>`:''}</div><div class="t-reward"><span class="num">+${fmt(x.reward*gold)}</span><small>${t('stars')}</small></div></div>
-  <ol class="steps">${steps}</ol>${timer}${msg}<div style="margin-top:16px">${cta}</div>`;
+  <ol class="steps">${steps}</ol>${timer}${vfs[x.id]?'':msg}${vfBar(x)}<div style="margin-top:16px">${cta}</div>`;
 }
 function refreshTaskSheet(){if(state.taskId&&$('#sheetVeil').classList.contains('show')){const x=tk();if(!x){closeSheet();return;}$('#sheet').innerHTML=sheetTask();}}
 function openTaskSheet(id){
@@ -898,7 +950,7 @@ async function tVerify(){
   try{
     const r=await api(`/api/miniapp/tasks/${encodeURIComponent(x.id)}/claim`,{method:'POST',body:{}});
     state.tbusy=false;
-    if(r.status==='pending'){x.completionStatus='count_pending';refreshTaskSheet();render();schedulePoll();return;}
+    if(r.status==='pending'){vfStart(x,Number(r.waitSec)||15);return;}
     absorb(r);state.tasks=state.tasks.filter(v=>v.id!==x.id);await reloadGrowth();closeSheet();render();bumpBal();
     const gold=state.g?.golden?.active;
     celebrate({k:t('verified'),v:'+'+fmt(r.reward*(gold?state.g.golden.mult:1)),s:gold?t('goldenBonus'):t('youEarned')+' '+t('stars')});
@@ -916,7 +968,7 @@ function schedulePoll(){
   const fast=state.campaigns.some(c=>c.status==='preparing');
   if(fast||state.tasks.some(x=>x.completionStatus==='count_pending'))pollTimer=setTimeout(pollPending,fast?4000:6000);
 }
-const pendingIds=()=>state.tasks.filter(x=>x.completionStatus==='count_pending').map(x=>x.id);
+const pendingIds=()=>state.tasks.filter(x=>x.completionStatus==='count_pending'&&!vfs[x.id]).map(x=>x.id);
 async function afterPendingResolved(oldPend,beforePts,prevLevel){
   const paid=oldPend.filter(id=>!state.tasks.some(x=>x.id===id));
   if(!paid.length)return false;

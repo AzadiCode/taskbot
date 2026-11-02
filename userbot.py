@@ -584,8 +584,10 @@ class Manager:
     async def _poll_once(self):
         posts = await self._bg(self.live_posts)
         now = time.time()
+        # a post that just became hot (someone pressed the reward button) is read right away, not at its slow schedule
         due = [(0 if p.get("hot") else 1, k, p) for k, p in posts.items()
-               if self._next.get(k, 0) <= now and self._bad.get(p["chat_id"], 0) <= now]
+               if (self._next.get(k, 0) <= now or (p.get("hot") and self._next.get(k, 0) - now > HOT_SEC * 1.5))
+               and self._bad.get(p["chat_id"], 0) <= now]
         due.sort(key=lambda x: x[0])
         chats = {}
         for _, k, p in due:
