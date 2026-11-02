@@ -4832,6 +4832,14 @@ def miniapp_claim_task(cid_s):
         return jsonify(ok=True, status="pending", waitSec=CLAIM_WAIT_SEC,
                        message=("در انتظار تأیید افزایش واکنش‌ها" if lang == "fa" else "Waiting for reaction-count verification.")), 202
 
+    code, comp = grant(uid, c, "pending")
+    if code != "ok":
+        return jsonify(error=code, message=claim_alert(lang, code, uid)), 409
+    settle_instantly(comp, **({"verified_at": time.time(), "due": time.time()} if c.get("type") == "view" else {}))
+    fresh = db.users.find_one({"_id": uid}) or u
+    payload = miniapp_dashboard_data(fresh)
+    return jsonify(ok=True, status="paid", reward=int(c.get("reward", 0) or 0), **payload)
+
 
 @app.get("/api/miniapp/tasks/<cid_s>/claim-status")
 def miniapp_claim_status(cid_s):
@@ -4854,14 +4862,6 @@ def miniapp_claim_status(cid_s):
         return jsonify(ok=True, status="pending", left=max(0.0, float(comp.get("claim_expires", 0) or 0) - time.time()))
     fresh = db.users.find_one({"_id": uid}) or u
     return jsonify(ok=True, status="paid", reward=int(comp.get("reward", 0) or 0), **miniapp_dashboard_data(fresh))
-
-    code, comp = grant(uid, c, "pending")
-    if code != "ok":
-        return jsonify(error=code, message=claim_alert(lang, code, uid)), 409
-    settle_instantly(comp, **({"verified_at": time.time(), "due": time.time()} if c.get("type") == "view" else {}))
-    fresh = db.users.find_one({"_id": uid}) or u
-    payload = miniapp_dashboard_data(fresh)
-    return jsonify(ok=True, status="paid", reward=int(c.get("reward", 0) or 0), **payload)
 
 
 @app.get("/api/miniapp/campaigns")
