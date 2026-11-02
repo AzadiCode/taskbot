@@ -322,7 +322,7 @@ S = {
     "b_share": ("Share link", "اشتراک‌گذاری لینک"),
     "b_done": ("I have completed it", "انجام دادم"),
     "b_back_target": ("Back to destination", "بازگشت به مقصد"),
-    "b_target": ("🎯 Target", "مقصد"),
+    "b_target": ("🎯 Mission", "ماموریت"),
     "b_claim": ("🎁 Claim", "پاداش"),
     "b_order": ("🛒 Place order", "🛒 ثبت سفارش"),
     "b_confirm": ("Confirm and pay {cost} Stars", "تأیید و پرداخت {cost} استارز"),
@@ -597,6 +597,10 @@ S = {
     "a_window_bad": ("Invalid time limit.", "مهلت نامعتبر است."),
     "a_claim_ok": ("✅ Verified! +{reward} ⭐ added to your balance.", "✅ تأیید شد! +{reward} ⭐ به موجودی‌ات اضافه شد."),
     "a_claim_fail": ("❌ Reaction not detected. React to the post, then press the button again.", "❌ ریکشن شناسایی نشد؛ ریکشن نزده‌ای. به پست ریکشن بده و دوباره دکمه را بزن."),
+    "a_claim_checking": ("⏳ Checking your reaction… live progress is in your chat with the bot.", "⏳ در حال بررسی ریکشن… نوار پیشرفت را در چت ربات ببین."),
+    "claim_progress": ("<b>⏳ Checking your reaction</b>\n\n<code>{bar}</code> {pct}%\n<i>Please wait a few seconds…</i>", "<b>⏳ در حال بررسی ریکشن</b>\n\n<code>{bar}</code> {pct}٪\n<i>چند ثانیه صبر کن…</i>"),
+    "claim_progress_ok": ("<b>✅ Verified!</b>\n\n<code>{bar}</code> 100%\n+{reward} ⭐ added to your balance.", "<b>✅ تأیید شد!</b>\n\n<code>{bar}</code> ۱۰۰٪\n+{reward} ⭐ به موجودی‌ات اضافه شد."),
+    "claim_progress_fail": ("<b>❌ Reaction not detected</b>\n\nReact to the post, then press the button again.", "<b>❌ ریکشن شناسایی نشد</b>\n\nبه پست ریکشن بده و دوباره دکمه را بزن."),
     "a_claim_wait": ("⏳ Your previous check is still running.", "⏳ بررسی قبلی تو هنوز در حال انجام است."),
     "a_window_only": ("Only 15 seconds or 1 minute can be selected.", "فقط ۱۵ ثانیه یا ۱ دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
@@ -1946,26 +1950,42 @@ def on_claim(cq, uid, chat, mid, cid_s):
     return view(chat, mid, H(str(t(lang, "task_paid", reward=c["reward"])) + progress_line(uid, lang)), next_kb(lang, uid))
 
 
-def _channel_wait_result(cq, comp, lang, reward, until):
-    """Waits (in a thread) for the count claim to resolve, then answers the channel button with the result."""
+def _channel_wait_result(cq, comp, lang, reward, until, dm=None):
+    """Waits (in a thread) for the count claim to resolve. With `dm` (chat, message_id) the result is shown as a
+    live progress bar in the user's private chat; without it the channel button is answered at the end."""
+    def show(text):
+        if dm:
+            tg("editMessageText", chat_id=dm[0], message_id=dm[1], text=text, parse_mode="HTML")
     try:
+        start = time.time()
+        span = max(until - start, 1.0)
+        last = -1
         while time.time() < until:
             time.sleep(1)
             cur = db.completions.find_one({"_id": comp["_id"]})
             if not cur or cur.get("status") != "count_pending":
                 break
+            pct = min(95, int(100 * (time.time() - start) / span))
+            if dm and pct // 10 != last:
+                last = pct // 10
+                show(str(tb(lang, "claim_progress", bar=bar(pct, 100), pct=pct)))
         cur = db.completions.find_one({"_id": comp["_id"]})
         if cur and cur.get("status") == "count_pending":
             fail_count_claim(cur, "r_no_increase")                       # atomic: loses the race if it was just paid
             cur = db.completions.find_one({"_id": comp["_id"]})
-        if cur and cur.get("status") != "count_pending":
-            ans(cq, tb(lang, "a_claim_ok", reward=reward))
+        ok = bool(cur and cur.get("status") != "count_pending")
+        if dm:
+            show(str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=reward)) if ok
+                 else str(tb(lang, "claim_progress_fail")))
         else:
-            ans(cq, tb(lang, "a_claim_fail"))
+            ans(cq, tb(lang, "a_claim_ok", reward=reward) if ok else tb(lang, "a_claim_fail"))
     except Exception:
         log.exception("channel claim result")
         try:
-            ans(cq, tb(lang, "a_claim_fail"))
+            if dm:
+                show(str(tb(lang, "claim_progress_fail")))
+            else:
+                ans(cq, tb(lang, "a_claim_fail"))
         except Exception:
             pass
 
@@ -2004,7 +2024,12 @@ def channel_count_claim(cq, uid, lang, c):
         return ans(cq, claim_alert(lang, code, uid), True)
     if consume_credit_for_claim(comp):                                    # the increase was already recorded
         return ans(cq, tb(lang, "a_claim_ok", reward=c["reward"]))
-    threading.Thread(target=_channel_wait_result, args=(cq, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC),
+    dm = None
+    r = send(uid, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))   # visible progress, so the press never feels dead
+    if r.get("ok"):
+        dm = (uid, r["result"]["message_id"])
+        ans(cq, tb(lang, "a_claim_checking"))
+    threading.Thread(target=_channel_wait_result, args=(cq, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC, dm),
                      daemon=True).start()
 
 
