@@ -1990,11 +1990,14 @@ def _channel_wait_result(cq, comp, lang, reward, until, dm=None):
             pass
 
 
-def channel_count_claim(cq, uid, lang, c, chat=None):
-    """Count-based reaction claim. From the channel (chat=None) the button opens the bot at once and the check
-    runs there with a live progress bar; with `chat` it is that in-bot run (alerts become normal messages)."""
+def channel_count_claim(cq, uid, lang, c, inbot=False):
+    """Count-based reaction claim. The bot DMs a live progress bar and the channel button opens the bot chat at once
+    (no /start needed). Users who never started the bot get the /start link instead (inbot=True is that second run)."""
     def say(text, alert=False):
-        return send(chat, text) if chat else ans(cq, text, alert)
+        if dm:
+            return tg("editMessageText", chat_id=dm[0], message_id=dm[1], text=str(text), parse_mode="HTML")
+        return send(uid, text) if inbot else ans(cq, text, alert)
+    dm = None
     u = db.users.find_one({"_id": uid}) or {}
     if u.get("strikes", 0) >= STRIKE_LIMIT or c["owner"] == uid:
         return say(tb(lang, "a_cant"), True)
@@ -2021,17 +2024,21 @@ def channel_count_claim(cq, uid, lang, c, chat=None):
              "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
              "task_started": now - window_min * 60, "task_deadline": now + CHANNEL_WAIT_SEC,
              "claim_expires": now + CHANNEL_WAIT_SEC, "day_key": f"d:{uid}:{day()}"}
+    r = send(uid, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))   # progress lives in the bot chat
+    if r.get("ok"):
+        dm = (uid, r["result"]["message_id"])
+    elif not inbot:                                                       # never started the bot: it can't message them yet
+        link = bot_deep_link(c["_id"])
+        return ans(cq, url=link.replace("?start=task_", "?start=claim_")) if link else say(tb(lang, "a_claim_wait"), True)
     code, comp = grant(uid, c, "count_pending", extra=extra)
     if code != "ok":
         return say(claim_alert(lang, code, uid), True)
     if consume_credit_for_claim(comp):                                    # the increase was already recorded
-        return say(tb(lang, "a_claim_ok", reward=c["reward"]))
-    dm = None
-    if chat:
-        r = send(chat, tb(lang, "claim_progress", bar=bar(0, 100), pct=0))
-        if r.get("ok"):
-            dm = (chat, r["result"]["message_id"])
-    threading.Thread(target=_channel_wait_result, args=(cq, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC, dm),
+        return say(str(tb(lang, "claim_progress_ok", bar=bar(100, 100), reward=c["reward"])))
+    if dm and not inbot:
+        un = _me.get("username")
+        ans(cq, url=f"https://t.me/{un}") if un else ans(cq, tb(lang, "a_claim_checking"))   # opens the bot chat at once
+    threading.Thread(target=_channel_wait_result, args=(cq if not dm else None, comp, lang, c["reward"], now + CHANNEL_WAIT_SEC, dm),
                      daemon=True).start()
 
 
@@ -2047,7 +2054,7 @@ def bot_count_claim(uid, chat, cid_s):
         return send(chat, t(lang, "e_no_capacity"), main_kb(lang, uid))
     if not (c.get("type") == "react" and c.get("mode") == "count"):
         return open_linked_task(uid, chat, cid_s)
-    return channel_count_claim(None, uid, lang, c, chat=chat)
+    return channel_count_claim(None, uid, lang, c, inbot=True)
 
 
 def open_linked_task(uid, chat, cid_s):
@@ -4194,10 +4201,7 @@ def on_callback(cq):
         if not c or c.get("status") != "active" or int(c.get("remaining", 0)) <= 0:
             return ans(cq, tb(lang, "a_inactive"), True)
         if c.get("type") == "react" and c.get("mode") == "count":
-            link = bot_deep_link(cid)
-            if link:                                                 # open the bot at once; the check + progress bar run there
-                return ans(cq, url=link.replace("?start=task_", "?start=claim_"))
-            return channel_count_claim(cq, uid, lang, c)
+            return channel_count_claim(cq, uid, lang, c)             # progress bar goes to the user's chat with the bot, no /start needed
         deep = bot_deep_link(cid)
         if not deep:
             return ans(cq, tb(lang, "a_no_deeplink"), True)
