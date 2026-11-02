@@ -64,8 +64,26 @@ REF_ACTIVE_TASKS = int(os.environ.get("REF_ACTIVE_TASKS", "3"))
 REF_DAILY_CAP = int(os.environ.get("REF_DAILY_CAP", "20"))
 MAX_QTY = int(os.environ.get("MAX_QTY", "500"))
 MAX_ACTIVE = int(os.environ.get("MAX_ACTIVE", "10"))
-REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "180"))
+REACTION_UPDATE_GRACE = int(os.environ.get("REACTION_UPDATE_GRACE", "25"))   # extra seconds after the time limit for Telegram's count to arrive
 REACTION_BASELINE_MAX_AGE = int(os.environ.get("REACTION_BASELINE_MAX_AGE", "900"))
+
+
+def fmt_secs(lang, sec):
+    sec = max(1, int(round(float(sec))))
+    if sec < 60:
+        return f"{sec} ثانیه" if lang == "fa" else f"{sec} seconds"
+    m = sec / 60.0
+    m = int(m) if m == int(m) else round(m, 1)
+    return f"{m} دقیقه" if lang == "fa" else f"{m} min"
+
+
+def fmt_win(lang, minutes):
+    return fmt_secs(lang, float(minutes or 5) * 60)
+
+
+def claim_deadline(window_min, now):
+    """Time limit chosen by the order owner + a short grace for the count update (was a fixed 3 minutes)."""
+    return now + float(window_min) * 60 + REACTION_UPDATE_GRACE
 ONLINE_WINDOW_SEC = int(os.environ.get("ONLINE_WINDOW_SEC", "300"))        # "online now" = activity in the last 5 minutes
 ADMIN_PANEL_KEY = os.environ.get("ADMIN_PANEL_KEY", "")
 TG_API_ID = os.environ.get("TG_API_ID", "")          # helper account (userbot): from my.telegram.org
@@ -310,8 +328,8 @@ S = {
     "b_cancel_n": ("Cancel #{n}", "لغو شماره {n}"),
     "b_next": ("Next task", "تسک بعدی"),
     "b_watch": ("Reaction monitor", "پایش واکنش‌ها"),
-    "b_win2": ("2 minutes", "2 دقیقه"),
-    "b_win5": ("5 minutes", "5 دقیقه"),
+    "b_win2": ("15 seconds", "۱۵ ثانیه"),
+    "b_win5": ("1 minute", "۱ دقیقه"),
     "b_cancel_campaign": ("Cancel order", "لغو سفارش"),
     "b_full": ("Task completed", "تسک تکمیل شد ✅"),
     "b_legacy": ("Retired verification method", "روش تأیید قدیمی غیرفعال"),
@@ -490,11 +508,11 @@ S = {
         "<b>Task verified ✅</b>\n<blockquote><b>Reward:</b> <code>+{reward}</code> ⭐ Stars</blockquote>\nThe Stars were added to your balance.",
         "<b>تسک تأیید شد ✅</b>\n<blockquote><b>پاداش:</b> <code>+{reward}</code> ⭐ استارز</blockquote>\nاستارز به موجودی شما افزوده شد."),
     "count_pending": (
-        "<b>Request received</b>\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> ⭐ Stars\n<b>Time limit:</b> {window} minutes</blockquote>\n"
-        "Waiting for Telegram's count update, which may arrive up to {grace} minutes late. "
+        "<b>Request received</b>\n<blockquote>🎁 <b>Reward:</b> <code>{reward}</code> ⭐ Stars\n<b>Time limit:</b> {window}</blockquote>\n"
+        "Waiting for Telegram's count update, which may arrive up to {grace} late. "
         "If a valid increase is recorded, the reward is paid automatically and you will be notified.",
-        "<b>درخواست ثبت شد</b>\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> ⭐ استارز\n<b>مهلت:</b> {window} دقیقه</blockquote>\n"
-        "در انتظار به‌روزرسانی شمارش تلگرام هستیم؛ ممکن است تا {grace} دقیقه دیرتر برسد. "
+        "<b>درخواست ثبت شد</b>\n<blockquote>🎁 <b>پاداش:</b> <code>{reward}</code> ⭐ استارز\n<b>مهلت:</b> {window}</blockquote>\n"
+        "در انتظار به‌روزرسانی شمارش تلگرام هستیم؛ ممکن است تا {grace} دیرتر برسد. "
         "در صورت ثبت افزایش معتبر، پاداش به‌صورت خودکار واریز می‌شود و به شما اطلاع داده خواهد شد."),
     "count_ok": (
         "<b>Increase verified ✅</b>\n\nThe reaction increase was verified and your reward has been paid.",
@@ -561,8 +579,8 @@ S = {
                      "عضویت شما شناسایی نشد. ابتدا عضو شوید، سپس دوباره تلاش کنید."),
     "a_no_react": ("No reaction from you was detected. React to the post, wait a few seconds and try again.",
                    "واکنشی از شما ثبت نشده است. روی پست واکنش بزنید، چند ثانیه صبر کنید و دوباره تلاش کنید."),
-    "a_window_over": ("The {window}-minute window has ended. Start again from the channel.",
-                      "مهلت {window} دقیقه‌ای این تسک پایان یافته است. از کانال دوباره شروع کنید."),
+    "a_window_over": ("The {window} window has ended. Start again from the channel.",
+                      "مهلت {window} این تسک پایان یافته است. از کانال دوباره شروع کنید."),
     "a_no_baseline": ("Baseline count unavailable. Reopen the task.", "شمارش پایه در دسترس نیست. تسک را دوباره باز کنید."),
     "a_count_pending": ("Awaiting count verification.", "در انتظار تأیید شمارش."),
     "a_paid": ("Verified ✅ Reward paid.", "تأیید شد ✅ پاداش واریز شد."),
@@ -575,10 +593,10 @@ S = {
     "a_step_expired": ("This step has expired. Place the order again.",
                        "این مرحله منقضی شده است. ثبت سفارش را دوباره شروع کنید."),
     "a_window_bad": ("Invalid time limit.", "مهلت نامعتبر است."),
-    "a_window_only": ("Only 2 or 5 minutes can be selected.", "فقط 2 یا 5 دقیقه قابل انتخاب است."),
+    "a_window_only": ("Only 15 seconds or 1 minute can be selected.", "فقط ۱۵ ثانیه یا ۱ دقیقه قابل انتخاب است."),
     "a_count_stale": ("The count is outdated. Add or remove a reaction to refresh it.",
                       "شمارش قدیمی است. برای به‌روزرسانی، یک واکنش اضافه یا حذف کنید."),
-    "a_window_set": ("Time limit set to {window} minutes.", "مهلت روی {window} دقیقه تنظیم شد."),
+    "a_window_set": ("Time limit set to {window}.", "مهلت روی {window} تنظیم شد."),
     "a_max_active": ("You can have at most {n} active orders.", "حداکثر {n} سفارش فعال می‌توانید داشته باشید."),
     "a_no_funds": ("Insufficient balance.", "موجودی کافی نیست."),
     "a_admin_check_pre": ("The destination check is temporarily unavailable. No Stars were charged. Try again.",
@@ -707,7 +725,7 @@ S = {
                  "بررسی خودکار عضویت و بازبینی در پایان دوره‌ی بررسی"),
     "how_view": ("Time-based (views cannot be verified precisely)", "زمانی (بازدید دقیقاً قابل راستی‌آزمایی نیست)"),
     "how_react_auto": ("Per-user reaction check (group)", "بررسی فردی واکنش (گروه)"),
-    "how_react_count": ("Channel count check, {window}-minute limit", "بررسی شمارشی کانال، مهلت {window} دقیقه"),
+    "how_react_count": ("Channel count check, {window} limit", "بررسی شمارشی کانال، مهلت {window}"),
     "published": (
         "<b>Order placed</b>\n\nYour task is live in the showcase channel. Rewards are paid automatically after each verified completion. "
         "Track progress under <b>My orders</b>.",
@@ -742,8 +760,8 @@ S = {
                "<b>{title}</b> — پست <code>{mid}</code>\n<blockquote><b>شمارش:</b> <code>{total}</code>\n"
                "<b>آخرین به‌روزرسانی:</b> {age}\n<b>تأخیر دریافت:</b> {delay}{extra}</blockquote>"),
     "rw_top": ("\n<b>Top reactions:</b> {list}", "\n<b>پرتکرارترین واکنش‌ها:</b> {list}"),
-    "rw_camp": ("\n<b>Active order:</b> {target} requested · {remaining} left · {window} min{delta}",
-                "\n<b>سفارش فعال:</b> {target} عدد · {remaining} باقی‌مانده · {window} دقیقه{delta}"),
+    "rw_camp": ("\n<b>Active order:</b> {target} requested · {remaining} left · {window}{delta}",
+                "\n<b>سفارش فعال:</b> {target} عدد · {remaining} باقی‌مانده · {window}{delta}"),
     "rw_delta": (" · change since start {delta}", " · تغییر از شروع سفارش {delta}"),
     "rw_age": ("{m} min {s} s ago", "{m} دقیقه و {s} ثانیه پیش"),
     "rw_age_none": ("no update yet", "هنوز به‌روزرسانی نرسیده"),
@@ -762,8 +780,8 @@ S = {
         ""),
     "ins_done": ("This task is complete 🎉 New tasks are posted in this channel regularly.",
                  "این تسک تکمیل شده است 🎉 تسک‌های جدید به‌طور مرتب در همین کانال منتشر می‌شود."),
-    "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window} minutes.",
-                  "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} دقیقه روی «دریافت پاداش» بزنید."),
+    "ins_count": ("Add the requested reaction to the post, then tap <b>Claim reward</b> within {window}.",
+                  "واکنش درخواستی را روی پست ثبت کنید و ظرف {window} روی «دریافت پاداش» بزنید."),
     "ins_react": ("React to the destination message, then tap <b>Claim reward</b>.",
                   "روی پیام مقصد واکنش بزنید، سپس روی «دریافت پاداش» بزنید."),
     "ins_join": ("Join the destination, then tap <b>Claim reward</b>.",
@@ -1639,7 +1657,7 @@ def campaign_listing_text(c):
     common = dict(target=ctitle(c), desc=desc_html(c), reward=c.get("reward", 0), remaining=remaining, progress=progress, tag=tag, state=state)
 
     def block(key, lang):
-        return str(t(lang, key, type=ty(lang), instruction=t(lang, ins, window=int(c.get("window_min", 5))), **common))
+        return str(t(lang, key, type=ty(lang), instruction=t(lang, ins, window=fmt_win(lang, c.get("window_min", 5))), **common))
     # Persian first; the English translation sits inside a collapsed (expandable) quote
     return block("listing", "fa") + "\n<blockquote expandable>" + block("listing_q", "en") + "</blockquote>"
 
@@ -1892,11 +1910,11 @@ def on_claim(cq, uid, chat, mid, cid_s):
             return ans(cq, tb(lang, "a_no_react"), True)
     elif is_count:
         now = time.time()
-        window_min = int(c.get("window_min", 5))
+        window_min = float(c.get("window_min", 5))
         started = float(ses.get("task_started", float(ses.get("t", now)) - window_min * 60))
         deadline = float(ses.get("task_deadline", now))
         if now > deadline:
-            return ans(cq, tb(lang, "a_window_over", window=window_min), True)
+            return ans(cq, tb(lang, "a_window_over", window=fmt_win(lang, window_min)), True)
         if ses.get("baseline_total") is None or not ses.get("post_key"):
             return ans(cq, tb(lang, "a_no_baseline"), True)
         extra = {"post_key": ses["post_key"], "baseline_total": int(ses["baseline_total"]),
@@ -1909,8 +1927,8 @@ def on_claim(cq, uid, chat, mid, cid_s):
         ans(cq, tb(lang, "a_count_pending"))
         if consume_credit_for_claim(comp):
             return view(chat, mid, H(str(t(lang, "count_ok")) + progress_line(uid, lang)), next_kb(lang, uid))
-        return view(chat, mid, t(lang, "count_pending", reward=c["reward"], window=window_min,
-                                 grace=REACTION_UPDATE_GRACE // 60),
+        return view(chat, mid, t(lang, "count_pending", reward=c["reward"], window=fmt_win(lang, window_min),
+                                 grace=fmt_secs(lang, REACTION_UPDATE_GRACE)),
                     [[U(tb(lang, "b_back_target"), link_of(c), "primary")], [B(tb(lang, "b_back"), "earn")]])
 
     # Join / group-reaction are verified right now, and views after the waiting time: pay immediately.
@@ -1956,8 +1974,8 @@ def open_linked_task(uid, chat, cid_s):
         if not snap:
             return send(chat, t(lang, "e_count_stale"), main_kb(lang, uid))
         now = time.time()
-        window_min = int(c.get("window_min", 5))
-        ses = {"t": now, "task_started": now - window_min * 60, "task_deadline": now + REACTION_UPDATE_GRACE,
+        window_min = float(c.get("window_min", 5))
+        ses = {"t": now, "task_started": now - window_min * 60, "task_deadline": claim_deadline(window_min, now),
                "baseline_total": int(c.get("base_count", snap.get("total", 0))),
                "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
                "post_key": post_key(c["chat_id"], c["mid"])}
@@ -2183,7 +2201,7 @@ def on_reaction(mr):
 
 
 def window_kb(lang):
-    return [[B(tb(lang, "b_win2"), "rw:2", "primary"), B(tb(lang, "b_win5"), "rw:5", "primary")],
+    return [[B(tb(lang, "b_win2"), "rw:15", "primary"), B(tb(lang, "b_win5"), "rw:60", "primary")],
             [B(tb(lang, "b_cancel"), "home", "danger")]]
 
 
@@ -2219,7 +2237,7 @@ def reaction_watch_text(uid, lang, all_admin=False):
             if total is not None and base is not None:
                 delta = tb(lang, "rw_delta", delta=f"{int(total) - int(base):+d}")
             extra += str(t(lang, "rw_camp", target=c.get("target", 0), remaining=c.get("remaining", 0),
-                           window=c.get("window_min", 5), delta=delta))
+                           window=fmt_win(lang, c.get("window_min", 5)), delta=delta))
         title = short(w.get("title") or w.get("uname") or str(w.get("chat_id")), 40)
         rows.append(str(t(lang, "rw_row", title=title, mid=w.get("mid", "?"),
                           total=total if total is not None else tb(lang, "unknown"),
@@ -2536,7 +2554,7 @@ def on_state_text(uid, chat, text, st, lang):
         elif d.get("mode") == "auto":
             how = tb(lang, "how_react_auto")
         else:
-            how = tb(lang, "how_react_count", window=d.get("window_min", 5))
+            how = tb(lang, "how_react_count", window=fmt_win(lang, d.get("window_min", 1)))
         admin_note = t(lang, "summary_admin") if needs_admin_mode(typ, d.get("mode")) else H("")
         return send(chat, t(lang, "summary", type=K("tn_" + typ), title=d["title"], qty=q, total=q * cost,
                             how=how, admin_note=admin_note),
@@ -2551,18 +2569,19 @@ def choose_reaction_window(cq, uid, lang, chat, mid, value):
         ans(cq, tb(lang, "a_step_expired"), True)
         return view(chat, mid, t(lang, "e_restart"), main_kb(lang, uid))
     try:
-        window_min = int(value)
+        window_sec = int(value)
     except (TypeError, ValueError):
         return ans(cq, tb(lang, "a_window_bad"), True)
-    if window_min not in (2, 5):
+    if window_sec not in (15, 60):
         return ans(cq, tb(lang, "a_window_only"), True)
+    window_min = window_sec / 60.0
     d = st.get("d", {})
     if not fresh_reaction_snapshot(d.get("chat_id"), d.get("mid")):
         ans(cq, tb(lang, "a_count_stale"), True)
         return view(chat, mid, t(lang, "baseline_need_action"), cancel_kb(lang))
     d["window_min"] = window_min
     set_state(uid, "qty", d)
-    ans(cq, tb(lang, "a_window_set", window=window_min))
+    ans(cq, tb(lang, "a_window_set", window=fmt_win(lang, window_min)))
     return ask_qty(uid, lang, d, TYPES[d["type"]]["cost"])
 
 
@@ -2600,7 +2619,7 @@ def confirm_new(cq, uid, lang, chat, mid):
                 "admin_required": admin_required, "admin_paused": False,
                 "admin_checked_at": time.time() if admin_required else None, "desc": clean_desc(d.get("desc"))}
     if typ == "react" and d.get("mode") == "count":
-        campaign.update(window_min=int(d.get("window_min", 5)), base_count=int(snap.get("total", 0)),
+        campaign.update(window_min=float(d.get("window_min", 1)), base_count=int(snap.get("total", 0)),
                         base_updated_at=float(snap.get("updated_at", time.time())),
                         post_key=post_key(d["chat_id"], d["mid"]))
     campaign["_id"] = db.campaigns.insert_one(campaign).inserted_id
@@ -3709,10 +3728,13 @@ def growth_tick():
 
 
 def worker():
-    last_tick, pending = 0.0, False
+    last_tick, last_exp, pending = 0.0, 0.0, False
     while True:
         try:
             now = time.time()
+            if now - last_exp >= 5:
+                last_exp = now
+                expire_count_claims(now)                        # atomic per claim: safe on every worker
             if now - last_tick >= 30:
                 last_tick = now
                 if take_lock("tick", 25):
@@ -4424,7 +4446,7 @@ def miniapp_tasks():
                     "remaining": int(c.get("remaining", 0) or 0), "targetUrl": target_url,
                     "postUrl": post_url_of(c), "started": live,
                     "completionStatus": status, "mode": c.get("mode") or "",
-                    "windowMin": int(c.get("window_min", 0) or 0),
+                    "windowMin": float(c.get("window_min", 0) or 0),
                     "deadline": deadline if live else 0, "ready": ready})
         if len(out) >= 60:
             break
@@ -4445,7 +4467,7 @@ def miniapp_tasks():
                        "reward": int(comp.get("reward", c.get("reward", 0)) or 0),
                        "remaining": max(0, int(c.get("remaining", 0) or 0)), "targetUrl": target_url,
                        "postUrl": post_url_of(c), "started": True, "completionStatus": "count_pending",
-                       "mode": c.get("mode") or "", "windowMin": int(c.get("window_min", 0) or 0),
+                       "mode": c.get("mode") or "", "windowMin": float(c.get("window_min", 0) or 0),
                        "deadline": 0, "ready": True})
         known_ids.add(str(cid))
     return jsonify(ok=True, tasks=out[:60], now=time.time())
@@ -4508,9 +4530,9 @@ def miniapp_start_task(cid_s):
             snap = fresh_reaction_snapshot(c.get("chat_id"), c.get("mid"))
             if not snap:
                 return jsonify(error="reaction_data_unavailable"), 409
-            window_min = int(c.get("window_min", 5))
+            window_min = float(c.get("window_min", 5))
             session = {"t": now, "task_started": now - window_min * 60,
-                       "task_deadline": now + REACTION_UPDATE_GRACE,
+                       "task_deadline": claim_deadline(window_min, now),
                        "baseline_total": int(c.get("base_count", snap.get("total", 0))),
                        "baseline_at": float(c.get("base_updated_at", snap.get("updated_at", now))),
                        "post_key": post_key(c["chat_id"], c["mid"])}
@@ -4580,7 +4602,7 @@ def miniapp_claim_task(cid_s):
             return jsonify(error="not_reacted"), 409
     elif is_count:
         now = time.time()
-        window_min = int(c.get("window_min", 5))
+        window_min = float(c.get("window_min", 5))
         started = float(ses.get("task_started", float(ses.get("t", now)) - window_min * 60))
         deadline = float(ses.get("task_deadline", now))
         if now > deadline:
@@ -4718,10 +4740,10 @@ def make_campaign(u, body, activating=False):
                 "admin_checked_at": time.time() if admin_required else None, "desc": clean_desc(body.get("desc"))}
     if typ == "react" and d.get("mode") == "count":
         try:
-            requested_window = int(body.get("windowMin", 5))
+            requested_window = float(body.get("windowMin", 1))
         except (TypeError, ValueError):
-            requested_window = 5
-        window_min = requested_window if requested_window in (2, 5) else 5
+            requested_window = 1.0
+        window_min = requested_window if requested_window in (0.25, 1.0) else 1.0
         campaign.update(window_min=window_min,
                         base_count=int(snap.get("total", 0)),
                         base_updated_at=float(snap.get("updated_at", time.time())),
